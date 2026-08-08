@@ -1,0 +1,117 @@
+{
+  "meta": {
+    "title": "三国杀身份局规则",
+    "source": "标准版官方规则 + BWIKI",
+    "version": "1.0"
+  },
+  "modes": {
+    "5_player": {
+      "name": "5人身份局",
+      "player_count": 5,
+      "identities": {
+        "lord": {"count": 1, "name": "主公", "hp_bonus": 1, "visible": true},
+        "loyalist": {"count": 1, "name": "忠臣", "hp_bonus": 0, "visible": false},
+        "rebel": {"count": 2, "name": "反贼", "hp_bonus": 0, "visible": false},
+        "spy": {"count": 1, "name": "内奸", "hp_bonus": 0, "visible": false}
+      },
+      "victory_conditions": {
+        "lord": "主公存活且所有反贼和内奸死亡",
+        "loyalist": "主公存活且所有反贼和内奸死亡",
+        "rebel": "主公死亡",
+        "spy": "除自己外所有人死亡（包括主公）"
+      },
+      "rewards": {
+        "kill_rebel": "摸3张牌",
+        "kill_loyalist_by_lord": "主公弃置所有手牌和装备"
+      },
+      "select_order": "主公先选将（3选1），其他玩家从将池随机选（2选1）",
+      "ai_strategy": {
+        "lord": "优先保护忠臣，击杀反贼",
+        "loyalist": "保护主公，识别并击杀反贼",
+        "rebel": "协同其他反贼击杀主公",
+        "spy": "前期伪装忠臣，后期反杀所有人"
+      }
+    },
+    "8_player": {
+      "name": "8人身份局",
+      "player_count": 8,
+      "identities": {
+        "lord": {"count": 1, "name": "主公", "hp_bonus": 1, "visible": true},
+        "loyalist": {"count": 2, "name": "忠臣", "hp_bonus": 0, "visible": false},
+        "rebel": {"count": 4, "name": "反贼", "hp_bonus": 0, "visible": false},
+        "spy": {"count": 1, "name": "内奸", "hp_bonus": 0, "visible": false}
+      },
+      "victory_conditions": {
+        "lord": "主公存活且所有反贼和内奸死亡",
+        "loyalist": "主公存活且所有反贼和内奸死亡",
+        "rebel": "主公死亡",
+        "spy": "除自己外所有人死亡（包括主公）"
+      },
+      "rewards": {
+        "kill_rebel": "摸3张牌",
+        "kill_loyalist_by_lord": "主公弃置所有手牌和装备"
+      },
+      "select_order": "主公先选将（3选1），其他玩家从将池随机选（2选1）",
+      "ai_strategy": {
+        "lord": "识别忠臣身份，优先击杀威胁最大的反贼",
+        "loyalist": "适时暴露身份协助主公",
+        "rebel": "优先攻击主公，次要目标为忠臣",
+        "spy": "隐藏身份，平衡场上局势"
+      }
+    },
+    "2v2": {
+      "name": "2v2对战",
+      "player_count": 4,
+      "teams": {
+        "team_a": {"count": 2, "name": "甲队"},
+        "team_b": {"count": 2, "name": "乙队"}
+      },
+      "seat_arrangement": "交叉坐（甲1-乙1-甲2-乙2）",
+      "victory_conditions": {
+        "team_a": "乙队全灭",
+        "team_b": "甲队全灭"
+      },
+      "rewards": {
+        "kill_enemy": "无奖励（不摸3张）",
+        "kill_teammate": "无惩罚（不弃牌）"
+      },
+      "select_order": "随机顺序选将（3选1）",
+      "ai_strategy": {
+        "general": "优先保护队友，集火击杀对方核心武将"
+      }
+    },
+    "dou_di_zhu": {
+      "name": "斗地主（3人）",
+      "player_count": 3,
+      "identities": {
+        "landlord": {"count": 1, "name": "地主", "hp_bonus": 1, "extra_cards": 1, "visible": true},
+        "farmer": {"count": 2, "name": "农民", "hp_bonus": 0, "extra_cards": 0, "visible": true}
+      },
+      "victory_conditions": {
+        "landlord": "两名农民都死亡",
+        "farmer": "地主死亡"
+      },
+      "rewards": {
+        "kill_enemy": "无奖励"
+      },
+      "select_order": "地主先选将（3选1），农民随机选（2选1）",
+      "special_rules": {
+        "landlord_advantage": "多1点体力上限，多摸1张牌",
+        "farmer_cooperation": "两名农民需要配合"
+      },
+      "ai_strategy": {
+        "landlord": "速攻击杀其中一名农民，形成人数优势",
+        "farmer": "两名农民协同，避免被各个击破"
+      }
+    }
+  },
+  "identity_reveal": {
+    "timing": "角色死亡时",
+    "effect": "公开身份牌，触发身份揭示技能和奖惩"
+  },
+  "worldbook_usage": {
+    "ai_prompt": "根据已知信息推测身份，做出符合阵营利益的决策",
+    "example_lord": "你是【主公】，目标：存活并消灭反贼和内奸。当前场上：1个已知忠臣，3个未知身份。策略：优先保护忠臣，击杀跳反的角色。",
+    "example_spy": "你是【内奸】，目标：等所有人互相削弱后收割。策略：前期伪装忠臣，救主公；后期反杀主公。"
+  }
+}

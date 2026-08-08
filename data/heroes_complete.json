@@ -1,0 +1,130 @@
+[
+  {
+    "id": "caocao",
+    "name": "曹操",
+    "faction": "魏",
+    "title": "魏武帝",
+    "code": "WEI 001",
+    "max_hp": 4,
+    "image": "assets/heroes/caocao.jpg",
+    "skills": [
+      {
+        "name": "奸雄",
+        "description": "当你受到伤害后，你可以获得对你造成伤害的牌。",
+        "type": "锁定技",
+        "trigger": "DAMAGE_RECEIVED"
+      },
+      {
+        "name": "护驾",
+        "description": "主公技，当你需要使用或打出一张【闪】时，你可以令其他魏势力角色选择是否打出一张【闪】（视为由你使用或打出）。",
+        "type": "主公技",
+        "trigger": "CARD_NEEDED"
+      }
+    ],
+    "worldbook": {
+      "summary": "曹操，魏势力主公，体力4。拥有【奸雄】和【护驾】技能。",
+      "skill_details": "【奸雄】当受到伤害后获得伤害牌；【护驾】主公技，需要闪时可让其他魏将代打。",
+      "usage_tips": "曹操擅长将伤害转化为资源，适合前期承伤换牌。护驾可在关键时刻求闪。"
+    }
+  },
+  {
+    "id": "liubei",
+    "name": "刘备",
+    "faction": "蜀",
+    "title": "乱世的枭雄",
+    "code": "SHU 001",
+    "max_hp": 4,
+    "image": "assets/heroes/liubei.jpg",
+    "skills": [
+      {
+        "name": "仁德",
+        "description": "出牌阶段，你可以将任意张手牌交给其他角色。若你给出的牌张数达到两张或更多，你回复1点体力。",
+        "type": "主动技",
+        "trigger": "PLAY_PHASE"
+      },
+      {
+        "name": "激将",
+        "description": "主公技，当你需要使用或打出一张【杀】时，你可以令其他蜀势力角色选择是否打出一张【杀】（视为由你使用或打出）。",
+        "type": "主公技",
+        "trigger": "CARD_NEEDED"
+      }
+    ],
+    "worldbook": {
+      "summary": "刘备，蜀势力主公，体力4。拥有【仁德】和【激将】技能。",
+      "skill_details": "【仁德】给牌回血，每回合给2+张牌回复1点体力；【激将】主公技，需要杀时可让其他蜀将代打。",
+      "usage_tips": "刘备适合团队配合，通过仁德分配资源。激将可在关键时刻求杀。"
+    }
+  },
+  {
+    "id": "guanyu",
+    "name": "关羽",
+    "faction": "蜀",
+    "title": "美髯公",
+    "code": "SHU 002",
+    "max_hp": 4,
+    "image": "assets/heroes/guanyu.jpg",
+    "skills": [
+      {
+        "name": "武圣",
+        "description": "你可以将一张红色牌当【杀】使用或打出。",
+        "type": "锁定技",
+        "trigger": "ALWAYS"
+      }
+    ],
+    "worldbook": {
+      "summary": "关羽，蜀势力武将，体力4。拥有【武圣】技能。",
+      "skill_details": "【武圣】可将红色牌当杀使用，极大提升输出能力。",
+      "usage_tips": "关羽输出能力强，红桃红方块都能当杀，适合进攻。"
+    }
+  },
+  {
+    "id": "zhangfei",
+    "name": "张飞",
+    "faction": "蜀",
+    "title": "万人敌",
+    "code": "SHU 003",
+    "max_hp": 4,
+    "image": "assets/heroes/zhangfei.jpg",
+    "skills": [
+      {
+        "name": "咆哮",
+        "description": "锁定技，出牌阶段，你使用【杀】无次数限制。",
+        "type": "锁定技",
+        "trigger": "ALWAYS"
+      }
+    ],
+    "worldbook": {
+      "summary": "张飞，蜀势力武将，体力4。拥有【咆哮】技能。",
+      "skill_details": "【咆哮】锁定技，可以无限出杀，超强输出。",
+      "usage_tips": "张飞是输出核心，只要有杀就能持续攻击。"
+    }
+  },
+  {
+    "id": "zhugeliang",
+    "name": "诸葛亮",
+    "faction": "蜀",
+    "title": "卧龙",
+    "code": "SHU 004",
+    "max_hp": 3,
+    "image": "assets/heroes/zhugeliang.jpg",
+    "skills": [
+      {
+        "name": "观星",
+        "description": "准备阶段，你可以观看牌堆顶的X张牌（X为存活角色数且至多为5），将任意张牌置于牌堆顶，其余的牌置于牌堆底。",
+        "type": "主动技",
+        "trigger": "PREPARE_PHASE"
+      },
+      {
+        "name": "空城",
+        "description": "锁定技，当你没有手牌时，你不能成为【杀】或【决斗】的目标。",
+        "type": "锁定技",
+        "trigger": "ALWAYS"
+      }
+    ],
+    "worldbook": {
+      "summary": "诸葛亮，蜀势力武将，体力3。拥有【观星】和【空城】技能。",
+      "skill_details": "【观星】控制牌堆走向；【空城】无手牌时免疫杀和决斗。",
+      "usage_tips": "诸葛亮是控场核心，观星可以为全队创造优势。空城提供保护。"
+    }
+  }
+]

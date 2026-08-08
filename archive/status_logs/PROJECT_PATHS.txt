@@ -1,0 +1,137 @@
+╔══════════════════════════════════════════════════════════════╗
+║              📁 项目路径清单                                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+## 🏠 主项目目录
+```
+/data/data/com.termux/files/home/sanguosha_tavern
+```
+
+## 📂 数据文件夹（Download）
+```
+/storage/emulated/0/Download/sanguosha/sanguosha_data
+```
+
+## 📋 详细路径列表
+
+### 前端文件
+```
+~/sanguosha_tavern/frontend/
+├── index.html
+├── select_hero.html
+├── game.html
+├── result.html
+├── chat_test.html
+├── css/
+│   ├── main.css
+│   ├── game.css
+│   └── cards.css
+├── js/
+│   ├── ws_client.js
+│   ├── lobby.js
+│   ├── select_hero.js
+│   ├── game_render.js
+│   ├── ui_controls.js
+│   ├── chat.js
+│   └── result.js
+└── assets/
+    └── heroes/  ← 武将头像放这里
+```
+
+### 后端文件
+```
+~/sanguosha_tavern/
+├── test_server_simple.py  ← 主服务器
+├── start.sh               ← 启动脚本
+├── sync_to_download.sh    ← 同步脚本
+└── game_engine/           ← 游戏引擎（待开发）
+```
+
+### 数据文件
+```
+~/sanguosha_tavern/data/
+├── heroes.json   ← 武将数据（你需要创建）
+├── cards.json    ← 卡牌数据（你需要创建）
+└── skills.json   ← 技能数据（你需要创建）
+```
+
+### 世界书
+```
+~/sanguosha_tavern/worldbook/
+├── rules.md          ← 游戏规则（你需要创建）
+├── heroes_skills.md  ← 武将技能详解（你需要创建）
+├── cards.md          ← 卡牌详解（你需要创建）
+└── terms.md          ← 术语解释（你需要创建）
+```
+
+## 🔑 关键文件路径
+
+### 启动服务器
+```bash
+/data/data/com.termux/files/home/sanguosha_tavern/start.sh
+```
+
+### 同步文件
+```bash
+/data/data/com.termux/files/home/sanguosha_tavern/sync_to_download.sh
+```
+
+### 访问地址
+```
+http://localhost:8888           ← 大厅
+http://localhost:8888/chat_test.html  ← 聊天测试
+```
+
+## 📝 快捷命令
+
+### 进入项目目录
+```bash
+cd ~/sanguosha_tavern
+```
+
+### 启动服务器
+```bash
+bash start.sh
+```
+
+### 同步到Download
+```bash
+bash sync_to_download.sh
+```
+
+### 编辑文件
+```bash
+micro frontend/index.html
+```
+
+### 查看日志
+```bash
+tail -f logs/server.log
+```
+
+## 🎯 添加资源的路径
+
+### 武将头像
+```
+/data/data/com.termux/files/home/sanguosha_tavern/frontend/assets/heroes/
+```
+命名格式: `武将id.png` (如 `liubei.png`)
+
+### 武将数据
+```
+/data/data/com.termux/files/home/sanguosha_tavern/data/heroes.json
+```
+
+### 卡牌数据
+```
+/data/data/com.termux/files/home/sanguosha_tavern/data/cards.json
+```
+
+### 世界书内容
+```
+/data/data/com.termux/files/home/sanguosha_tavern/worldbook/rules.md
+```
+
+═══════════════════════════════════════════════════════════════
+         将此文件保存，方便随时查找项目路径
+═══════════════════════════════════════════════════════════════

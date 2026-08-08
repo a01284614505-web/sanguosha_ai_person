@@ -1,0 +1,348 @@
+#!/usr/bin/env python3
+"""AI决策系统：合法操作约束、多Provider调用与世界书注入。"""
+
+import json
+import os
+import random
+import re
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+
+class WorldbookManager:
+    """按需加载武将、卡牌和阶段世界书。"""
+
+    def __init__(self, worldbook_dir: str = "worldbook_generated"):
+        self.worldbook_dir = worldbook_dir
+        self.cache: Dict[str, List[Dict]] = {}
+        self._load_all_data()
+
+    def _load_all_data(self):
+        base_path = os.path.join(os.path.dirname(__file__), "..", self.worldbook_dir)
+
+        heroes_path = os.path.join(base_path, "heroes", "heroes_27_complete.json")
+        if os.path.exists(heroes_path):
+            with open(heroes_path, "r", encoding="utf-8") as f:
+                self.cache["heroes"] = json.load(f).get("heroes", [])
+
+        self.cache["cards"] = []
+        for card_type in ["basic_cards", "trick_cards", "equipment_cards"]:
+            card_path = os.path.join(base_path, "cards", f"{card_type}.json")
+            if os.path.exists(card_path):
+                with open(card_path, "r", encoding="utf-8") as f:
+                    self.cache["cards"].extend(json.load(f).get("cards", []))
+
+        rules_path = os.path.join(base_path, "rules", "game_flow.json")
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as f:
+                self.cache["phases"] = json.load(f).get("phases", [])
+
+    @staticmethod
+    def _hero_id(player) -> str:
+        hero = getattr(player, "hero", None)
+        if isinstance(hero, dict):
+            return hero.get("id", "")
+        return getattr(hero, "id", "") if hero else ""
+
+    def get_hero_worldbook(self, hero_id: str) -> str:
+        hero = next((h for h in self.cache.get("heroes", []) if h.get("id") == hero_id), None)
+        if not hero:
+            return ""
+        lines = [f"【{hero['name']}】{hero['faction']}势力，{hero['max_hp']}点体力", "你的技能："]
+        for skill in hero.get("skills", []):
+            lines.append(f"- 【{skill['name']}】{skill.get('worldbook', skill.get('description', ''))}")
+        return "\n".join(lines)
+
+    def get_phase_worldbook(self, phase: str) -> str:
+        info = next((p for p in self.cache.get("phases", []) if p.get("id") == phase), None)
+        if not info:
+            return ""
+        lines = [f"【{info['name']}】{info.get('description', '')}"]
+        if info.get("actions"):
+            lines.append("可执行操作：" + "；".join(info["actions"]))
+        if info.get("ai_considerations"):
+            lines.append("AI提示：" + info["ai_considerations"])
+        return "\n".join(lines)
+
+    def build_full_worldbook(self, player, game_state, available_actions: List[Dict]) -> str:
+        sections = [f"你的身份：{player.identity or '未知'}"]
+        hero_text = self.get_hero_worldbook(self._hero_id(player))
+        if hero_text:
+            sections.append(hero_text)
+
+        phase = getattr(game_state.current_phase, "value", game_state.current_phase)
+        phase_text = self.get_phase_worldbook(phase)
+        if phase_text:
+            sections.append(phase_text)
+
+        others = []
+        for p in game_state.players:
+            if p.alive and p.id != player.id:
+                hero = p.hero if isinstance(p.hero, dict) else {}
+                identity = p.identity if getattr(p, "identity_revealed", False) else "身份未公开"
+                skills = "、".join(
+                    f"{s.get('name')}[{s.get('implementation_status', 'data_only')}]"
+                    for s in hero.get('skills', []) if isinstance(s, dict)
+                ) or "无"
+                others.append(
+                    f"{p.name}/{hero.get('name', '未知武将')}：{p.hp}/{p.max_hp}体力，{len(p.hand)}手牌，{identity}，公开技能={skills}"
+                )
+        if others:
+            sections.append("场上角色：\n" + "\n".join(f"- {x}" for x in others))
+
+        if player.hand:
+            hand = "、".join(f"{i}:{c.name}({c.suit}{c.rank})" for i, c in enumerate(player.hand))
+            sections.append(f"你的手牌：{hand}")
+        return "\n\n".join(sections)
+
+
+class AIDecision:
+    """AI只能从引擎生成的操作列表中选择，不允许自行构造规则外操作。"""
+
+    def __init__(self, game_engine):
+        self.engine = game_engine
+        self.gateway = AIGateway()
+        self.worldbook_manager = WorldbookManager()
+
+    async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
+        api_key = player.ai_config.get("api_key", "")
+        if not api_key or api_key == "test_key":
+            return self.simple_ai_decision(player, available_actions)
+
+        prompt = self.build_decision_prompt_with_worldbook(player, available_actions)
+        try:
+            response = await self.gateway.call_ai(
+                provider=player.ai_config.get("provider", "deepseek"),
+                model=player.ai_config.get("model", "deepseek-chat"),
+                api_key=api_key,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是三国杀玩家。游戏引擎是唯一规则来源；你只能选择给出的合法操作索引。",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=player.ai_config.get("temperature", 0.8),
+                base_url=player.ai_config.get("api_url") or player.ai_config.get("base_url"),
+            )
+            return self.parse_ai_response(response, player, available_actions)
+        except Exception as exc:
+            print(f"  ⚠️ AI调用失败，切换规则AI: {exc}")
+            return self.simple_ai_decision(player, available_actions)
+
+    def build_decision_prompt_with_worldbook(self, player, available_actions: List[Dict]) -> str:
+        settings = self.engine.game_config.get("global_settings") or {}
+        if settings.get("worldbook_enabled", True):
+            worldbook = self.worldbook_manager.build_full_worldbook(player, self.engine.game_state, available_actions)
+        else:
+            worldbook = "内置世界书已在全局设置中关闭。"
+
+        if settings.get("custom_worldbook_enabled", True):
+            custom_entries = self.engine.game_config.get("custom_worldbook") or []
+            context = " ".join(
+                [self.worldbook_manager._hero_id(player), self.engine.game_state.current_phase.value]
+                + [c.name for c in player.hand]
+            ).lower()
+            selected = []
+            for entry in custom_entries:
+                keywords = [str(k).lower() for k in entry.get("keywords", [])]
+                if entry.get("constant") or any(k and k in context for k in keywords):
+                    selected.append(f"【自定义世界书·{entry.get('title', entry.get('id', '条目'))}】{entry.get('content', '')}")
+                if sum(len(x) for x in selected) >= 3000:
+                    break
+            if selected:
+                worldbook += "\n\n" + "\n".join(selected)
+
+        action_lines = [f"{i}. {self.format_action(action)}" for i, action in enumerate(available_actions)]
+        return f"""{worldbook}
+
+当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
+
+合法操作列表（索引从0开始）：
+{chr(10).join(action_lines)}
+
+只返回JSON：
+{{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由"}}
+目标必须来自所选操作的合法目标列表。不能新增操作、卡牌或目标。"""
+
+    @staticmethod
+    def format_action(action: Dict) -> str:
+        action_type = action.get("type", "")
+        if action_type == "play_card":
+            card = action.get("card") or {}
+            text = f"使用手牌#{action.get('card_index')}【{card.get('name', '未知')}】"
+            if action.get("requires_target"):
+                text += f"，合法目标={action.get('valid_targets', [])}"
+            return text
+        if action_type == "use_skill":
+            text = f"发动【{action.get('skill_name')}】/{action.get('variant', 'default')}"
+            if action.get("card_indices"):
+                text += f"，消耗手牌索引={action.get('card_indices')}"
+            if action.get("description"):
+                text += f"，效果={action.get('description')}"
+            if action.get("requires_target"):
+                text += f"，合法目标={action.get('valid_targets', [])}"
+            return text
+        if action_type == "end_phase":
+            return "结束出牌阶段"
+        return json.dumps(action, ensure_ascii=False)
+
+    def parse_ai_response(self, response: str, player, available_actions: List[Dict]) -> Dict:
+        try:
+            match = re.search(r"\{.*\}", response, re.DOTALL)
+            payload = json.loads(match.group(0) if match else response)
+            index = payload.get("action_index")
+
+            # 兼容旧格式，但最终仍映射回引擎给出的某一项。
+            if not isinstance(index, int):
+                requested_type = payload.get("action") or payload.get("type")
+                requested_card_index = payload.get("card_index")
+                index = next(
+                    (
+                        i
+                        for i, action in enumerate(available_actions)
+                        if action.get("type") == requested_type
+                        and (requested_card_index is None or action.get("card_index") == requested_card_index)
+                    ),
+                    None,
+                )
+
+            if not isinstance(index, int) or not 0 <= index < len(available_actions):
+                raise ValueError("action_index不在合法操作范围内")
+
+            action = dict(available_actions[index])
+            target_ids = self._normalize_targets(action, payload.get("target_ids", []), player)
+            return {
+                "action": action,
+                "target_ids": target_ids,
+                "chat": str(payload.get("chat_message", ""))[:40],
+                "reasoning": str(payload.get("reasoning", ""))[:200],
+            }
+        except Exception as exc:
+            print(f"  ⚠️ AI响应解析失败，切换规则AI: {exc}")
+            return self.simple_ai_decision(player, available_actions)
+
+    def _normalize_targets(self, action: Dict, requested: Any, player) -> List[int]:
+        valid = list(action.get("valid_targets", []))
+        if not action.get("requires_target"):
+            return []
+        if not isinstance(requested, list):
+            requested = []
+        chosen = [tid for tid in requested if tid in valid]
+        if chosen:
+            return chosen[:1]
+        return self._choose_target(player, valid)
+
+    def _choose_target(self, player, valid_ids: List[int]) -> List[int]:
+        if not valid_ids:
+            return []
+        players = {p.id: p for p in self.engine.game_state.players}
+        candidates = [players[pid] for pid in valid_ids if pid in players]
+        if not candidates:
+            return []
+
+        # 规则AI也只能使用公开身份，不能读取其他玩家的隐藏身份。
+        enemies = []
+        if player and player.identity == "rebel":
+            enemies = [p for p in candidates if p.identity_revealed and p.identity == "lord"]
+        elif player and player.identity in ("lord", "loyalist"):
+            enemies = [p for p in candidates if p.identity_revealed and p.identity in ("rebel", "spy")]
+            if not enemies:
+                enemies = [p for p in candidates if not (p.identity_revealed and p.identity == "lord")]
+        elif player and player.identity == "spy":
+            enemies = [p for p in candidates if not (p.identity_revealed and p.identity == "spy")]
+
+        pool = enemies or candidates
+        pool.sort(key=lambda p: (p.hp, len(p.hand), p.id))
+        return [pool[0].id]
+
+    def simple_ai_decision(self, player, available_actions: List[Dict]) -> Dict:
+        if not available_actions:
+            return {"action": {"type": "end_phase"}, "target_ids": []}
+
+        playable = [a for a in available_actions if a.get("type") != "end_phase"]
+        priorities = []
+        if player and player.hp < player.max_hp:
+            priorities.append("桃")
+        priorities.extend(["杀", "过河拆桥", "顺手牵羊"])
+
+        selected: Optional[Dict] = None
+        for name in priorities:
+            selected = next(
+                (a for a in playable if (a.get("card") or {}).get("name") == name),
+                None,
+            )
+            if selected:
+                break
+        if not selected:
+            skill_priority = ["替身", "仁德", "集智", "武圣", "龙胆", "激将", "义绝"]
+            for skill_name in skill_priority:
+                selected = next((a for a in playable if a.get("type") == "use_skill" and a.get("skill_name") == skill_name), None)
+                if selected:
+                    break
+        if not selected and playable:
+            selected = playable[0]
+        if not selected:
+            selected = next((a for a in available_actions if a.get("type") == "end_phase"), available_actions[-1])
+
+        action = dict(selected)
+        return {
+            "action": action,
+            "target_ids": self._normalize_targets(action, [], player),
+            "chat": "",
+            "reasoning": "规则AI兜底",
+        }
+
+
+class AIGateway:
+    """AI API网关。当前重点保证OpenAI兼容接口可用。"""
+
+    DEFAULT_BASES = {
+        "openai": "https://api.openai.com/v1",
+        "deepseek": "https://api.deepseek.com/v1",
+        "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "glm": "https://open.bigmodel.cn/api/paas/v4",
+        "grok": "https://api.x.ai/v1",
+        "doubao": "https://ark.cn-beijing.volces.com/api/v3",
+    }
+
+    def __init__(self, timeout: int = 30):
+        self.timeout = timeout
+
+    async def call_ai(
+        self,
+        provider: str,
+        model: str,
+        api_key: str,
+        messages: List[Dict],
+        temperature: float = 0.8,
+        base_url: Optional[str] = None,
+    ) -> str:
+        provider = (provider or "openai").lower()
+        if provider in ("claude", "gemini") and not base_url:
+            raise ValueError(f"{provider}原生协议尚未接入，请提供OpenAI兼容API地址")
+
+        root = (base_url or self.DEFAULT_BASES.get(provider) or self.DEFAULT_BASES["openai"]).rstrip("/")
+        endpoint = root if root.endswith("/chat/completions") else root + "/chat/completions"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "temperature": temperature},
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+
+    # 兼容旧聊天模块调用名。
+    async def call_api(self, **kwargs) -> str:
+        return await self.call_ai(**kwargs)
+
+
+__all__ = ["AIDecision", "AIGateway", "WorldbookManager"]
+
+
+if __name__ == "__main__":
+    wb = WorldbookManager()
+    print(f"武将:{len(wb.cache.get('heroes', []))} 卡牌:{len(wb.cache.get('cards', []))} 阶段:{len(wb.cache.get('phases', []))}")

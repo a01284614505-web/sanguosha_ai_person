@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>全局设置中心 - AI三国杀酒馆</title>
+    <link rel="stylesheet" href="css/main.css">
+    <style>
+        body{min-height:100vh;padding:18px;background:linear-gradient(135deg,#17110e,#34241d);color:#f5e6d3}
+        .wrap{max-width:900px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.top h1{color:#d4af37}.top button,.btn{border:1px solid #d4af37;background:#38271f;color:#f7df9a;border-radius:7px;padding:9px 14px;cursor:pointer}
+        .section{background:rgba(38,28,23,.96);border:1px solid #7b6248;border-radius:12px;padding:16px;margin:13px 0}.section h2{color:#d4af37;font-size:19px;margin-bottom:11px}.hint{color:#ae9e8f;font-size:12px;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.stat{background:#17110e;border-radius:7px;padding:11px}.stat b{display:block;color:#76ff9b;font-size:22px}
+        .upload{border:2px dashed #806748;border-radius:9px;padding:22px;text-align:center;margin:10px 0}.upload input{margin-top:10px}.validation{white-space:pre-wrap;background:#120e0c;border-radius:7px;padding:10px;min-height:58px;color:#c9bcac;font-size:12px}
+        .entry{background:#17110e;border-left:3px solid #d4af37;border-radius:5px;padding:10px;margin:8px 0}.entry h4{color:#ffd76a}.entry p{white-space:pre-wrap;font-size:12px;color:#c7b9a8;max-height:90px;overflow:auto}.entry button{margin-top:6px;margin-right:6px}
+        .form{display:grid;grid-template-columns:1fr;gap:8px}.form input,.form textarea{background:#120e0c;border:1px solid #6b5540;color:#f5e6d3;border-radius:6px;padding:9px}.form textarea{min-height:100px}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="top"><h1>⚙ 全局设置中心</h1><button onclick="history.back()">← 返回</button></div>
+
+        <section class="section">
+            <h2>快速设置</h2>
+            <p class="hint">该设置窗口也可通过大厅、选将、游戏、结算页面右上角的齿轮打开。</p>
+            <button class="btn" onclick="openGlobalSettings()">打开全局设置弹窗</button>
+        </section>
+
+        <section class="section">
+
+        <section class="section">
+            <h2>🃏 牌堆配置</h2>
+            <p class="hint">选择游戏使用的牌堆。测试版包含88张基础牌，完整版包含108张标准三国杀卡牌（含兵粮寸断、铁索连环、酒等）。切换后需重启服务器生效。</p>
+            <div id="deckOptions" style="margin:10px 0">
+                <div style="margin:8px 0">
+                    <label style="display:block;background:#17110e;border-radius:7px;padding:12px;cursor:pointer">
+                        <input type="radio" name="deck" value="test_deck" checked> 
+                        <strong style="color:#ffd76a">测试版</strong>
+                        <span style="color:#ae9e8f;font-size:12px;display:block;margin-top:4px">简化牌堆，88张基础牌和常用锦囊</span>
+                    </label>
+                </div>
+                <div style="margin:8px 0">
+                    <label style="display:block;background:#17110e;border-radius:7px;padding:12px;cursor:pointer">
+                        <input type="radio" name="deck" value="complete_deck"> 
+                        <strong style="color:#ffd76a">完整版</strong>
+                        <span style="color:#ae9e8f;font-size:12px;display:block;margin-top:4px">标准108张，含兵粮寸断、铁索连环、酒、乐不思蜀、无中生有</span>
+                    </label>
+                </div>
+            </div>
+            <button class="btn" onclick="saveDeckSetting()">保存牌堆设置</button>
+            <div id="deckStatus" style="margin-top:10px;color:#76ff9b;font-size:13px"></div>
+        </section>
+            <h2>运行时数据状态</h2>
+            <div id="stats" class="stats"><div class="stat">正在加载…</div></div>
+            <p class="hint" style="margin-top:9px">“源数据完整”不代表“游戏运行时已接入”。运行时武将、技能类映射和规则测试必须全部通过后才视为可用。</p>
+        </section>
+
+        <section class="section">
+            <h2>武将JSON导入预检</h2>
+            <p class="hint">当前网页只负责预检和保存用户自定义候选数据；正式写入服务器 `data/heroes.json` 必须经过后端转换、备份和自动测试。</p>
+            <div class="upload">
+                <div>选择武将JSON文件</div>
+                <input type="file" id="heroFile" accept=".json">
+            </div>
+            <div id="heroValidation" class="validation">等待选择文件。</div>
+        </section>
+
+        <section class="section">
+            <h2>自定义世界书</h2>
+            <p class="hint">常驻条目每回合注入；非条目仅在关键词匹配当前武将、阶段或手牌时注入。自定义条目随开局配置传给后端。</p>
+            <div class="form">
+                <input id="wbTitle" placeholder="条目标题">
+                <input id="wbKeywords" placeholder="关键词，用英文或中文逗号分隔">
+                <textarea id="wbContent" placeholder="条目内容"></textarea>
+                <label><input id="wbConstant" type="checkbox"> 常驻条目</label>
+                <button class="btn" onclick="addEntry()">添加条目</button>
+            </div>
+            <div id="worldbookList"></div>
+        </section>
+
+        <section class="section">
+            <h2>设计与测试原则</h2>
+            <div class="hint">
+                1. `data/heroes.json` 是运行时武将真相源；世界书只服务AI理解，不直接决定规则。<br>
+                2. `skills_generated.py` 只有通过事件映射、单元测试和完整对局测试后才能标记为可用。<br>
+                3. 世界书按需注入，单次总预算不超过4K token；记录命中条目、token估算和API延迟。<br>
+                4. 导入后必须验证27将、54技能ID映射、前端选将、AI Prompt注入和至少10局自动对局。
+            </div>
+        </section>
+    </div>
+    <script src="js/global_settings.js?v=20260803c"></script>
+    <script>
+        async function loadStats(){
+            const data=await fetch('/system_manifest.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}));
+            document.getElementById('stats').innerHTML=`
+                <div class="stat">运行时武将<b>${data.runtime_heroes??'?'}</b></div>
+                <div class="stat">源武将数据<b>${data.source_heroes??'?'}</b></div>
+                <div class="stat">生成技能类<b>${data.generated_skills??'?'}</b></div>
+                <div class="stat">已接线技能<b>${data.runtime_skill_implementations??'?'}</b></div>
+                <div class="stat">世界书卡牌<b>${data.worldbook_cards??'?'}</b></div>`;
+        }
+        function getEntries(){try{return JSON.parse(localStorage.getItem('worldbook')||'[]')}catch(_){return[]}}
+        function saveEntries(entries){localStorage.setItem('worldbook',JSON.stringify(entries));renderEntries()}
+        function renderEntries(){
+            const list=document.getElementById('worldbookList'),entries=getEntries();
+            list.innerHTML=entries.length?entries.map((e,i)=>`<div class="entry"><h4>${e.title||e.id}</h4><small>关键词：${(e.keywords||[]).join('、')} ${e.constant?'｜常驻':''}</small><p>${e.content||''}</p><button class="btn" onclick="deleteEntry(${i})">删除</button></div>`).join(''):'<p class="hint" style="margin-top:10px">暂无自定义条目</p>';
+        }
+        function addEntry(){
+            const title=document.getElementById('wbTitle').value.trim(),content=document.getElementById('wbContent').value.trim();
+            if(!title||!content){alert('标题和内容不能为空');return}
+            const entries=getEntries();
+            entries.push({id:'custom_'+Date.now(),title,keywords:document.getElementById('wbKeywords').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),content,constant:document.getElementById('wbConstant').checked});
+            saveEntries(entries);document.getElementById('wbTitle').value='';document.getElementById('wbKeywords').value='';document.getElementById('wbContent').value='';
+        }
+        function deleteEntry(index){const entries=getEntries();entries.splice(index,1);saveEntries(entries)}
+        document.getElementById('heroFile').addEventListener('change',async function(){
+            const out=document.getElementById('heroValidation');
+            try{
+                const raw=JSON.parse(await this.files[0].text());const heroes=Array.isArray(raw)?raw:(raw.heroes||[raw]);
+                const ids=new Set(),errors=[];let skills=0;
+                heroes.forEach((h,i)=>{if(!h.id||!h.name||!h.faction||!h.max_hp)errors.push(`第${i+1}项缺少id/name/faction/max_hp`);if(ids.has(h.id))errors.push(`重复ID: ${h.id}`);ids.add(h.id);if(!Array.isArray(h.skills))errors.push(`${h.name||h.id}缺少skills数组`);else skills+=h.skills.length});
+                out.textContent=`武将数：${heroes.length}\n技能数：${skills}\n唯一ID：${ids.size}\n结果：${errors.length?'失败\n'+errors.join('\n'):'预检通过（尚未写入服务器运行时数据）'}`;
+                if(!errors.length)localStorage.setItem('imported_heroes_candidate',JSON.stringify(heroes));
+            }catch(e){out.textContent='解析失败：'+e.message}
+        });
+        loadStats();renderEntries();
+
+        // 牌堆设置
+        function loadDeckSetting() {
+            const saved = localStorage.getItem("active_deck") || "test_deck";
+            document.querySelectorAll("input[name=deck]").forEach(radio => {
+                radio.checked = (radio.value === saved);
+            });
+        }
+
+        function saveDeckSetting() {
+            const selected = document.querySelector("input[name=deck]:checked");
+            if (!selected) return;
+            
+            localStorage.setItem("active_deck", selected.value);
+            
+            // 通知服务器切换牌堆
+            fetch("/api/switch_deck", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({deck_id: selected.value})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById("deckStatus").textContent = "✓ 已切换到" + (selected.value === "test_deck" ? "测试版" : "完整版") + "，请重启服务器生效";
+                } else {
+                    document.getElementById("deckStatus").textContent = "✗ 切换失败：" + data.message;
+                }
+            })
+            .catch(e => {
+                document.getElementById("deckStatus").textContent = "✗ 网络错误";
+            });
+        }
+
+        loadDeckSetting();
+    </script>
+</body>
+</html>

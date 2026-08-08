@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI三国杀酒馆</title>
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+    <div class="container">
+        <header class="lobby-header">
+            <h1>🍺 AI三国杀酒馆</h1>
+            <p class="subtitle">群雄逐鹿 · AI论剑</p>
+        </header>
+
+        <section class="mode-selection">
+            <h2>选择游戏模式</h2>
+            <div class="mode-grid">
+                <button class="mode-btn" data-mode="5人身份局">
+                    <span class="mode-icon">👥</span>
+                    <span class="mode-name">5人身份局</span>
+                    <span class="mode-desc">经典模式</span>
+                </button>
+                <button class="mode-btn" data-mode="8人身份局">
+                    <span class="mode-icon">👥👥</span>
+                    <span class="mode-name">8人身份局</span>
+                    <span class="mode-desc">大型战场</span>
+                </button>
+                <button class="mode-btn" data-mode="2v2">
+                    <span class="mode-icon">⚔️</span>
+                    <span class="mode-name">2v2</span>
+                    <span class="mode-desc">双人对战</span>
+                </button>
+                <button class="mode-btn" data-mode="斗地主">
+                    <span class="mode-icon">🃏</span>
+                    <span class="mode-name">斗地主</span>
+                    <span class="mode-desc">三人模式</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="player-config">
+            <h2>玩家设置</h2>
+            <div class="config-item">
+                <label>你的名字：</label>
+                <input type="text" id="playerName" value="我" maxlength="10">
+            </div>
+            <div class="config-item" id="identityCardSection" style="display:none;">
+                <label>
+                    <input type="checkbox" id="useIdentityCard">
+                    使用身份卡（剩余<span id="cardCount">0</span>张）
+                </label>
+                <select id="identitySelect" disabled>
+                    <option value="">选择身份</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="ai-config">
+            <h2>AI配置 <span class="ai-count">(需要<span id="requiredAI">4</span>个AI)</span></h2>
+            <div id="aiConfigList" class="ai-list">
+                <!-- AI配置项将动态生成 -->
+            </div>
+        </section>
+
+        <section class="game-config">
+            <h2>游戏设置</h2>
+            <div class="config-item">
+                <label>将池：</label>
+                <select id="heroPool">
+                    <option value="界限突破27将" selected>界限突破27将</option>
+                </select>
+            </div>
+            <div class="config-item">
+                <label>
+                    <input type="checkbox" id="chatEnabled" checked>
+                    启用AI聊天
+                </label>
+            </div>
+            <div id="chatModelConfig" class="config-sub" style="display:none;">
+                <label>聊天模型：</label>
+                <select id="chatProvider">
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="qwen">通义千问</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Gemini</option>
+                </select>
+                <input type="text" id="chatModel" value="deepseek-chat" placeholder="模型名称">
+            </div>
+        </section>
+
+        <div class="action-buttons">
+            <button id="startGameBtn" class="btn-primary">开始游戏</button>
+        </div>
+
+        <footer class="lobby-footer">
+            <p>连胜记录：<span id="winStreak">0</span>局 | 总对局：<span id="totalGames">0</span>局</p>
+        </footer>
+    </div>
+
+    <script src="js/lobby.js?v=20260803c"></script>
+    <script src="js/global_settings.js?v=20260803c"></script>
+</body>
+</html>

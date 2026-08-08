@@ -1,0 +1,138 @@
+╔══════════════════════════════════════════════════════════════╗
+║        📚 无名杀代码学习 - 游戏引擎分析                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+## 🎯 开始学习无名杀游戏引擎
+
+### 核心文件位置
+```
+/storage/emulated/0/Download/sanguosha/sanguosha_data/noname-main/apps/core/
+
+关键目录：
+├── noname/game/index.js (10,947行) ⭐ 游戏引擎核心
+├── noname/library/         ⭐ 游戏逻辑库
+├── noname/ai/              ⭐ AI系统
+├── character/              ⭐ 武将定义
+├── card/                   ⭐ 卡牌定义
+└── noname/init/            ⭐ 初始化系统
+```
+
+---
+
+## 📖 Game类结构（从index.js分析）
+
+### 核心属性
+```javascript
+export class Game {
+    players = []        // 玩家列表
+    dead = []          // 死亡玩家
+    playerMap = {}     // 玩家映射
+    phaseNumber = 0    // 阶段编号
+    roundNumber = 0    // 回合编号
+    me                 // 当前玩家
+    zhu                // 主公
+    
+    // 事件处理器
+    globalEventHandlers = {
+        _handlers: {},
+        getHandler(name, type),
+        ensureHandlerList(name, type),
+        removeHandler(name, type, func)
+    }
+}
+```
+
+**关键发现：**
+- 使用事件驱动架构
+- 全局事件处理器管理所有事件
+- 玩家通过playerMap管理
+- 回合和阶段分别计数
+
+---
+
+## 🔍 学习计划
+
+### Phase 1: 理解核心架构（今天）
+
+**需要分析的核心部分：**
+
+1. **Game类主要方法** (index.js)
+   - [ ] 游戏初始化
+   - [ ] 回合控制
+   - [ ] 事件触发机制
+   - [ ] 玩家管理
+
+2. **事件系统**
+   - [ ] 事件注册
+   - [ ] 事件触发
+   - [ ] 事件响应
+   - [ ] 事件优先级
+
+3. **卡牌系统** (card/standard.js)
+   - [ ] 卡牌定义格式
+   - [ ] 使用卡牌流程
+   - [ ] 响应机制
+   - [ ] 目标选择
+
+4. **技能系统** (character/standard/skill.js)
+   - [ ] 技能定义格式
+   - [ ] 触发时机
+   - [ ] 技能效果执行
+   - [ ] 技能互动
+
+5. **AI系统** (noname/ai/)
+   - [ ] AI决策流程
+   - [ ] 评估函数
+   - [ ] 卡牌选择
+   - [ ] 目标选择
+
+---
+
+## 🎯 立即行动
+
+### 第1步：分析Game类核心方法（30分钟）
+```bash
+# 查找关键方法定义
+grep -n "useCard\|respond\|judge\|damage\|recover" index.js
+```
+
+### 第2步：理解技能定义格式（30分钟）
+```bash
+# 分析标准武将技能
+cat character/standard/skill.js | head -500
+```
+
+### 第3步：学习事件触发机制（30分钟）
+```bash
+# 查找事件相关代码
+grep -n "trigger\|event\|handler" index.js
+```
+
+### 第4步：提取关键逻辑转Python（2小时）
+基于分析结果，改进我们的：
+- StateManager
+- EventBus
+- CardSystem
+- SkillSystem
+
+---
+
+## 📝 预期成果
+
+**今天要完成：**
+1. 理解无名杀的核心架构
+2. 提取关键逻辑模式
+3. 重写Python版游戏引擎
+4. 实现完整的出牌流程
+5. 接入AI决策
+
+**文档输出：**
+- 无名杀架构分析文档
+- Python引擎实现文档
+- API接口设计文档
+
+---
+
+## 🚀 开始执行
+
+正在分析无名杀代码...

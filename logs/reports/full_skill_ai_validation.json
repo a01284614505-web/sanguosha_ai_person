@@ -1,0 +1,25 @@
+{
+  "stage": "full",
+  "api_success": true,
+  "selected_skill": "制衡",
+  "variant": "discard_draw",
+  "reasoning": "手牌仅一张闪，制衡弃置后可摸一张，有机会获得更有用的牌。",
+  "engine_execution_success": true,
+  "hand_count_before": 1,
+  "hand_count_after": 2,
+  "discard_delta": 1,
+  "runtime_skill_classes": 54,
+  "active_skill_classes": 54,
+  "worldbook_heroes": 27,
+  "prompt_contains_own_skill": true,
+  "prompt_contains_opponent_skills": [
+    "刚烈",
+    "反馈",
+    "奸雄",
+    "护驾",
+    "清俭",
+    "突袭",
+    "鬼才"
+  ],
+  "engine_rule": "AI仅从MainEngine提供的合法操作列表按action_index选择，执行前由引擎再次校验成本和目标"
+}

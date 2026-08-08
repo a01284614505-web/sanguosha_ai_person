@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>武将包管理 - 三国杀酒馆</title>
+    <link rel="stylesheet" href="css/main.css">
+    <style>
+        .hero-manager {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 2px solid var(--border-light);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            color: var(--text-gold);
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border-gold);
+            padding-bottom: 10px;
+        }
+
+        .converter-area {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .input-panel, .output-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 12px;
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            background: rgba(10, 10, 10, 0.6);
+            color: var(--text-light);
+            font-family: monospace;
+            font-size: 13px;
+            resize: vertical;
+        }
+
+        .package-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .package-card {
+            background: linear-gradient(135deg, rgba(26, 15, 10, 0.7), rgba(42, 31, 26, 0.7));
+            border: 2px solid var(--border-dark);
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .package-card:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+        }
+
+        .package-card.enabled {
+            border-color: var(--shu-red);
+            background: linear-gradient(135deg, rgba(196, 30, 58, 0.2), rgba(212, 175, 55, 0.1));
+        }
+
+        .package-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .package-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--text-gold);
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border-gold);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text-gold);
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .toggle-btn:hover {
+            background: rgba(212, 175, 55, 0.2);
+        }
+
+        .hero-list {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            .converter-area {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero-manager">
+        <header style="text-align: center; margin-bottom: 40px;">
+            <h1 style="font-size: 36px; color: var(--text-gold);">⚔️ 武将包管理</h1>
+            <p style="color: var(--text-muted);">导入武将、管理将池、自动生成世界书</p>
+        </header>
+
+        <!-- 数据转换器 -->
+        <section class="section">
+            <div class="section-title">📝 武将数据转换器</div>
+            <p style="color: var(--text-muted); margin-bottom: 16px;">
+                从贴吧复制武将数据，自动转换为JSON格式
+            </p>
+
+            <div class="converter-area">
+                <div class="input-panel">
+                    <label style="color: var(--text-gold); font-weight: bold;">输入贴吧格式：</label>
+                    <textarea id="inputText" placeholder="刘备 蜀&#10;称号:乱世的枭雄&#10;编号:SHU 001&#10;体力:4&#10;画师:KayaK&#10;技能:&#10;仁德：..."></textarea>
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn-primary" onclick="convertHero()">转换</button>
+                        <button class="btn-primary" onclick="convertWithAI()">使用AI转换</button>
+                    </div>
+                </div>
+
+                <div class="output-panel">
+                    <label style="color: var(--text-gold); font-weight: bold;">输出JSON：</label>
+                    <textarea id="outputJSON" readonly></textarea>
+                    <button class="btn-primary" onclick="saveJSON()">保存JSON</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 武将包列表 -->
+        <section class="section">
+            <div class="section-title">📦 武将包列表</div>
+            <div id="packageList" class="package-list">
+                <!-- 动态生成 -->
+            </div>
+            <button class="btn-primary" style="margin-top: 16px;" onclick="refreshPackages()">刷新武将包</button>
+        </section>
+
+        <!-- 使用说明 -->
+        <section class="section">
+            <div class="section-title">💡 使用说明</div>
+            <ol style="color: var(--text-light); line-height: 2;">
+                <li>从贴吧复制武将数据，粘贴到左侧输入框</li>
+                <li>点击"转换"或"使用AI转换"</li>
+                <li>查看右侧生成的JSON</li>
+                <li>点击"保存JSON"自动下载</li>
+                <li>将JSON和武将图片放到 <code>/storage/emulated/0/Download/sanguosha/sanguosha_data/wujiang/对应包名/</code></li>
+                <li>点击"刷新武将包"，勾选启用</li>
+                <li>完成！AI会自动识别武将技能</li>
+            </ol>
+        </section>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="index.html" style="color: var(--text-muted); text-decoration: none;">← 返回大厅</a>
+        </div>
+    </div>
+
+    <script>
+        // 武将名称到ID的映射
+        const nameToId = {
+            '刘备': 'liubei', '关羽': 'guanyu', '张飞': 'zhangfei',
+            '诸葛亮': 'zhugeliang', '赵云': 'zhaoyun', '马超': 'machao',
+            '黄月英': 'huangyueying',
+            '曹操': 'caocao', '司马懿': 'simayi', '夏侯惇': 'xiahoudun',
+            '张辽': 'zhangliao', '许褚': 'xuchu', '郭嘉': 'guojia',
+            '甄姬': 'zhenji',
+            '孙权': 'sunquan', '甘宁': 'ganning', '吕蒙': 'lvmeng',
+            '黄盖': 'huanggai', '周瑜': 'zhouyu', '大乔': 'daqiao',
+            '陆逊': 'luxun',
+            '华佗': 'huatuo', '吕布': 'lvbu', '貂蝉': 'diaochan',
+            '华雄': 'huaxiong', '袁绍': 'yuanshao', '张角': 'zhangjiao'
+        };
+
+        // 解析贴吧格式
+        function parseHeroText(text) {
+            const lines = text.trim().split('\n');
+            const hero = {
+                id: '',
+                name: '',
+                faction: '',
+                title: '',
+                code: '',
+                max_hp: 4,
+                artist: '',
+                image: '',
+                skills: [],
+                worldbook: {}
+            };
+
+            let currentSkill = null;
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line || line === '————') continue;
+
+                // 第一行：名字 势力
+                if (!hero.name && line.includes(' ')) {
+                    const parts = line.split(/\s+/);
+                    hero.name = parts[0];
+                    hero.faction = parts[1] || '';
+                    hero.id = nameToId[hero.name] || hero.name.toLowerCase();
+                    hero.image = `${hero.id}.jpg`;
+                    continue;
+                }
+
+                // 其他字段
+                if (line.startsWith('称号:') || line.startsWith('称号：')) {
+                    hero.title = line.split(/[:：]/)[1].trim();
+                } else if (line.startsWith('编号:') || line.startsWith('编号：')) {
+                    hero.code = line.split(/[:：]/)[1].trim();
+                } else if (line.startsWith('体力:') || line.startsWith('体力：')) {
+                    hero.max_hp = parseInt(line.split(/[:：]/)[1].trim());
+                } else if (line.startsWith('画师:') || line.startsWith('画师：')) {
+                    hero.artist = line.split(/[:：]/)[1].trim();
+                } else if (line.startsWith('技能:') || line.startsWith('技能：')) {
+                    continue;
+                } else if (line.includes('：') || line.includes(':')) {
+                    // 技能
+                    if (currentSkill) {
+                        hero.skills.push(currentSkill);
+                    }
+
+                    const parts = line.split(/[:：]/);
+                    currentSkill = {
+                        name: parts[0].trim(),
+                        description: parts[1] ? parts[1].trim() : '',
+                        type: detectSkillType(parts[1] || ''),
+                        trigger: 'UNKNOWN'
+                    };
+                }
+            }
+
+            if (currentSkill) {
+                hero.skills.push(currentSkill);
+            }
+
+            // 生成世界书
+            hero.worldbook = generateWorldbook(hero);
+
+            return hero;
+        }
+
+        function detectSkillType(desc) {
+            if (desc.includes('主公技')) return 'lord';
+            if (desc.includes('锁定技')) return 'forced';
+            if (desc.includes('限定技')) return 'limited';
+            if (desc.includes('觉醒技')) return 'awaken';
+            return 'active';
+        }
+
+        function generateWorldbook(hero) {
+            const skillsText = hero.skills.map(s => `【${s.name}】${s.description}`).join('\n');
+            return {
+                summary: `${hero.name}，${hero.faction}势力武将，${hero.title}。体力值${hero.max_hp}点。`,
+                skill_details: `技能详解：\n${skillsText}`,
+                usage_tips: `使用${hero.name}时，注意灵活运用技能配合。`,
+                combos: [],
+                counters: []
+            };
+        }
+
+        // 转换武将
+        function convertHero() {
+            const input = document.getElementById('inputText').value;
+            if (!input.trim()) {
+                alert('请输入武将数据');
+                return;
+            }
+
+            try {
+                const hero = parseHeroText(input);
+                const json = JSON.stringify(hero, null, 2);
+                document.getElementById('outputJSON').value = json;
+                alert(`✅ 转换成功！武将：${hero.name}`);
+            } catch (e) {
+                alert(`❌ 转换失败：${e.message}`);
+            }
+        }
+
+        // 使用AI转换
+        async function convertWithAI() {
+            alert('AI转换功能需要配置API Key，请先使用普通转换测试');
+            // TODO: 实现AI转换
+        }
+
+        // 保存JSON
+        function saveJSON() {
+            const json = document.getElementById('outputJSON').value;
+            if (!json) {
+                alert('请先转换数据');
+                return;
+            }
+
+            try {
+                const hero = JSON.parse(json);
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${hero.id}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                alert(`✅ 已下载 ${hero.id}.json`);
+            } catch (e) {
+                alert(`❌ 保存失败：${e.message}`);
+            }
+        }
+
+        // 刷新武将包
+        function refreshPackages() {
+            // TODO: 从服务器加载武将包列表
+            const mockPackages = [
+                {
+                    id: 'jiexian',
+                    name: '界限突破',
+                    version: '1.0',
+                    heroes: ['刘备', '曹操', '孙权', '诸葛亮'],
+                    enabled: true
+                }
+            ];
+
+            renderPackages(mockPackages);
+        }
+
+        function renderPackages(packages) {
+            const list = document.getElementById('packageList');
+            list.innerHTML = packages.map(pkg => `
+                <div class="package-card ${pkg.enabled ? 'enabled' : ''}">
+                    <div class="package-header">
+                        <div class="package-name">${pkg.name}</div>
+                        <button class="toggle-btn" onclick="togglePackage('${pkg.id}')">
+                            ${pkg.enabled ? '✓ 已启用' : '启用'}
+                        </button>
+                    </div>
+                    <div class="hero-list">
+                        武将数：${pkg.heroes.length}<br>
+                        ${pkg.heroes.join('、')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function togglePackage(id) {
+            alert(`切换武将包：${id}`);
+            // TODO: 实现启用/禁用
+        }
+
+        // 初始化
+        refreshPackages();
+    </script>
+    <script src="js/global_settings.js?v=20260803c"></script>
+</body>
+</html>

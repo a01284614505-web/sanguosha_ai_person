@@ -1,0 +1,575 @@
+/* ===== 游戏主界面布局 ===== */
+.game-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d1810 100%);
+}
+
+/* ===== 游戏顶部信息栏 ===== */
+.game-header {
+    background: rgba(0, 0, 0, 0.8);
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid var(--primary-color);
+    z-index: 100;
+}
+
+.game-info {
+    display: flex;
+    gap: 20px;
+    color: var(--text-light);
+    font-size: 14px;
+}
+
+.game-info span {
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+/* ===== 对手区域 ===== */
+.opponents-area {
+    flex: 0 0 auto;
+    padding: 15px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.opponents-grid {
+    display: flex;
+    gap: 10px;
+    min-height: 140px;
+}
+
+.opponent-card {
+    min-width: 160px;
+    background: var(--bg-card);
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px;
+    position: relative;
+    transition: all 0.3s;
+}
+
+.opponent-card.current-turn {
+    border-color: var(--warning);
+    box-shadow: 0 0 15px rgba(255, 193, 7, 0.5);
+}
+
+.opponent-card.targetable {
+    border-color: var(--primary-color);
+    cursor: pointer;
+}
+
+.opponent-card.targetable:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(196, 30, 58, 0.5);
+}
+
+.opponent-card.selected {
+    border-color: var(--success);
+    background: rgba(40, 167, 69, 0.2);
+}
+
+.opponent-card.dead {
+    opacity: 0.4;
+    filter: grayscale(100%);
+}
+
+.opponent-avatar {
+    width: 60px;
+    height: 60px;
+    background: #444;
+    border-radius: 50%;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    position: relative;
+}
+
+.opponent-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.opponent-name {
+    text-align: center;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.opponent-hp {
+    text-align: center;
+    color: var(--hp-red);
+    font-size: 12px;
+    margin-bottom: 5px;
+}
+
+.opponent-handcount {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.opponent-equipment {
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+    margin-top: 5px;
+    flex-wrap: wrap;
+}
+
+.equipment-icon {
+    width: 20px;
+    height: 20px;
+    background: #555;
+    border-radius: 3px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.opponent-identity {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #666;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+}
+
+/* ===== 桌面中央区域 ===== */
+.table-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 15px;
+    overflow: hidden;
+}
+
+.deck-info {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-bottom: 10px;
+}
+
+.deck-pile, .discard-pile {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.pile-icon {
+    font-size: 24px;
+}
+
+.event-log {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    overflow-y: auto;
+    font-size: 13px;
+}
+
+.event-item {
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+}
+
+.event-item:last-child {
+    border-bottom: none;
+}
+
+.event-item.important {
+    color: var(--warning);
+    font-weight: bold;
+}
+
+/* ===== 聊天区域 ===== */
+.chat-area {
+    position: fixed;
+    right: 0;
+    top: 50px;
+    bottom: 200px;
+    width: 280px;
+    background: rgba(0, 0, 0, 0.9);
+    border-left: 2px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    z-index: 90;
+    transition: transform 0.3s;
+}
+
+.chat-area.collapsed {
+    transform: translateX(280px);
+}
+
+.chat-header {
+    padding: 10px 15px;
+    background: var(--primary-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chat-header h3 {
+    font-size: 14px;
+    margin: 0;
+}
+
+.chat-messages {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    font-size: 13px;
+}
+
+.chat-msg {
+    margin-bottom: 10px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+}
+
+.chat-msg-sender {
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 3px;
+}
+
+.chat-msg-sender.user {
+    color: var(--success);
+}
+
+.chat-msg-text {
+    color: var(--text-light);
+    word-wrap: break-word;
+}
+
+.chat-input {
+    display: flex;
+    padding: 10px;
+    gap: 5px;
+    border-top: 1px solid var(--border-color);
+}
+
+.chat-input input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: #1a1a1a;
+    color: var(--text-light);
+    font-size: 13px;
+}
+
+.chat-input button {
+    padding: 8px 12px;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 4px;
+    color: var(--text-light);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+/* ===== 玩家区域（底部） ===== */
+.player-area {
+    flex: 0 0 auto;
+    background: rgba(0, 0, 0, 0.8);
+    border-top: 2px solid var(--primary-color);
+    padding: 10px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.player-info {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.player-avatar {
+    width: 80px;
+    height: 80px;
+    background: #444;
+    border-radius: 10px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.player-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.hero-name {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 2px;
+    font-size: 11px;
+    text-align: center;
+}
+
+.player-status {
+    flex: 1;
+}
+
+.hp-bar {
+    margin-bottom: 8px;
+}
+
+.hp-bar .label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.hp-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--hp-red);
+    margin-left: 5px;
+}
+
+.hp-hearts {
+    display: flex;
+    gap: 3px;
+    margin-top: 5px;
+}
+
+.hp-heart {
+    width: 20px;
+    height: 20px;
+    background: var(--hp-red);
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+.hp-heart.lost {
+    background: var(--hp-lost);
+}
+
+.player-identity .identity-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    background: #666;
+}
+
+.player-equipment {
+    display: flex;
+    gap: 5px;
+}
+
+.equipment-slot {
+    width: 40px;
+    height: 56px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* ===== 手牌区 ===== */
+.hand-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hand-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.hand-cards {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 5px 0;
+}
+
+/* ===== 操作按钮 ===== */
+.player-area .action-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.player-area .btn-action {
+    flex: 1;
+    max-width: 150px;
+}
+
+/* ===== 目标选择遮罩 ===== */
+.target-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.target-prompt {
+    background: var(--bg-card);
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    border: 2px solid var(--primary-color);
+}
+
+.target-prompt p {
+    font-size: 18px;
+    margin-bottom: 20px;
+}
+
+.target-prompt button {
+    margin: 0 10px;
+}
+
+/* ===== 菜单面板 ===== */
+.menu-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+
+.menu-content {
+    background: var(--bg-card);
+    padding: 40px;
+    border-radius: 15px;
+    border: 2px solid var(--primary-color);
+    min-width: 300px;
+}
+
+.menu-content h2 {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.btn-menu {
+    width: 100%;
+    margin-bottom: 15px;
+    background: #444;
+    color: var(--text-light);
+}
+
+.btn-menu:hover {
+    background: #555;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+    .chat-area {
+        width: 100%;
+        bottom: 250px;
+        top: auto;
+        height: 200px;
+        border-left: none;
+        border-top: 2px solid var(--border-color);
+    }
+    
+    .chat-area.collapsed {
+        transform: translateY(200px);
+    }
+    
+    .opponents-grid {
+        justify-content: flex-start;
+    }
+    
+    .opponent-card {
+        min-width: 120px;
+    }
+    
+    .player-info {
+        flex-wrap: wrap;
+    }
+    
+    .player-equipment {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .game-header {
+        padding: 8px 10px;
+    }
+    
+    .game-info {
+        gap: 10px;
+        font-size: 12px;
+    }
+    
+    .opponents-area {
+        padding: 10px;
+    }
+    
+    .opponent-card {
+        min-width: 100px;
+        padding: 8px;
+    }
+    
+    .opponent-avatar {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .player-area {
+        padding: 8px 10px;
+    }
+    
+    .player-avatar {
+        width: 60px;
+        height: 60px;
+    }
+}

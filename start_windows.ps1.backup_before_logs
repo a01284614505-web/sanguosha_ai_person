@@ -1,0 +1,136 @@
+# AI三国杀酒馆 · Windows开发启动脚本
+# 用法：
+#   powershell -ExecutionPolicy Bypass -File start_windows.ps1            前台启动
+#   powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Background 后台启动
+#   powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action stop
+#   powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action status
+#
+# 注意：本脚本仅用于电脑端开发调试。手机Termux上请继续使用 start.sh。
+
+param(
+    [ValidateSet('start', 'stop', 'restart', 'status')]
+    [string]$Action = 'start',
+    [switch]$Background
+)
+
+$ErrorActionPreference = 'Stop'
+
+$ProjectDir = $PSScriptRoot
+$PythonExe = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+$LogFile = Join-Path $ProjectDir 'logs\server_windows.log'
+$PidFile = Join-Path $ProjectDir 'logs\game_server_windows.pid'
+
+function Find-ServerPid {
+    if (Test-Path $PidFile) {
+        $saved = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($saved) {
+            $proc = Get-Process -Id $saved -ErrorAction SilentlyContinue
+            if ($proc) { return [int]$saved }
+        }
+        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+    }
+    # 兜底：按命令行特征查找残留进程
+    $found = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+        Where-Object { $_.CommandLine -like '*game_server.py*' } |
+        Select-Object -First 1
+    if ($found) { return [int]$found.ProcessId }
+    return $null
+}
+
+function Show-Status {
+    $serverPid = Find-ServerPid
+    if ($serverPid) {
+        Write-Host "[OK] 服务器正在运行，PID=$serverPid"
+        Write-Host "     HTTP: http://localhost:8888"
+        Write-Host "     WS:   ws://localhost:8889"
+        return $true
+    }
+    Write-Host '[--] 服务器未运行'
+    return $false
+}
+
+function Stop-Server {
+    $serverPid = Find-ServerPid
+    if (-not $serverPid) {
+        Write-Host '[--] 服务器未运行'
+        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+        return
+    }
+    Write-Host "正在停止服务器 PID=$serverPid ..."
+    Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
+    foreach ($i in 1..5) {
+        if (-not (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Seconds 1
+    }
+    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+    Write-Host '[OK] 服务器已停止'
+}
+
+function Test-Dependencies {
+    if (-not (Test-Path $PythonExe)) {
+        Write-Host "[ERR] 未找到Python：$PythonExe"
+        exit 1
+    }
+    & $PythonExe -c 'import websockets, httpx' 2>$null
+    if (-not $?) {
+        Write-Host "[ERR] 缺少依赖，请运行：& '$PythonExe' -m pip install websockets httpx"
+        exit 1
+    }
+}
+
+function Start-Server {
+    $serverPid = Find-ServerPid
+    if ($serverPid) {
+        Write-Host "[!!] 服务器已经运行，PID=$serverPid"
+        Write-Host '如需重启：start_windows.ps1 -Action restart -Background'
+        return
+    }
+
+    Test-Dependencies
+    New-Item -ItemType Directory -Force (Join-Path $ProjectDir 'logs') | Out-Null
+
+    Write-Host '========================================'
+    Write-Host '   AI三国杀酒馆 · Windows开发服务器'
+    Write-Host '========================================'
+    Write-Host 'HTTP: http://localhost:8888'
+    Write-Host 'WS:   ws://localhost:8889'
+
+    Set-Location $ProjectDir
+    if ($Background) {
+        $proc = Start-Process -FilePath $PythonExe `
+            -ArgumentList '-u', 'game_server.py' `
+            -WorkingDirectory $ProjectDir `
+            -RedirectStandardOutput $LogFile `
+            -RedirectStandardError "$LogFile.err" `
+            -WindowStyle Hidden -PassThru
+        $proc.Id | Out-File $PidFile -Encoding utf8
+        Start-Sleep -Seconds 2
+        if (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue) {
+            Write-Host "[OK] 已后台启动，PID=$($proc.Id)"
+            Write-Host "日志：$LogFile"
+        } else {
+            Write-Host '[ERR] 启动失败，最近日志：'
+            Get-Content $LogFile -Tail 30 -ErrorAction SilentlyContinue
+            Get-Content "$LogFile.err" -Tail 30 -ErrorAction SilentlyContinue
+            Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+            exit 1
+        }
+    } else {
+        Write-Host '按 Ctrl+C 停止服务器'
+        & $PythonExe -u game_server.py
+    }
+}
+
+switch ($Action) {
+    'start' { Start-Server }
+    'stop' { Stop-Server }
+    'restart' {
+        Stop-Server
+        foreach ($i in 1..5) {
+            if (-not (Find-ServerPid)) { break }
+            Start-Sleep -Seconds 1
+        }
+        Start-Server
+    }
+    'status' { Show-Status | Out-Null }
+}

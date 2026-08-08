@@ -1,0 +1,8 @@
+noname-main/
+__pycache__/
+*.pyc
+logs/runtime/*.log
+logs/runtime/*.jsonl
+logs/*.pid
+data/deck_settings.json
+.aidev/

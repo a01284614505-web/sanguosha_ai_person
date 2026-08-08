@@ -1,0 +1,15 @@
+{
+  "stage": "shu",
+  "api_success": true,
+  "hero": "guanyu",
+  "selected_skill": "武圣",
+  "variant": "as_sha",
+  "target_ids": [
+    1
+  ],
+  "reasoning": "手牌桃可当杀，目标界曹操无手牌且距离内，优先消耗其体力。",
+  "worldbook_contains_runtime_status": true,
+  "engine_execution_success": true,
+  "target_hp_delta": -1,
+  "active_skill_count": 14
+}

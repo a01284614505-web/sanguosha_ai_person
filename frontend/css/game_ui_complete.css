@@ -1,0 +1,450 @@
+/* ===== 游戏内UI完整样式 - 武将卡片、技能、装备 ===== */
+
+/* 完整武将卡片 */
+.hero-card-complete {
+    width: 180px;
+    background: linear-gradient(135deg, rgba(42, 31, 26, 0.95), rgba(26, 20, 18, 0.95));
+    border: 3px solid var(--border-gold);
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    position: relative;
+    transition: all 0.3s;
+}
+
+.hero-card-complete:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(212, 175, 55, 0.4);
+}
+
+/* 顶部信息栏 */
+.hero-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.identity-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.identity-lord { background: linear-gradient(135deg, #d4af37, #b8962d); }
+.identity-loyalist { background: linear-gradient(135deg, #4169e1, #2c4a8f); }
+.identity-rebel { background: linear-gradient(135deg, #c41e3a, #8b1526); }
+.identity-spy { background: linear-gradient(135deg, #4a7c5e, #2d5940); }
+
+.faction-badge {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.faction-wei { background: var(--wei-blue); color: #fff; }
+.faction-shu { background: var(--shu-red); color: #fff; }
+.faction-wu { background: var(--wu-green); color: #fff; }
+.faction-qun { background: var(--qun-purple); color: #fff; }
+
+/* 武将头像 */
+.hero-avatar-container {
+    position: relative;
+    width: 100%;
+    height: 120px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid var(--border-gold);
+}
+
+.hero-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.hero-avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(196, 30, 58, 0.3), rgba(212, 175, 55, 0.3));
+    font-size: 32px;
+    font-weight: bold;
+    color: var(--text-gold);
+}
+
+/* 武将名字和星级 */
+.hero-name-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.hero-name-text {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--text-gold);
+}
+
+.hero-stars {
+    color: var(--gold);
+    font-size: 14px;
+}
+
+/* 体力显示 - 阴阳鱼版本 */
+.hero-hp-container {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.hp-yinyang {
+    width: 28px;
+    height: 28px;
+    position: relative;
+    border-radius: 50%;
+    border: 2px solid var(--gold);
+    background: 
+        radial-gradient(circle at 50% 25%, white 6px, transparent 6px),
+        radial-gradient(circle at 50% 75%, #c41e3a 6px, transparent 6px),
+        linear-gradient(90deg, white 50%, #c41e3a 50%);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.hp-yinyang.lost {
+    opacity: 0.3;
+    filter: grayscale(100%);
+}
+
+/* 体力显示 - 心形版本（备用） */
+.hp-heart {
+    font-size: 24px;
+    line-height: 1;
+}
+
+.hp-heart.full::before {
+    content: '❤️';
+}
+
+.hp-heart.lost::before {
+    content: '🖤';
+}
+
+/* 体力数字显示 */
+.hp-text {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-light);
+    margin-bottom: 8px;
+}
+
+.hp-current {
+    color: var(--shu-red);
+    font-weight: bold;
+    font-size: 16px;
+}
+
+/* 技能图标区 */
+.hero-skills-row {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.skill-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--bg-card), var(--bg-card-hover));
+    border: 2px solid var(--border-gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--text-gold);
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+}
+
+.skill-icon:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.6);
+}
+
+.skill-icon.lord-skill {
+    border-color: var(--gold);
+    box-shadow: 0 0 8px rgba(212, 175, 55, 0.4);
+}
+
+.skill-icon.active::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    background: var(--shu-red);
+    border-radius: 50%;
+    border: 1px solid white;
+}
+
+/* 技能说明浮层 */
+.skill-tooltip {
+    position: absolute;
+    z-index: 1000;
+    background: rgba(26, 20, 18, 0.98);
+    border: 2px solid var(--border-gold);
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 200px;
+    max-width: 300px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
+    display: none;
+}
+
+.skill-tooltip.show {
+    display: block;
+}
+
+.skill-tooltip-header {
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--text-gold);
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-gold);
+    padding-bottom: 4px;
+}
+
+.skill-tooltip-type {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.skill-tooltip-desc {
+    font-size: 13px;
+    color: var(--text-light);
+    line-height: 1.6;
+}
+
+/* 装备区 */
+.hero-equipment {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.equipment-slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    background: rgba(42, 31, 26, 0.5);
+    border-radius: 4px;
+    font-size: 12px;
+    min-height: 24px;
+}
+
+.equipment-icon {
+    font-size: 14px;
+}
+
+.equipment-name {
+    color: var(--text-light);
+    flex: 1;
+}
+
+.equipment-empty {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* 判定区 */
+.hero-judge-area {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 4px;
+    min-height: 28px;
+}
+
+.judge-card-mini {
+    width: 20px;
+    height: 28px;
+    border-radius: 2px;
+    background: linear-gradient(135deg, var(--bg-card), var(--bg-card-hover));
+    border: 1px solid var(--border-gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+/* 状态效果 */
+.hero-status {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    gap: 4px;
+}
+
+.status-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.status-chained {
+    border-color: #666;
+}
+
+.status-chained::before {
+    content: '⛓️';
+}
+
+.status-turned {
+    border-color: #888;
+}
+
+.status-turned::before {
+    content: '🔄';
+}
+
+.status-dying {
+    border-color: var(--shu-red);
+    animation: dying-pulse 1s infinite;
+}
+
+.status-dying::before {
+    content: '💀';
+}
+
+@keyframes dying-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+/* 卡牌完整样式 */
+.card-complete {
+    width: 70px;
+    height: 98px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #f5e6d3, #e5d6c3);
+    border: 2px solid var(--border-gold);
+    padding: 4px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.card-complete:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 8px 20px rgba(212, 175, 55, 0.5);
+}
+
+.card-complete.selected {
+    transform: translateY(-16px);
+    border-color: var(--shu-red);
+    box-shadow: 0 12px 28px rgba(196, 30, 58, 0.6);
+}
+
+.card-suit-rank {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.card-suit {
+    font-size: 14px;
+}
+
+.suit-spade, .suit-club {
+    color: #000;
+}
+
+.suit-heart, .suit-diamond {
+    color: #c41e3a;
+}
+
+.card-name-big {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 20px;
+    font-weight: bold;
+    color: #333;
+}
+
+.card-type-label {
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #666;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 3px;
+}
+
+/* 卡牌边框颜色 */
+.card-type-basic {
+    border-color: #4a7c5e;
+}
+
+.card-type-trick {
+    border-color: #4169e1;
+}
+
+.card-type-equipment {
+    border-color: #8b4789;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .hero-card-complete {
+        width: 140px;
+    }
+
+    .hero-avatar-container {
+        height: 90px;
+    }
+
+    .skill-icon {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+}

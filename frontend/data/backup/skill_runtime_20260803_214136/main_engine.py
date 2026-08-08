@@ -1,0 +1,522 @@
+#!/usr/bin/env python3
+"""主游戏引擎 v2：引擎生成合法操作，玩家或AI只能从中选择。"""
+
+import asyncio
+import random
+from typing import Any, Callable, Dict, List
+
+from state_manager import GameState, Player, Phase
+from event_bus import EventBus, EventType
+from phase_controller import PhaseController
+from skill_system import TriggerManager
+from card_system import CardSystem
+from rules_engine import RulesEngine
+from ai_decision import AIDecision
+from identity_system import IdentitySystem
+from chat_engine import ChatEngine
+
+
+class MainEngine:
+    """自驱动游戏引擎。服务器仅负责消息转发。"""
+
+    def __init__(self, game_config: Dict):
+        if not isinstance(game_config, dict):
+            raise TypeError("game_config必须是字典")
+
+        self.game_config = game_config
+        self.game_state = GameState()
+        self.game_state.init_game(game_config)
+
+        self.event_bus = EventBus()
+        self.trigger_manager = TriggerManager()
+        self.phase_controller = PhaseController(self.game_state, self.event_bus)
+        self.card_system = CardSystem(
+            self.game_state, self.event_bus, self.trigger_manager,
+            ui_notifier=self._notify_card_ui
+        )
+        self.rules = RulesEngine(self.game_state)
+        self.ai_decision = AIDecision(self)
+        self.identity_system = IdentitySystem()
+        self.chat_engine = ChatEngine(self.ai_decision.gateway)
+        self.trigger_manager.register_all_player_skills(self.game_state.players)
+
+        self.handlers: Dict[str, Callable] = {}
+        self._player_event = asyncio.Event()
+        self._player_input = None
+        self.game_log: List[Dict] = []
+        self.completed_turns = 0
+        self.max_turns = int(game_config.get("max_turns", 300))
+        self.human_action_timeout = int(game_config.get("human_action_timeout", 120))
+
+        print(f"\n{'=' * 60}")
+        print("  🎮 引擎v2初始化")
+        print(f"  模式: {game_config.get('mode', '5人身份局')}")
+        print(f"  玩家: {game_config.get('player_name', '玩家')}")
+        print(f"  AI数: {sum(1 for p in self.game_state.players if p.is_ai)}")
+        print(f"  牌堆: {len(self.game_state.deck)}张")
+        print(f"{'=' * 60}\n")
+
+    # ---------- 外部事件 ----------
+
+    def on(self, event_type: str, handler: Callable):
+        self.handlers[event_type] = handler
+
+    async def emit(self, event_type: str, **data):
+        handler = self.handlers.get(event_type)
+        if handler:
+            try:
+                await handler(**data)
+            except Exception as exc:
+                print(f"[事件异常] {event_type}: {exc}")
+
+    async def log_event(self, message: str, **data):
+        entry = {"message": message, **data}
+        self.game_log.append(entry)
+        await self.emit("event_notification", **entry)
+
+    async def _notify_card_ui(self, **data):
+        """卡牌系统统一通知前端，并等待浏览器确认动画完成。"""
+        entry = {"event_kind": "card_to_discard", **data}
+        self.game_log.append(entry)
+        await self.emit("card_animation", **entry)
+
+    async def _present_used_card(self, **data):
+        """展示使用牌；浏览器ACK后才进入卡牌效果和后续AI步骤。"""
+        entry = {"event_kind": "card_to_discard", **data}
+        self.game_log.append(entry)
+        await self.emit("card_animation", **entry)
+
+    async def _execute_phase_with_ui(self, phase: Phase):
+        """执行阶段，并为阶段产生的弃牌补发可解释的卡牌UI事件。"""
+        player = self.game_state.current_player
+        before_discard = len(self.game_state.discard_pile)
+        before_hand = list(player.hand)
+        self.phase_controller.execute_phase(phase)
+        if phase == Phase.DISCARD:
+            new_cards = self.game_state.discard_pile[before_discard:]
+            for offset, card in enumerate(new_cards, start=1):
+                original_index = before_hand.index(card) if card in before_hand else None
+                await self._notify_card_ui(
+                    actor_id=player.id,
+                    actor_name=player.name,
+                    source_name=player.name,
+                    card_name=card.name,
+                    card_index=original_index,
+                    system_text=f"[‘{player.name}’因手牌上限弃置‘{card.name}’]",
+                    card={
+                        "id": card.id, "name": card.name, "suit": card.suit,
+                        "rank": card.rank, "card_type": card.card_type,
+                    },
+                    reason="hand_limit",
+                    discard_count=before_discard + offset,
+                    message=f"{player.name}因手牌上限弃置【{card.name}】",
+                )
+
+    # ---------- 状态序列化 ----------
+
+    @staticmethod
+    def _hero_name(player: Player) -> str:
+        return player.hero.get("name", "") if isinstance(player.hero, dict) else getattr(player.hero, "name", "")
+
+    def serialize(self) -> Dict:
+        gs = self.game_state
+        players = []
+        for p in gs.players:
+            identity_visible = p.id == 0 or p.identity_revealed or gs.game_over
+            players.append(
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "hp": p.hp,
+                    "max_hp": p.max_hp,
+                    "hand_count": len(p.hand),
+                    "alive": p.alive,
+                    "hero_name": self._hero_name(p),
+                    "hero": {
+                        "id": p.hero.get("id", "") if isinstance(p.hero, dict) else "",
+                        "name": self._hero_name(p),
+                        "faction": p.hero.get("faction", "") if isinstance(p.hero, dict) else "",
+                        "max_hp": p.hero.get("max_hp", p.max_hp) if isinstance(p.hero, dict) else p.max_hp,
+                        "skills": p.hero.get("skills", []) if isinstance(p.hero, dict) else [],
+                        "worldbook": p.hero.get("worldbook", {}) if isinstance(p.hero, dict) else {},
+                    },
+                    "is_ai": p.is_ai,
+                    "ai_config": {
+                        "provider": p.ai_config.get("provider", "deepseek"),
+                        "model": p.ai_config.get("model", "deepseek-chat"),
+                        "api_url": p.ai_config.get("api_url", ""),
+                        "temperature": p.ai_config.get("temperature", 0.8),
+                        "thinking": bool(p.ai_config.get("thinking", False)),
+                    } if p.is_ai else None,
+                    "identity": p.identity if identity_visible else None,
+                    "identity_revealed": identity_visible,
+                    "equipment": {slot: card.name for slot, card in p.equipment.items()},
+                }
+            )
+        return {
+            "mode": gs.mode,
+            "round": gs.round_number,
+            "completed_turns": self.completed_turns,
+            "phase": gs.current_phase.value if gs.current_phase else "none",
+            "current_player_id": gs.current_player.id if gs.current_player else None,
+            "current_name": gs.current_player.name if gs.current_player else "",
+            "players": players,
+            "deck_count": len(gs.deck),
+            "discard_count": len(gs.discard_pile),
+            "game_over": gs.game_over,
+            "winner": gs.winner,
+        }
+
+    def get_player_hand(self, player: Player) -> List[Dict]:
+        return [
+            {
+                "index": i,
+                "id": c.id,
+                "name": c.name,
+                "suit": c.suit,
+                "rank": c.rank,
+                "card_type": c.card_type,
+                "target_rule": c.target_rule or {},
+            }
+            for i, c in enumerate(player.hand)
+        ]
+
+    # ---------- 主流程 ----------
+
+    async def run(self):
+        print("\n🎮 游戏开始！\n")
+        assigned = self.identity_system.assign_identities(
+            self.game_state.players,
+            self.game_state.mode,
+            self.game_config.get("identity_card") or {},
+        )
+        if not assigned:
+            raise ValueError(f"当前引擎暂不支持该模式或人数不匹配: {self.game_state.mode}/{len(self.game_state.players)}人")
+
+        lord = assigned["lord"]
+        lord.max_hp += 1
+        lord.hp += 1
+        self.game_state.current_player_index = self.game_state.players.index(lord)
+        self.game_state.current_player = lord
+        self.game_state.round_anchor_index = self.game_state.current_player_index
+
+        for p in self.game_state.players:
+            print(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
+
+        self.event_bus.trigger(EventType.GAME_START, players=self.game_state.players)
+        await self.emit("state_changed", state=self.serialize())
+
+        while not self.is_game_over():
+            if self.completed_turns >= self.max_turns:
+                self.game_state.game_over = True
+                self.game_state.winner = "draw"
+                await self.log_event(f"达到最大回合数{self.max_turns}，对局判和")
+                break
+
+            player = self.game_state.current_player
+            if not player.alive:
+                self.game_state.next_turn()
+                continue
+
+            if player.is_ai:
+                await self._ai_turn(player)
+            else:
+                await self._human_turn(player)
+
+            self.completed_turns += 1
+            victory = self.identity_system.check_victory(self.game_state.players)
+            if victory.get("game_over"):
+                self.game_state.game_over = True
+                self.game_state.winner = victory.get("winner")
+                await self.log_event(victory.get("message", "游戏结束"), important=True)
+                break
+
+            self.game_state.next_turn()
+            await asyncio.sleep(float(self.game_config.get("turn_delay", 0.05)))
+
+        await self.emit("state_changed", state=self.serialize())
+        message = getattr(self.game_state, "end_message", None) or (
+            "平局" if self.game_state.winner == "draw" else f"{self.game_state.winner}方获胜！"
+        )
+        await self.emit(
+            "game_end", winner=self.game_state.winner, message=message,
+            state=self.serialize()
+        )
+        print(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
+        return self.game_state.winner
+
+    # ---------- 玩家回合 ----------
+
+    async def _ai_turn(self, player: Player):
+        print(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
+        await self.emit("ai_action", player_name=player.name, action="turn_start")
+        await self._run_phases(player)
+
+        if random.random() < 0.3:
+            msg = await self.chat_engine.trigger_event_chat(
+                "turn_start", player, {"round": self.game_state.round_number}
+            )
+            if msg:
+                await self.emit("chat", from_=player.name, message=msg)
+        await self.emit("state_changed", state=self.serialize())
+
+    async def _human_turn(self, player: Player):
+        print(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
+        await self.emit("state_changed", state=self.serialize())
+
+        for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
+            self.game_state.current_phase = phase
+            await self._execute_phase_with_ui(phase)
+            await self.emit("state_changed", state=self.serialize())
+
+        self.game_state.current_phase = Phase.PLAY
+        player.sha_count = 0
+        await self.emit("state_changed", state=self.serialize())
+
+        while player.alive:
+            actions = self.get_available_actions(player)
+            # 必须先创建等待器再广播，避免WebSocket客户端立即响应造成丢操作。
+            self._player_event = asyncio.Event()
+            self._player_input = None
+            await self.emit(
+                "your_turn",
+                player_name=player.name,
+                hand=self.get_player_hand(player),
+                actions=[dict(action) for action in actions],
+            )
+            data = await self._wait_player_input()
+            action = data["action"]
+            target_ids = data["target_ids"]
+            if action.get("type") == "end_phase":
+                break
+
+            ok = await self.execute_action(player, action, target_ids)
+            await self.emit("action_result", success=ok)
+            await self.emit("state_changed", state=self.serialize())
+
+        for phase in [Phase.DISCARD, Phase.END]:
+            self.game_state.current_phase = phase
+            await self._execute_phase_with_ui(phase)
+            await self.emit("state_changed", state=self.serialize())
+
+    async def _run_phases(self, player: Player):
+        for phase in Phase:
+            if self.game_state.game_over:
+                break
+            self.game_state.current_phase = phase
+            print(f"\n[{phase.value}阶段]")
+            if phase == Phase.PLAY:
+                player.sha_count = 0
+                await self._auto_play_phase(player)
+            else:
+                await self._execute_phase_with_ui(phase)
+            if not player.alive:
+                break
+            await asyncio.sleep(float(self.game_config.get("phase_delay", 0.01)))
+        self.event_bus.trigger(EventType.ROUND_END, player=player)
+
+    async def _auto_play_phase(self, player: Player):
+        print(f"  {player.name}的出牌阶段")
+        for _ in range(20):
+            if self.game_state.game_over:
+                break
+            actions = self.get_available_actions(player)
+            if len(actions) <= 1:
+                break
+
+            await self.emit("ai_action", player_name=player.name, action="thinking_start")
+            decision = await self.ai_decision.make_decision(player, actions)
+            await self.emit(
+                "ai_action", player_name=player.name, action="thinking_end",
+                reasoning=decision.get("reasoning", "")
+            )
+            action = decision.get("action") or {"type": "end_phase"}
+            target_ids = decision.get("target_ids", [])
+
+            if decision.get("chat"):
+                await self.emit("chat", from_=player.name, message=decision["chat"])
+            if action.get("type") == "end_phase":
+                break
+
+            if action.get("type") == "play_card":
+                index = action.get("card_index")
+                if isinstance(index, int) and 0 <= index < len(player.hand):
+                    await self.emit(
+                        "ai_action",
+                        player_name=player.name,
+                        action="use_card",
+                        card_name=player.hand[index].name,
+                    )
+
+            ok = await self.execute_action(player, action, target_ids)
+            if not ok:
+                print("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
+                break
+            await self.emit("state_changed", state=self.serialize())
+
+    # ---------- 玩家输入 ----------
+
+    async def _wait_player_input(self) -> Dict:
+        try:
+            await asyncio.wait_for(self._player_event.wait(), timeout=self.human_action_timeout)
+        except asyncio.TimeoutError:
+            return {"action": {"type": "end_phase"}, "target_ids": []}
+        return self._player_input or {"action": {"type": "end_phase"}, "target_ids": []}
+
+    def submit_action(self, action: Dict, target_ids: List[int]):
+        if not isinstance(action, dict):
+            return
+        self._player_input = {"action": action, "target_ids": target_ids or action.get("target_ids", []) or []}
+        if self._player_event and not self._player_event.is_set():
+            self._player_event.set()
+
+    # ---------- 合法操作 ----------
+
+    def _public_actions(self, player: Player) -> List[Dict]:
+        return [dict(action) for action in self.get_available_actions(player)]
+
+    def get_available_actions(self, player: Player) -> List[Dict]:
+        actions: List[Dict] = []
+        if self.game_state.current_phase != Phase.PLAY or player != self.game_state.current_player or not player.alive:
+            return [{"type": "end_phase"}]
+
+        for i, card in enumerate(player.hand):
+            if card.name in ("闪", "无懈可击"):
+                continue
+
+            target_names = ("杀", "过河拆桥", "顺手牵羊")
+            if card.name in target_names:
+                valid = []
+                for target in self.game_state.players:
+                    if target.alive and target != player:
+                        can_play, _ = self.rules.can_play_card(player, card, [target])
+                        if can_play:
+                            valid.append(target.id)
+                if valid:
+                    actions.append(
+                        {
+                            "type": "play_card",
+                            "card_index": i,
+                            "card": {
+                                "name": card.name,
+                                "suit": card.suit,
+                                "rank": card.rank,
+                                "card_type": card.card_type,
+                            },
+                            "requires_target": True,
+                            "valid_targets": valid,
+                        }
+                    )
+                continue
+
+            can_play, _ = self.rules.can_play_card(player, card, [])
+            if can_play:
+                actions.append(
+                    {
+                        "type": "play_card",
+                        "card_index": i,
+                        "card": {
+                            "name": card.name,
+                            "suit": card.suit,
+                            "rank": card.rank,
+                            "card_type": card.card_type,
+                        },
+                        "requires_target": False,
+                        "valid_targets": [],
+                    }
+                )
+
+        # 技能操作会在技能底座接线后加入；P0不向玩家暴露尚未实现的伪操作。
+        actions.append({"type": "end_phase"})
+        return actions
+
+    # ---------- 执行操作 ----------
+
+    async def execute_action(self, player: Player, action: Dict, target_ids: List = None) -> bool:
+        if player != self.game_state.current_player or not player.alive:
+            return False
+        action_type = action.get("type")
+        try:
+            if action_type == "play_card":
+                card_index = action.get("card_index")
+                if not isinstance(card_index, int) or not 0 <= card_index < len(player.hand):
+                    return False
+                card = player.hand[card_index]
+                target_ids = target_ids or []
+                targets = [p for p in self.game_state.players if p.id in target_ids]
+                can_play, reason = self.rules.can_play_card(player, card, targets)
+                if not can_play:
+                    print(f"  ❌ 不能出牌: {reason}")
+                    return False
+
+                # 先广播“使用牌”，使客户端按正确顺序展示：使用牌 → 响应牌 → 弃牌堆。
+                await self._present_used_card(
+                    message=f"{player.name}使用【{card.name}】"
+                    + (f"，目标：{'、'.join(t.name for t in targets)}" if targets else ""),
+                    system_text=f"[‘{player.name}’{card.name}！]",
+                    actor_id=player.id,
+                    actor_name=player.name,
+                    source_name=player.name,
+                    target_name="、".join(t.name for t in targets),
+                    card_name=card.name,
+                    card_index=card_index,
+                    card={
+                        "id": card.id, "name": card.name, "suit": card.suit,
+                        "rank": card.rank, "card_type": card.card_type,
+                    },
+                    reason="use",
+                    discard_count=len(self.game_state.discard_pile) + 1,
+                )
+                player.hand.remove(card)
+                self.game_state.discard_pile.append(card)
+                success = await self.card_system.use_card(player, card, targets)
+                if not success:
+                    if card in self.game_state.discard_pile:
+                        self.game_state.discard_pile.remove(card)
+                    player.hand.insert(min(card_index, len(player.hand)), card)
+                return success
+
+            if action_type == "end_phase":
+                return True
+            return False
+        except Exception as exc:
+            print(f"  ❌ 执行出错: {exc}")
+            import traceback
+
+            traceback.print_exc()
+            return False
+
+    def request_end_game(self, reason: str = "玩家主动结束游戏"):
+        self.game_state.game_over = True
+        self.game_state.winner = "aborted"
+        self.game_state.end_message = reason
+        self.submit_action({"type": "end_phase"}, [])
+
+    def update_ai_config(self, player_id: int, config: Dict) -> Dict:
+        player = next((p for p in self.game_state.players if p.id == player_id), None)
+        if not player or not player.is_ai:
+            raise ValueError("目标不是可配置的AI角色")
+        allowed = {"provider", "model", "api_url", "temperature", "thinking"}
+        for key in allowed:
+            if key in config:
+                player.ai_config[key] = config[key]
+        if config.get("api_key"):
+            player.ai_config["api_key"] = config["api_key"]
+        try:
+            player.ai_config["temperature"] = max(0.0, min(2.0, float(player.ai_config.get("temperature", 0.8))))
+        except (TypeError, ValueError):
+            player.ai_config["temperature"] = 0.8
+        return {
+            "player_id": player.id,
+            "provider": player.ai_config.get("provider", "deepseek"),
+            "model": player.ai_config.get("model", "deepseek-chat"),
+            "api_url": player.ai_config.get("api_url", ""),
+            "temperature": player.ai_config.get("temperature", 0.8),
+            "thinking": bool(player.ai_config.get("thinking", False)),
+        }
+
+    def is_game_over(self) -> bool:
+        return self.game_state.game_over or len([p for p in self.game_state.players if p.alive]) <= 1
+
+
+__all__ = ["MainEngine"]

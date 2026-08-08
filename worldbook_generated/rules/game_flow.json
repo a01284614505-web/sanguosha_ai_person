@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "title": "三国杀回合流程规则",
+    "source": "公开规则 + 无名杀逻辑分析",
+    "version": "1.0"
+  },
+  "phases": [
+    {
+      "id": "prepare",
+      "name": "准备阶段",
+      "order": 1,
+      "description": "回合开始，部分武将技能在此阶段触发",
+      "can_skip": false,
+      "trigger_timing": "phase_begin",
+      "actions": [
+        "翻面的角色正面朝上",
+        "横置的角色重置武将牌",
+        "触发准备阶段技能"
+      ],
+      "ai_considerations": "留意对手是否有准备阶段强力技能（如观星、制衡）"
+    },
+    {
+      "id": "judge",
+      "name": "判定阶段",
+      "order": 2,
+      "description": "结算判定区的延时锦囊（从左到右依次判定）",
+      "can_skip": false,
+      "trigger_timing": "phase_begin",
+      "actions": [
+        "从判定区最左侧延时锦囊开始",
+        "翻开牌堆顶一张牌作为判定牌",
+        "根据判定结果执行效果",
+        "将判定牌置入弃牌堆",
+        "继续判定下一张"
+      ],
+      "delay_cards": ["乐不思蜀", "兵粮寸断", "闪电"],
+      "judge_process": {
+        "step1": "翻出判定牌",
+        "step2": "改判技能可发动（如鬼才）",
+        "step3": "判定生效",
+        "step4": "延时锦囊进入弃牌堆"
+      },
+      "ai_considerations": "计算判定成功率，决定是否改判"
+    },
+    {
+      "id": "draw",
+      "name": "摸牌阶段",
+      "order": 3,
+      "description": "从牌堆顶摸2张牌",
+      "can_skip": true,
+      "skip_conditions": ["被乐不思蜀命中", "被兵粮寸断命中"],
+      "trigger_timing": "phase_begin",
+      "default_draw": 2,
+      "actions": [
+        "从牌堆顶摸2张牌",
+        "部分技能可改变摸牌数（如英姿、奇才）",
+        "摸牌后技能触发"
+      ],
+      "ai_considerations": "摸牌是主要获取资源的途径"
+    },
+    {
+      "id": "play",
+      "name": "出牌阶段",
+      "order": 4,
+      "description": "可以使用任意张手牌",
+      "can_skip": false,
+      "trigger_timing": "phase_begin",
+      "actions": [
+        "使用手牌",
+        "发动主动技能",
+        "装备装备牌",
+        "每回合限使用1张【杀】（除非技能突破）",
+        "可主动结束出牌阶段"
+      ],
+      "restrictions": {
+        "sha_limit": 1,
+        "sha_limit_bypass_skills": ["咆哮", "无双"],
+        "distance_required": true,
+        "target_required": true
+      },
+      "ai_considerations": "核心决策阶段，需权衡手牌价值、距离、目标威胁度"
+    },
+    {
+      "id": "discard",
+      "name": "弃牌阶段",
+      "order": 5,
+      "description": "手牌数超过体力值时需要弃牌",
+      "can_skip": false,
+      "trigger_timing": "phase_begin",
+      "actions": [
+        "检查手牌数是否超过当前体力值",
+        "超过则弃牌至体力值",
+        "弃牌后技能可触发（如奸雄）"
+      ],
+      "hand_limit": "current_hp",
+      "hand_limit_bypass_skills": ["忍戒", "罡气"],
+      "ai_considerations": "提前计算弃牌，留强牌弃弱牌"
+    },
+    {
+      "id": "end",
+      "name": "结束阶段",
+      "order": 6,
+      "description": "回合结束，部分技能在此触发",
+      "can_skip": false,
+      "trigger_timing": "phase_end",
+      "actions": [
+        "触发结束阶段技能",
+        "回合结束标记清除",
+        "进入下一位玩家的回合"
+      ],
+      "ai_considerations": "结束阶段技能（如神速）需提前规划"
+    }
+  ],
+  "phase_transition": {
+    "normal_flow": "prepare → judge → draw → play → discard → end → next_player",
+    "skip_cases": {
+      "le_bu_si_shu": "跳过出牌阶段",
+      "bing_liang_cun_duan": "跳过摸牌阶段",
+      "turned_over": "回合开始时翻面，跳过本回合"
+    }
+  },
+  "special_mechanics": {
+    "dying": {
+      "trigger": "体力降至0或更低",
+      "process": "进入濒死状态 → 所有角色依次可使用【桃】 → 未救活则死亡",
+      "priority": "由濒死角色开始，按顺时针顺序"
+    },
+    "damage": {
+      "source_tracking": "记录伤害来源，用于技能触发",
+      "damage_types": ["普通伤害", "火焰伤害", "雷电伤害", "失去体力（非伤害）"],
+      "prevention": "部分技能可防止伤害（如空城、仁王盾）"
+    },
+    "distance": {
+      "calculation": "min(顺时针距离, 逆时针距离)",
+      "modifiers": ["+1马增加别人到自己的距离", "-1马减少自己到别人的距离", "武器提供攻击范围"]
+    }
+  },
+  "worldbook_usage": {
+    "ai_prompt_injection": "当AI需要做决策时，注入当前阶段的规则和可选操作",
+    "example": "【当前：出牌阶段】你可以：1.使用手牌 2.发动技能 3.结束出牌阶段。本回合已出杀0次（限1次）。"
+  }
+}

@@ -1,0 +1,245 @@
+{
+  "meta": {
+    "title": "三国杀装备牌数据",
+    "source": "维基百科 + BWIKI完整表",
+    "total_count": 25,
+    "note": "装备牌分为：武器(9)、防具(3)、+1马(3)、-1马(3)、宝物(7)"
+  },
+  "cards": [
+    {
+      "id": "zhugeliannu_diamond_1",
+      "name": "诸葛连弩",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "diamond",
+      "rank": 1,
+      "range": 1,
+      "effect": "你可以在出牌阶段使用任意数量的【杀】",
+      "worldbook": "【诸葛连弩】武器，攻击范围1。特效：无限杀！配合关羽武圣、张飞咆哮威力巨大。"
+    },
+    {
+      "id": "zhugeliannu_club_1",
+      "name": "诸葛连弩",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "club",
+      "rank": 1,
+      "range": 1,
+      "effect": "你可以在出牌阶段使用任意数量的【杀】",
+      "worldbook": "【诸葛连弩】武器，攻击范围1。特效：无限杀！配合关羽武圣、张飞咆哮威力巨大。"
+    },
+    {
+      "id": "qinglongyanyuedao_spade_5",
+      "name": "青龙偃月刀",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "spade",
+      "rank": 5,
+      "range": 3,
+      "effect": "当你使用的【杀】被【闪】抵消时，你可以对同一目标再使用一张【杀】",
+      "worldbook": "【青龙偃月刀】武器，攻击范围3。特效：杀被闪后可以再出一张杀。持续压制能力强。"
+    },
+    {
+      "id": "guanshifu_diamond_5",
+      "name": "贯石斧",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "diamond",
+      "rank": 5,
+      "range": 3,
+      "effect": "当你使用的【杀】被【闪】抵消时，你可以弃置两张牌，然后此【杀】依然造成伤害",
+      "worldbook": "【贯石斧】武器，攻击范围3。特效：弃2牌强制伤害。适合手牌多的武将。"
+    },
+    {
+      "id": "zhangbashemao_spade_12",
+      "name": "丈八蛇矛",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "spade",
+      "rank": 12,
+      "range": 3,
+      "effect": "你可以将两张手牌当【杀】使用或打出",
+      "worldbook": "【丈八蛇矛】武器，攻击范围3。特效：2张牌当杀。手牌多时威力大。"
+    },
+    {
+      "id": "fangtianhuaji_diamond_12",
+      "name": "方天画戟",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "diamond",
+      "rank": 12,
+      "range": 4,
+      "effect": "当你使用的【杀】是你最后一张手牌时，你可以指定最多三名角色为目标",
+      "worldbook": "【方天画戟】武器，攻击范围4。特效：最后一张手牌杀可以打3人。空城吕布神器。"
+    },
+    {
+      "id": "qilingong_heart_5",
+      "name": "麒麟弓",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "heart",
+      "rank": 5,
+      "range": 5,
+      "effect": "当你使用【杀】对目标角色造成伤害时，你可以弃置其装备区的一匹马",
+      "worldbook": "【麒麟弓】武器，攻击范围5。特效：伤害后拆马。破防神器。"
+    },
+    {
+      "id": "cixiongshuanggujian_spade_2",
+      "name": "雌雄双股剑",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "spade",
+      "rank": 2,
+      "range": 2,
+      "effect": "当你使用【杀】指定异性角色为目标后，你可以令其选择一项：弃置一张手牌，或令你摸一张牌",
+      "worldbook": "【雌雄双股剑】武器，攻击范围2。特效：打异性摸牌或拆牌。"
+    },
+    {
+      "id": "hanbingjian_spade_2",
+      "name": "寒冰剑",
+      "type": "equipment",
+      "sub_type": "weapon",
+      "suit": "spade",
+      "rank": 2,
+      "range": 2,
+      "effect": "当你使用【杀】对目标角色造成伤害时，若其有牌，你可以防止此伤害，然后弃置其两张牌",
+      "worldbook": "【寒冰剑】武器，攻击范围2。特效：不伤害改拆2牌。控场神器。"
+    },
+    {
+      "id": "baguazhen_spade_2",
+      "name": "八卦阵",
+      "type": "equipment",
+      "sub_type": "armor",
+      "suit": "spade",
+      "rank": 2,
+      "range": 0,
+      "effect": "当你需要使用或打出【闪】时，你可以进行判定，若结果为红色，视为你使用或打出一张【闪】",
+      "worldbook": "【八卦阵】防具。特效：50%概率自动闪。诸葛亮、司马懿等判定流武将神器。"
+    },
+    {
+      "id": "renwangdun_club_2",
+      "name": "仁王盾",
+      "type": "equipment",
+      "sub_type": "armor",
+      "suit": "club",
+      "rank": 2,
+      "range": 0,
+      "effect": "锁定技，黑色的【杀】对你无效",
+      "worldbook": "【仁王盾】防具。特效：免疫黑杀。对抗黑色杀流武将（如界华雄）。"
+    },
+    {
+      "id": "tengjia_club_2",
+      "name": "藤甲",
+      "type": "equipment",
+      "sub_type": "armor",
+      "suit": "club",
+      "rank": 2,
+      "range": 0,
+      "effect": "锁定技，【南蛮入侵】、【万箭齐发】和普通【杀】对你无效。当你受到火焰伤害时，此伤害+1",
+      "worldbook": "【藤甲】防具。特效：免疫南蛮/万箭/普通杀，但火伤+1。高风险高收益。"
+    },
+    {
+      "id": "jia1ma_spade_5",
+      "name": "+1马",
+      "type": "equipment",
+      "sub_type": "+1_horse",
+      "suit": "spade",
+      "rank": 5,
+      "horse_name": "绝影",
+      "range": 0,
+      "effect": "锁定技，其他角色计算与你的距离+1",
+      "worldbook": "【+1马】增加别人到你的距离。防御装备，减少被攻击概率。"
+    },
+    {
+      "id": "jia1ma_club_5",
+      "name": "+1马",
+      "type": "equipment",
+      "sub_type": "+1_horse",
+      "suit": "club",
+      "rank": 5,
+      "horse_name": "的卢",
+      "range": 0,
+      "effect": "锁定技，其他角色计算与你的距离+1",
+      "worldbook": "【+1马】增加别人到你的距离。防御装备，减少被攻击概率。"
+    },
+    {
+      "id": "jia1ma_heart_13",
+      "name": "+1马",
+      "type": "equipment",
+      "sub_type": "+1_horse",
+      "suit": "heart",
+      "rank": 13,
+      "horse_name": "爪黄飞电",
+      "range": 0,
+      "effect": "锁定技，其他角色计算与你的距离+1",
+      "worldbook": "【+1马】增加别人到你的距离。防御装备，减少被攻击概率。"
+    },
+    {
+      "id": "jian1ma_heart_5",
+      "name": "-1马",
+      "type": "equipment",
+      "sub_type": "-1_horse",
+      "suit": "heart",
+      "rank": 5,
+      "horse_name": "赤兔",
+      "range": 0,
+      "effect": "锁定技，你计算与其他角色的距离-1",
+      "worldbook": "【-1马】减少你到别人的距离。进攻装备，扩大攻击范围。"
+    },
+    {
+      "id": "jian1ma_diamond_13",
+      "name": "-1马",
+      "type": "equipment",
+      "sub_type": "-1_horse",
+      "suit": "diamond",
+      "rank": 13,
+      "horse_name": "大宛",
+      "range": 0,
+      "effect": "锁定技，你计算与其他角色的距离-1",
+      "worldbook": "【-1马】减少你到别人的距离。进攻装备，扩大攻击范围。"
+    },
+    {
+      "id": "jian1ma_spade_13",
+      "name": "-1马",
+      "type": "equipment",
+      "sub_type": "-1_horse",
+      "suit": "spade",
+      "rank": 13,
+      "horse_name": "紫骍",
+      "range": 0,
+      "effect": "锁定技，你计算与其他角色的距离-1",
+      "worldbook": "【-1马】减少你到别人的距离。进攻装备，扩大攻击范围。"
+    }
+  ],
+  "usage_notes": {
+    "weapon": {
+      "description": "武器提供攻击范围，同时具有特殊效果",
+      "range_explanation": "攻击范围替代基础距离1，例如青龙刀范围3，可以攻击距离3以内的角色",
+      "stacking": "只能装备一把武器，新武器会替换旧武器"
+    },
+    "armor": {
+      "description": "防具提供防御效果",
+      "八卦阵": "需要判定，50%闪避",
+      "仁王盾": "完全免疫黑杀",
+      "藤甲": "免疫AOE和普通杀，但火伤+1",
+      "stacking": "只能装备一个防具"
+    },
+    "horse": {
+      "+1马": "防御马，增加别人到你的距离",
+      "-1马": "进攻马，减少你到别人的距离",
+      "example": "装备+1马和-1马，你到别人距离-1，别人到你距离+1",
+      "stacking": "+1马和-1马可以同时装备"
+    }
+  },
+  "distance_calculation": {
+    "base": "座位距离（顺时针/逆时针最短）",
+    "weapon_range": "武器提供的攻击范围（替代基础距离1）",
+    "horse_modifier": "+1马/-1马的修正",
+    "example": "A到B座位距离3，A有武器范围4，A有-1马，B有+1马 → 实际距离 = 3 - 1(A的-1马) + 1(B的+1马) = 3，在武器范围内可以攻击"
+  },
+  "ai_decision_guide": {
+    "weapon_choice": "输出武将优先诸葛连弩/青龙刀，距离远的优先麒麟弓/方天画戟",
+    "armor_choice": "判定流武将优先八卦阵，对抗黑杀流优先仁王盾，AOE多时慎用藤甲",
+    "horse_strategy": "残血时装+1马防守，高血时装-1马进攻，双马最稳定"
+  }
+}

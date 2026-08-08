@@ -1,0 +1,191 @@
+╔══════════════════════════════════════════════════════════════╗
+║        🔍 无名杀核心逻辑分析 - 学习笔记                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+## 📊 发现的关键架构
+
+### 1. 技能系统结构
+从 character/standard/skill.js 看到：
+
+```javascript
+// 标准技能格式
+stdxiaoguo: {
+    audio: "xiaoguo",                    // 音效
+    trigger: { global: "phaseJieshuBegin" }, // 触发时机
+    filter(event, player) {              // 触发条件
+        return event.player.isIn() && ...;
+    },
+    async cost(event, trigger, player) { // 发动成本
+        // 选择弃牌等
+    },
+    async content(event, trigger, player) { // 技能效果
+        await player.draw();
+    }
+}
+```
+
+**关键发现：**
+- ✅ 技能使用 async/await
+- ✅ trigger 定义触发时机
+- ✅ filter 判断是否可触发
+- ✅ cost 询问是否发动
+- ✅ content 执行效果
+
+### 2. 触发时机类型
+```javascript
+// 阶段触发
+trigger: { player: "phaseJieshuBegin" }  // 结束阶段开始时
+trigger: { global: "phaseJieshuBegin" }  // 任何人结束阶段
+
+// 常见阶段：
+- phaseDrawBegin/phaseDrawEnd    // 摸牌阶段
+- phaseUseBegin/phaseUseEnd      // 出牌阶段
+- phaseDiscardBegin/phaseDiscardEnd // 弃牌阶段
+- phaseJieshuBegin               // 结束阶段
+```
+
+### 3. 事件系统
+```javascript
+// Game类的事件历史
+history: {
+    useCard: [],   // 使用卡牌历史
+    respond: [],   // 响应历史
+    // ...
+}
+
+// 玩家历史查询
+player.hasHistory("sourceDamage", evt => {
+    // 检查是否造成过伤害
+})
+```
+
+---
+
+## 🎯 需要实现的Python版本
+
+### 基于无名杀的架构改进
+
+#### 1. 技能系统增强
+```python
+class Skill:
+    def __init__(self, name, trigger, filter_func, cost_func, content_func):
+        self.name = name
+        self.trigger = trigger      # 触发时机字典
+        self.filter = filter_func   # 条件判断
+        self.cost = cost_func       # 成本（询问是否发动）
+        self.content = content_func # 效果执行
+    
+    async def can_trigger(self, event, player):
+        """检查是否可以触发"""
+        if not self.filter:
+            return True
+        return await self.filter(event, player)
+    
+    async def execute(self, event, trigger, player):
+        """执行技能"""
+        # 1. 询问成本
+        if self.cost:
+            result = await self.cost(event, trigger, player)
+            if not result:
+                return False
+        
+        # 2. 执行效果
+        if self.content:
+            await self.content(event, trigger, player)
+        
+        return True
+```
+
+#### 2. 事件触发系统
+```python
+class EventTrigger:
+    def __init__(self):
+        self.triggers = {}  # {event_name: [skills]}
+    
+    def register_skill(self, event_name, skill):
+        """注册技能到事件"""
+        if event_name not in self.triggers:
+            self.triggers[event_name] = []
+        self.triggers[event_name].append(skill)
+    
+    async def trigger_event(self, event_name, event_data, player):
+        """触发事件，执行所有监听的技能"""
+        if event_name not in self.triggers:
+            return
+        
+        for skill in self.triggers[event_name]:
+            if await skill.can_trigger(event_data, player):
+                await skill.execute(event_data, event_data, player)
+```
+
+#### 3. 卡牌使用流程
+```python
+async def use_card(self, player, card, targets):
+    """使用卡牌的完整流程"""
+    # 1. 创建使用卡牌事件
+    event = {
+        'name': 'useCard',
+        'player': player,
+        'card': card,
+        'targets': targets
+    }
+    
+    # 2. 触发"使用前"事件
+    await self.trigger_event('useCardBefore', event, player)
+    
+    # 3. 执行卡牌效果
+    if card.name == '杀':
+        await self.use_sha(player, targets[0])
+    elif card.name == '桃':
+        await player.recover(1)
+    
+    # 4. 触发"使用后"事件
+    await self.trigger_event('useCardAfter', event, player)
+    
+    # 5. 记录历史
+    player.history['useCard'].append(event)
+```
+
+---
+
+## 📝 下一步行动
+
+### 立即实现的模块
+
+#### 1. 改进EventBus（30分钟）
+增加：
+- 触发时机枚举
+- 事件数据结构
+- 历史记录
+
+#### 2. 实现SkillSystem（1小时）
+包含：
+- Skill类（完整的trigger/filter/cost/content）
+- 技能注册
+- 技能触发
+
+#### 3. 完善CardSystem（1小时）
+实现：
+- 完整的use_card流程
+- 响应机制（闪、无懈）
+- 目标选择
+- 距离判断
+
+#### 4. 实现AI接口（30分钟）
+对接：
+- AI决策点
+- 卡牌选择
+- 目标选择
+- 技能使用
+
+---
+
+## 🔧 继续分析
+
+现在需要查看：
+1. ✅ 技能结构（已理解）
+2. ⏳ 卡牌定义格式
+3. ⏳ 出牌流程代码
+4. ⏳ AI决策接口
+
+正在继续分析...

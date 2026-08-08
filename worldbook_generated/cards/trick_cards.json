@@ -1,0 +1,458 @@
+{
+  "meta": {
+    "title": "三国杀锦囊牌数据",
+    "source": "维基百科 + BWIKI完整牌表",
+    "total_count": 30,
+    "note": "锦囊牌分为：非延时锦囊、延时锦囊"
+  },
+  "cards": [
+    {
+      "id": "guohechaiqiao_spade_3",
+      "name": "过河拆桥",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 3,
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": null},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【过河拆桥】指定一名其他角色，弃置其手牌、装备或判定区的一张牌（你选择）。强力拆牌手段。"
+    },
+    {
+      "id": "guohechaiqiao_spade_4",
+      "name": "过河拆桥",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 4,
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": null},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "guohechaiqiao_spade_12",
+      "name": "过河拆桥",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 12,
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": null},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "guohechaiqiao_club_3",
+      "name": "过河拆桥",
+      "type": "trick",
+      "suit": "club",
+      "rank": 3,
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": null},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "guohechaiqiao_club_4",
+      "name": "过河拆桥",
+      "type": "trick",
+      "suit": "club",
+      "rank": 4,
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": null},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "guohechaiqiao_heart_12",
+      "name": "过河拆桥",
+      "type": "trick",
+      "suit": "heart",
+      "rank": 12,
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": null},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "shunshouzianyang_spade_3",
+      "name": "顺手牵羊",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 3,
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【顺手牵羊】获得距离1以内角色的一张牌（你选择）。注意距离限制！"
+    },
+    {
+      "id": "shunshouzianyang_spade_4",
+      "name": "顺手牵羊",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 4,
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "shunshouzianyang_spade_11",
+      "name": "顺手牵羊",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 11,
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "shunshouzianyang_diamond_3",
+      "name": "顺手牵羊",
+      "type": "trick",
+      "suit": "diamond",
+      "rank": 3,
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "shunshouzianyang_diamond_4",
+      "name": "顺手牵羊",
+      "type": "trick",
+      "suit": "diamond",
+      "rank": 4,
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "wuzhongshengyou_heart_7",
+      "name": "无中生有",
+      "type": "trick",
+      "suit": "heart",
+      "rank": 7,
+      "effect": "摸两张牌",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【无中生有】自己摸2张牌，补充手牌。"
+    },
+    {
+      "id": "wuzhongshengyou_heart_8",
+      "name": "无中生有",
+      "type": "trick",
+      "suit": "heart",
+      "rank": 8,
+      "effect": "摸两张牌",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "wuzhongshengyou_heart_9",
+      "name": "无中生有",
+      "type": "trick",
+      "suit": "heart",
+      "rank": 9,
+      "effect": "摸两张牌",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "wuzhongshengyou_heart_11",
+      "name": "无中生有",
+      "type": "trick",
+      "suit": "heart",
+      "rank": 11,
+      "effect": "摸两张牌",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "jiedaosharen_club_12",
+      "name": "借刀杀人",
+      "type": "trick",
+      "suit": "club",
+      "rank": 12,
+      "effect": "指定有武器的角色对另一角色使用一张杀",
+      "target_rule": {"min": 2, "max": 2, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【借刀杀人】指定一名有武器的角色A和另一名角色B，A对B使用一张杀，否则你获得A的武器。"
+    },
+    {
+      "id": "jiedaosharen_club_13",
+      "name": "借刀杀人",
+      "type": "trick",
+      "suit": "club",
+      "rank": 13,
+      "effect": "指定有武器的角色对另一角色使用一张杀",
+      "target_rule": {"min": 2, "max": 2, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "wuxiekeji_spade_11",
+      "name": "无懈可击",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 11,
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {"type": "trick_card"},
+      "usage_phase": ["response"],
+      "can_wuxie": true,
+      "worldbook": "【无懈可击】在锦囊牌结算前使用，抵消其效果。可以无懈别人的无懈（形成无懈链）。"
+    },
+    {
+      "id": "wuxiekeji_club_12",
+      "name": "无懈可击",
+      "type": "trick",
+      "suit": "club",
+      "rank": 12,
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {"type": "trick_card"},
+      "usage_phase": ["response"],
+      "can_wuxie": true
+    },
+    {
+      "id": "wuxiekeji_club_13",
+      "name": "无懈可击",
+      "type": "trick",
+      "suit": "club",
+      "rank": 13,
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {"type": "trick_card"},
+      "usage_phase": ["response"],
+      "can_wuxie": true
+    },
+    {
+      "id": "nanman_spade_7",
+      "name": "南蛮入侵",
+      "type": "trick_aoe",
+      "suit": "spade",
+      "rank": 7,
+      "effect": "所有其他角色需打出一张杀，否则受到1点伤害",
+      "target_rule": {"type": "all_others"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【南蛮入侵】AOE锦囊，所有其他角色按顺序打杀，否则受伤。"
+    },
+    {
+      "id": "nanman_spade_13",
+      "name": "南蛮入侵",
+      "type": "trick_aoe",
+      "suit": "spade",
+      "rank": 13,
+      "effect": "所有其他角色需打出一张杀，否则受到1点伤害",
+      "target_rule": {"type": "all_others"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "nanman_club_7",
+      "name": "南蛮入侵",
+      "type": "trick_aoe",
+      "suit": "club",
+      "rank": 7,
+      "effect": "所有其他角色需打出一张杀，否则受到1点伤害",
+      "target_rule": {"type": "all_others"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "wanjianqifa_heart_1",
+      "name": "万箭齐发",
+      "type": "trick_aoe",
+      "suit": "heart",
+      "rank": 1,
+      "effect": "所有其他角色需打出一张闪，否则受到1点伤害",
+      "target_rule": {"type": "all_others"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【万箭齐发】AOE锦囊，所有其他角色打闪，否则受伤。"
+    },
+    {
+      "id": "taoyuanjieyi_heart_1",
+      "name": "桃园结义",
+      "type": "trick_aoe",
+      "suit": "heart",
+      "rank": 1,
+      "effect": "所有角色各回复1点体力",
+      "target_rule": {"type": "all"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【桃园结义】全体回血，包括自己。残血时慎用（敌人也回血）。"
+    },
+    {
+      "id": "wugufengdeng_heart_3",
+      "name": "五谷丰登",
+      "type": "trick_aoe",
+      "suit": "heart",
+      "rank": 3,
+      "effect": "亮出等同于现存角色数量的牌，每名角色获得其中一张",
+      "target_rule": {"type": "all"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【五谷丰登】亮出N张牌（N=存活人数），按顺序每人选一张。主公先选。"
+    },
+    {
+      "id": "wugufengdeng_heart_4",
+      "name": "五谷丰登",
+      "type": "trick_aoe",
+      "suit": "heart",
+      "rank": 4,
+      "effect": "亮出等同于现存角色数量的牌，每名角色获得其中一张",
+      "target_rule": {"type": "all"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "juedou_spade_1",
+      "name": "决斗",
+      "type": "trick",
+      "suit": "spade",
+      "rank": 1,
+      "effect": "与目标角色轮流打出杀，先不出者受到1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "worldbook": "【决斗】与目标拼杀，轮流打杀，先不出者受伤。消耗对方手牌的好方式。"
+    },
+    {
+      "id": "juedou_club_1",
+      "name": "决斗",
+      "type": "trick",
+      "suit": "club",
+      "rank": 1,
+      "effect": "与目标角色轮流打出杀，先不出者受到1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "juedou_diamond_1",
+      "name": "决斗",
+      "type": "trick",
+      "suit": "diamond",
+      "rank": 1,
+      "effect": "与目标角色轮流打出杀，先不出者受到1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true
+    },
+    {
+      "id": "lebusishu_spade_6",
+      "name": "乐不思蜀",
+      "type": "delay_trick",
+      "suit": "spade",
+      "rank": 6,
+      "effect": "放置在目标角色判定区，判定阶段判定，不为红桃则跳过出牌阶段",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "非红桃",
+      "worldbook": "【乐不思蜀】延时锦囊，判定阶段判红桃，失败则跳过出牌阶段。"
+    },
+    {
+      "id": "lebusishu_club_6",
+      "name": "乐不思蜀",
+      "type": "delay_trick",
+      "suit": "club",
+      "rank": 6,
+      "effect": "放置在目标角色判定区，判定阶段判定，不为红桃则跳过出牌阶段",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "非红桃"
+    },
+    {
+      "id": "lebusishu_heart_6",
+      "name": "乐不思蜀",
+      "type": "delay_trick",
+      "suit": "heart",
+      "rank": 6,
+      "effect": "放置在目标角色判定区，判定阶段判定，不为红桃则跳过出牌阶段",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "非红桃"
+    },
+    {
+      "id": "bingliangcunduan_spade_10",
+      "name": "兵粮寸断",
+      "type": "delay_trick",
+      "suit": "spade",
+      "rank": 10,
+      "effect": "放置在目标角色判定区，判定阶段判定，不为梅花则跳过摸牌阶段",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "非梅花",
+      "worldbook": "【兵粮寸断】延时锦囊，判定梅花，失败则跳过摸牌阶段。"
+    },
+    {
+      "id": "bingliangcunduan_club_4",
+      "name": "兵粮寸断",
+      "type": "delay_trick",
+      "suit": "club",
+      "rank": 4,
+      "effect": "放置在目标角色判定区，判定阶段判定，不为梅花则跳过摸牌阶段",
+      "target_rule": {"min": 1, "max": 1, "type": "other"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "非梅花"
+    },
+    {
+      "id": "shandian_spade_1",
+      "name": "闪电",
+      "type": "delay_trick",
+      "suit": "spade",
+      "rank": 1,
+      "effect": "放置在判定区，判定阶段判定，黑桃2~9则受到3点雷电伤害，否则移动到下家",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "黑桃2~9",
+      "worldbook": "【闪电】高风险高回报。判中黑桃2-9则3点雷伤，否则传给下家。可改判。"
+    },
+    {
+      "id": "shandian_heart_12",
+      "name": "闪电",
+      "type": "delay_trick",
+      "suit": "heart",
+      "rank": 12,
+      "effect": "放置在判定区，判定阶段判定，黑桃2~9则受到3点雷电伤害，否则移动到下家",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["play"],
+      "can_wuxie": true,
+      "judge_condition": "黑桃2~9"
+    }
+  ],
+  "usage_notes": {
+    "wuxie_chain": {
+      "description": "无懈可以无懈另一张无懈，形成无懈链",
+      "example": "A对B用南蛮 → C无懈 → D无懈C的无懈 → 南蛮生效"
+    },
+    "delay_trick": {
+      "placement": "放在目标判定区最右侧",
+      "judge_timing": "判定阶段从最左侧开始依次判定",
+      "transfer": "闪电判定失败后移动到下家判定区"
+    },
+    "aoe_settlement": {
+      "order": "从使用者下家开始，按顺时针依次结算",
+      "wuxie_timing": "在结算前可以无懈"
+    }
+  },
+  "ai_decision_guide": {
+    "control": "过河拆桥优先拆关键装备（武器、防具），顺手牵羊优先拿手牌",
+    "aoe_timing": "南蛮/万箭在敌方手牌少时使用效果更好",
+    "delay_trick": "对核心输出武将使用乐不思蜀/兵粮寸断",
+    "wuxie_priority": "优先无懈致命伤害的锦囊，慎重无懈AOE（消耗手牌）"
+  }
+}

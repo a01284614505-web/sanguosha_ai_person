@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>选择武将 - 三国杀</title>
+    <link rel="stylesheet" href="css/main.css">
+    <style>
+        .hero-selection-container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        .selection-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .selection-header h1 {
+            font-size: 36px;
+            background: linear-gradient(135deg, var(--shu-red), var(--gold), var(--wu-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .hero-card {
+            background: linear-gradient(135deg, rgba(42, 31, 26, 0.9), rgba(26, 20, 18, 0.9));
+            border: 3px solid var(--border-light);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .hero-card:hover {
+            transform: translateY(-8px);
+            border-color: var(--gold);
+            box-shadow: 0 8px 24px rgba(212, 175, 55, 0.4);
+        }
+
+        .hero-card.selected {
+            border-color: var(--shu-red);
+            border-width: 4px;
+            box-shadow: 0 0 30px rgba(196, 30, 58, 0.6);
+            background: linear-gradient(135deg, rgba(196, 30, 58, 0.3), rgba(212, 175, 55, 0.2));
+        }
+
+        .hero-card.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .hero-avatar-placeholder {
+            width: 100%;
+            height: 150px;
+            background: linear-gradient(135deg, rgba(196, 30, 58, 0.3), rgba(212, 175, 55, 0.3));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            font-weight: bold;
+            color: var(--text-gold);
+            margin-bottom: 12px;
+        }
+
+        .hero-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--text-gold);
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .hero-faction {
+            text-align: center;
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .hero-hp {
+            text-align: center;
+            font-size: 16px;
+            color: var(--shu-red);
+            margin-bottom: 8px;
+        }
+
+        .hero-skills {
+            font-size: 12px;
+            color: var(--text-light);
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .skill-name {
+            color: var(--text-gold);
+            font-weight: bold;
+        }
+
+        .selected-info {
+            text-align: center;
+            padding: 20px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 2px solid var(--border-gold);
+        }
+
+        .selected-info h3 {
+            color: var(--text-gold);
+            margin-bottom: 10px;
+        }
+
+        .confirm-btn {
+            display: block;
+            width: 300px;
+            margin: 0 auto;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: bold;
+            background: linear-gradient(135deg, var(--shu-red), var(--primary-red));
+            border: 2px solid var(--shu-red);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .confirm-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(196, 30, 58, 0.5);
+        }
+
+        .confirm-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-gold);
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="hero-selection-container">
+        <div class="selection-header">
+            <h1>⚔️ 选择你的武将</h1>
+            <p style="color: var(--text-muted);">从下方武将中选择一位</p>
+        </div>
+
+        <div id="loadingMessage" class="loading">
+            正在加载武将数据...
+        </div>
+
+        <div id="selectedInfo" class="selected-info" style="display: none;">
+            <h3>已选择：<span id="selectedName">-</span></h3>
+            <p style="color: var(--text-muted);">
+                势力：<span id="selectedFaction">-</span> | 
+                体力：<span id="selectedHP">-</span>
+            </p>
+        </div>
+
+        <div id="heroGrid" class="hero-grid" style="display: none;">
+            <!-- 武将卡片将动态生成 -->
+        </div>
+
+        <button id="confirmBtn" class="confirm-btn" disabled style="display: none;">
+            确认选择
+        </button>
+    </div>
+
+    <script>
+        let heroes = [];
+        let selectedHeroId = null;
+
+        // 加载武将数据
+        async function loadHeroes() {
+            try {
+                const response = await fetch('/data/heroes.json');
+                if (!response.ok) {
+                    throw new Error('Failed to load heroes');
+                }
+                heroes = await response.json();
+                
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('heroGrid').style.display = 'grid';
+                document.getElementById('confirmBtn').style.display = 'block';
+                
+                renderHeroes();
+            } catch (error) {
+                console.error('加载武将失败:', error);
+                document.getElementById('loadingMessage').innerHTML = `
+                    <p style="color: var(--shu-red);">❌ 加载失败</p>
+                    <p>${error.message}</p>
+                    <button onclick="location.reload()" class="btn-primary">重试</button>
+                `;
+            }
+        }
+
+        // 渲染武将列表
+        function renderHeroes() {
+            const grid = document.getElementById('heroGrid');
+            grid.innerHTML = '';
+
+            heroes.forEach(hero => {
+                const card = document.createElement('div');
+                card.className = 'hero-card';
+                card.dataset.heroId = hero.id;
+
+                // 取武将名字的第一个字作为头像占位符
+                const avatarText = hero.name.charAt(0);
+
+                card.innerHTML = `
+                    <div class="hero-avatar-placeholder">${avatarText}</div>
+                    <div class="hero-name">${hero.name}</div>
+                    <div class="hero-faction">${hero.faction} | ${hero.title || ''}</div>
+                    <div class="hero-hp">体力：${'❤️'.repeat(hero.max_hp)}</div>
+                    <div class="hero-skills">
+                        ${hero.skills.map(s => `
+                            <div style="margin-bottom: 4px;">
+                                <span class="skill-name">${s.name}</span>: ${s.description.substring(0, 30)}...
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                card.addEventListener('click', () => selectHero(hero));
+                grid.appendChild(card);
+            });
+        }
+
+        // 选择武将
+        function selectHero(hero) {
+            selectedHeroId = hero.id;
+
+            // 更新UI
+            document.querySelectorAll('.hero-card').forEach(card => {
+                if (card.dataset.heroId === hero.id) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+
+            // 显示选择信息
+            document.getElementById('selectedInfo').style.display = 'block';
+            document.getElementById('selectedName').textContent = hero.name;
+            document.getElementById('selectedFaction').textContent = hero.faction;
+            document.getElementById('selectedHP').textContent = hero.max_hp;
+
+            // 启用确认按钮
+            document.getElementById('confirmBtn').disabled = false;
+        }
+
+        // 确认选择
+        document.getElementById('confirmBtn').addEventListener('click', () => {
+            if (!selectedHeroId) {
+                alert('请先选择一个武将');
+                return;
+            }
+
+            const selectedHero = heroes.find(h => h.id === selectedHeroId);
+            
+            // 保存到localStorage
+            const gameConfig = JSON.parse(localStorage.getItem('gameConfig') || '{}');
+            gameConfig.selected_hero = selectedHero;
+            localStorage.setItem('gameConfig', JSON.stringify(gameConfig));
+
+            console.log('已选择武将:', selectedHero);
+
+            // 跳转到游戏页面
+            window.location.href = 'game.html';
+        });
+
+        // 页面加载时执行
+        document.addEventListener('DOMContentLoaded', () => {
+            loadHeroes();
+        });
+    </script>
+    <script src="js/global_settings.js?v=20260803c"></script>
+</body>
+</html>

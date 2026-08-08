@@ -1,0 +1,91 @@
+{
+  "completed_at": "2026-08-03T23:21:47+08:00",
+  "runtime_heroes": 27,
+  "runtime_skill_classes": 54,
+  "active_skill_classes": 54,
+  "skill_instances_in_heroes": 54,
+  "skill_index_count": 54,
+  "worldbook_heroes": 27,
+  "worldbook_skill_count": 54,
+  "faction_skill_counts": {
+    "wei": 12,
+    "shu": 14,
+    "wu": 15,
+    "qun": 13
+  },
+  "engine_authority": "AI和真人仅能提交MainEngine提供的合法操作；技能执行前再次校验成本、目标和变体。",
+  "tests": {
+    "shu_14_runtime": "passed",
+    "wei_wu_qun_40_runtime": "passed",
+    "full_54_coverage": "passed",
+    "full_game_20_turns": "passed",
+    "ui_controls": "passed",
+    "websocket_controls": "passed",
+    "real_websocket_zhiheng": "passed",
+    "python_compileall": "passed",
+    "frontend_js_syntax": "passed",
+    "http_smoke": "passed",
+    "clean_server_log": "passed"
+  },
+  "cloud_ai_validation": {
+    "shu": {
+      "stage": "shu",
+      "api_success": true,
+      "hero": "guanyu",
+      "selected_skill": "武圣",
+      "variant": "as_sha",
+      "target_ids": [
+        1
+      ],
+      "reasoning": "手牌桃可当杀，目标界曹操无手牌且距离内，优先消耗其体力。",
+      "worldbook_contains_runtime_status": true,
+      "engine_execution_success": true,
+      "target_hp_delta": -1,
+      "active_skill_count": 14
+    },
+    "full": {
+      "stage": "full",
+      "api_success": true,
+      "selected_skill": "制衡",
+      "variant": "discard_draw",
+      "reasoning": "手牌仅一张闪，制衡弃置后可摸一张，有机会获得更有用的牌。",
+      "engine_execution_success": true,
+      "hand_count_before": 1,
+      "hand_count_after": 2,
+      "discard_delta": 1,
+      "runtime_skill_classes": 54,
+      "active_skill_classes": 54,
+      "worldbook_heroes": 27,
+      "prompt_contains_own_skill": true,
+      "prompt_contains_opponent_skills": [
+        "刚烈",
+        "反馈",
+        "奸雄",
+        "护驾",
+        "清俭",
+        "突袭",
+        "鬼才"
+      ],
+      "engine_rule": "AI仅从MainEngine提供的合法操作列表按action_index选择，执行前由引擎再次校验成本和目标"
+    }
+  },
+  "temporary_interface_deleted": true,
+  "embedded_test_key_absent": true,
+  "server": {
+    "pid": 15383,
+    "http": "http://localhost:8888",
+    "websocket": "ws://localhost:8889",
+    "status": "running"
+  },
+  "sha256": {
+    "data/heroes.json": "5f50e246aaa025651fcf6249171636849039e1749fccef27193e9273d28d2742",
+    "data/skills.json": "e57897a097fb5a25aa99da891c61ad02daa9864c5afa3ec2e5fa29d04877e7af",
+    "worldbook_generated/heroes/heroes_27_complete.json": "71b2735b813b93b09712a67fb39c5749241e4ca6c89fc32dbadbdca14b3c03a2",
+    "game_engine/skills_generated.py": "48bbf12784070fef1e490287d54c659819368433c52811955227dcfe10562e6d",
+    "game_engine/skills_wei.py": "75183f7d447b9f59c17ef81a6ebafbf01f1929ffe98edbd18ec7c62eeb1aaaeb",
+    "game_engine/skills_shu.py": "f8499a073b3dfc1f1a5cc552145a1056404b07a2ddf0261747d1a2037bc982eb",
+    "game_engine/skills_wu.py": "9288fc1b39a058b679a0e37f14962638e56435d1a5d44b73d30312527f8c1014",
+    "game_engine/skills_qun.py": "f12dec25522e831a5a90eb0b7aaba055cdf7d0fbdd84aa05f21afed3dbcd7c91"
+  },
+  "implementation_note": "54技能核心规则效果均接线；当前尚无完整逐项选择UI的可选分支由引擎使用确定性托管策略结算。"
+}

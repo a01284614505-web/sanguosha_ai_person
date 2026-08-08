@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>游戏结束 - AI三国杀酒馆</title>
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+    <div class="container">
+        <header class="result-header">
+            <h1 id="resultTitle">胜利！</h1>
+            <p id="resultSubtitle">主公阵营获胜</p>
+        </header>
+
+        <section class="result-summary">
+            <div class="result-card">
+                <h3>游戏统计</h3>
+                <div class="stat-item">
+                    <span>回合数：</span>
+                    <span id="totalRounds">15</span>
+                </div>
+                <div class="stat-item">
+                    <span>游戏时长：</span>
+                    <span id="gameDuration">25分30秒</span>
+                </div>
+                <div class="stat-item">
+                    <span>你的身份：</span>
+                    <span id="yourIdentity" class="identity-reveal">反贼</span>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <h3>MVP</h3>
+                <div id="mvpInfo" class="mvp-info">
+                    <div class="mvp-hero">
+                        <img src="assets/heroes/caocao.jpg" alt="MVP" onerror="this.style.display='none'">
+                        <div class="mvp-name">诸葛亮</div>
+                    </div>
+                    <div class="mvp-stats">
+                        <div>击杀：3</div>
+                        <div>伤害：8</div>
+                        <div>治疗：2</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="identity-reveal">
+            <h2>身份揭示</h2>
+            <div id="identityList" class="identity-grid">
+                <!-- 所有玩家的身份将动态生成 -->
+            </div>
+        </section>
+
+        <section class="rewards" id="rewardSection" style="display:none;">
+            <div class="reward-card">
+                <h3>🎉 连胜奖励</h3>
+                <p>恭喜你获得连胜！</p>
+                <p class="reward-detail">获得 <strong>1张身份卡</strong></p>
+                <p class="reward-hint">在下次游戏开局前可以选择自己的身份</p>
+            </div>
+        </section>
+
+        <div class="action-buttons">
+            <button id="playAgainBtn" class="btn-primary">再来一局</button>
+            <button id="backToLobbyBtn" class="btn-secondary">返回大厅</button>
+        </div>
+    </div>
+
+    <script src="js/result.js?v=20260803c"></script>
+    <script src="js/global_settings.js?v=20260803c"></script>
+</body>
+</html>

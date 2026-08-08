@@ -1,0 +1,78 @@
+{
+  "game_id": "1",
+  "model": "deepseek/deepseek-chat",
+  "model_calls": 0,
+  "api_failures": 0,
+  "submitted_actions": 5,
+  "rejected_actions": 0,
+  "state_updates": 37,
+  "opponent_ai_actions": 18,
+  "event_notifications": 24,
+  "card_ui_events": 23,
+  "result": {
+    "type": "game_end",
+    "winner": "draw",
+    "message": "平局"
+  },
+  "transcript": [
+    {
+      "turn": 0,
+      "decision": {
+        "action": {
+          "type": "play_card",
+          "card_index": 1
+        },
+        "target_ids": [
+          1
+        ]
+      },
+      "comment": "达到模型调用上限，切换规则测试员"
+    },
+    {
+      "turn": 0,
+      "decision": {
+        "action": {
+          "type": "play_card",
+          "card_index": 0
+        },
+        "target_ids": [
+          1
+        ]
+      },
+      "comment": "达到模型调用上限，切换规则测试员"
+    },
+    {
+      "turn": 0,
+      "decision": {
+        "action": {
+          "type": "end_phase"
+        },
+        "target_ids": []
+      },
+      "comment": "达到模型调用上限，切换规则测试员"
+    },
+    {
+      "turn": 5,
+      "decision": {
+        "action": {
+          "type": "play_card",
+          "card_index": 0
+        },
+        "target_ids": [
+          1
+        ]
+      },
+      "comment": "达到模型调用上限，切换规则测试员"
+    },
+    {
+      "turn": 5,
+      "decision": {
+        "action": {
+          "type": "end_phase"
+        },
+        "target_ids": []
+      },
+      "comment": "达到模型调用上限，切换规则测试员"
+    }
+  ]
+}

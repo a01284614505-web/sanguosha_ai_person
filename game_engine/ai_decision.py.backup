@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""
+AI决策系统 - 完整的AI决策和多Provider支持
+"""
+
+import asyncio
+import json
+import httpx
+from typing import List, Dict, Optional, Any
+
+class AIDecision:
+    """AI决策系统"""
+    
+    def __init__(self, game_engine):
+        self.engine = game_engine
+        self.gateway = AIGateway()
+    
+    async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
+        """AI做出决策"""
+        # print(f"\n[AI决策] {player.name} 正在思考...")
+        
+        # 检查API Key
+        api_key = player.ai_config.get('api_key', '')
+        if not api_key or api_key == 'test_key':
+            # print(f"  → 简单AI")
+            return self.simple_ai_decision(player, available_actions)
+        
+        # 构建prompt
+        prompt = self.build_decision_prompt(player, available_actions)
+        
+        # 构建完整的world book上下文
+        worldbook = self.build_worldbook_context(player)
+        
+        # 调用AI API
+        try:
+            response = await self.gateway.call_api(
+                provider=player.ai_config['provider'],
+                model=player.ai_config['model'],
+                api_key=player.ai_config['api_key'],
+                messages=[
+                    {"role": "system", "content": worldbook},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=player.ai_config.get('temperature', 0.8)
+            )
+            
+            # 解析决策
+            decision = self.parse_decision(response, available_actions)
+            
+            # 添加聊天内容
+            if 'chat' in decision and decision['chat']:
+                print(f"  💬 {player.name}: {decision['chat']}")
+            
+            return decision
+            
+        except Exception as e:
+            print(f"  ❌ AI调用失败: {e}")
+            # 降级为简单AI
+            return self.simple_ai_decision(player, available_actions)
+    
+    def build_decision_prompt(self, player, available_actions: List[Dict]) -> str:
+        """构建决策prompt"""
+        game_state = self.engine.game_state
+        
+        # 当前状态
+        state_desc = f"""
+你是{player.hero['name']}，当前状态：
+- 体力：{player.hp}/{player.max_hp}
+- 手牌：{[c.name for c in player.hand]} (共{len(player.hand)}张)
+- 装备：{self.describe_equipment(player)}
+- 当前阶段：{game_state.current_phase.value}
+
+场上情况：
+"""
+        
+        # 其他玩家状态
+        for p in game_state.players:
+            if p == player:
+                continue
+            state_desc += f"- {p.name}: 体力{p.hp}/{p.max_hp}, 手牌{len(p.hand)}张"
+            if not p.alive:
+                state_desc += " (已阵亡)"
+            state_desc += "\n"
+        
+        # 可选操作
+        actions_desc = "\n可选操作：\n"
+        for i, action in enumerate(available_actions):
+            actions_desc += f"{i}. {self.describe_action(action)}\n"
+        
+        # 决策要求
+        request = f"""
+请选择一个最优操作。返回JSON格式：
+{{
+    "action_index": 选择的操作序号(0-{len(available_actions)-1}),
+    "target_ids": [目标玩家ID列表] (如果需要),
+    "chat": "可选的发言内容，不超过30字"
+}}
+
+只返回JSON，不要其他说明。
+"""
+        
+        return state_desc + actions_desc + request
+    
+    def build_worldbook_context(self, player) -> str:
+        """构建世界书上下文"""
+        context = "你是三国杀AI玩家。\n\n"
+        
+        # 加入当前玩家武将的worldbook
+        if player.hero and 'worldbook' in player.hero:
+            wb = player.hero['worldbook']
+            context += f"【你的武将】\n{wb.get('summary', '')}\n"
+            context += f"{wb.get('skill_details', '')}\n"
+            context += f"{wb.get('usage_tips', '')}\n\n"
+        
+        # 加入场上其他武将的基本信息
+        context += "【场上其他武将】\n"
+        for p in self.engine.game_state.players:
+            if p == player or not p.hero:
+                continue
+            if 'worldbook' in p.hero:
+                context += f"{p.hero['name']}: {p.hero['worldbook'].get('summary', '')}\n"
+        
+        # 加入基本规则
+        context += """
+【基本规则】
+- 杀：对一名角色造成1点伤害，需要对方打出闪才能避免
+- 闪：响应杀，避免伤害
+- 桃：回复1点体力
+- 过河拆桥：弃置目标一张牌
+- 距离：座位距离，可被装备修正
+- 每回合出杀限制：1次（除非有特殊技能）
+"""
+        
+        return context
+    
+    def describe_equipment(self, player) -> str:
+        """描述装备"""
+        if not player.equipment:
+            return "无"
+        equip_names = [e.name for e in player.equipment.values() if e]
+        return "、".join(equip_names) if equip_names else "无"
+    
+    def describe_action(self, action: Dict) -> str:
+        """描述操作"""
+        action_type = action.get('type')
+        
+        if action_type == 'play_card':
+            card = action.get('card')
+            desc = f"出【{card['name']}】"
+            if action.get('requires_target'):
+                desc += f" (需要选择目标)"
+            return desc
+        
+        elif action_type == 'use_skill':
+            return f"发动技能【{action.get('skill_name')}】"
+        
+        elif action_type == 'end_phase':
+            return "结束阶段"
+        
+        return str(action)
+    
+    def parse_decision(self, response: str, available_actions: List[Dict]) -> Dict:
+        """解析AI返回的决策"""
+        try:
+            # 尝试从response中提取JSON
+            response = response.strip()
+            
+            # 如果有markdown代码块，去掉
+            if response.startswith('```'):
+                response = response.split('```')[1]
+                if response.startswith('json'):
+                    response = response[4:]
+            
+            decision = json.loads(response)
+            
+            # 验证action_index
+            action_index = decision.get('action_index', 0)
+            if action_index < 0 or action_index >= len(available_actions):
+                print(f"  ⚠️ 无效的操作序号，使用默认操作")
+                action_index = len(available_actions) - 1  # 默认最后一个（通常是结束阶段）
+            
+            decision['action_index'] = action_index
+            decision['action'] = available_actions[action_index]
+            
+            return decision
+            
+        except Exception as e:
+            print(f"  ⚠️ 解析决策失败: {e}，使用默认操作")
+            return {
+                'action_index': len(available_actions) - 1,
+                'action': available_actions[-1],
+                'chat': None
+            }
+    
+    def simple_ai_decision(self, player, available_actions: List[Dict]) -> Dict:
+        """简单AI决策（降级方案）"""
+        # 优先出杀
+        for i, action in enumerate(available_actions):
+            if action.get('type') == 'play_card':
+                card = action.get('card')
+                if card and card.get('name') == '杀':
+                    return {
+                        'action_index': i,
+                        'action': action,
+                        'target_ids': action.get('valid_targets', [])[:1] if action.get('valid_targets') else []
+                    }
+        
+        # 其次出其他牌
+        for i, action in enumerate(available_actions):
+            if action.get('type') == 'play_card':
+                return {
+                    'action_index': i,
+                    'action': action,
+                    'target_ids': action.get('valid_targets', [])[:1] if action.get('valid_targets') else []
+                }
+        
+        # 默认结束阶段
+        return {
+            'action_index': len(available_actions) - 1,
+            'action': available_actions[-1]
+        }
+
+
+class AIGateway:
+    """AI API网关 - 支持多个Provider"""
+    
+    def __init__(self):
+        self.client = httpx.AsyncClient(timeout=30.0)
+    
+    async def call_api(self, provider: str, model: str, api_key: str, 
+                      messages: List[Dict], temperature: float = 0.8) -> str:
+        """调用AI API"""
+        
+        if provider == 'deepseek':
+            return await self.call_deepseek(model, api_key, messages, temperature)
+        elif provider == 'qwen':
+            return await self.call_qwen(model, api_key, messages, temperature)
+        elif provider == 'openai':
+            return await self.call_openai(model, api_key, messages, temperature)
+        elif provider == 'claude':
+            return await self.call_claude(model, api_key, messages, temperature)
+        elif provider == 'gemini':
+            return await self.call_gemini(model, api_key, messages, temperature)
+        elif provider == 'glm':
+            return await self.call_glm(model, api_key, messages, temperature)
+        elif provider == 'grok':
+            return await self.call_grok(model, api_key, messages, temperature)
+        elif provider == 'doubao':
+            return await self.call_doubao(model, api_key, messages, temperature)
+        else:
+            raise ValueError(f"不支持的provider: {provider}")
+    
+    async def call_deepseek(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """DeepSeek API"""
+        url = "https://api.deepseek.com/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature
+        }
+        
+        response = await self.client.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        return result['choices'][0]['message']['content']
+    
+    async def call_qwen(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """千问API"""
+        url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature
+        }
+        
+        response = await self.client.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        return result['choices'][0]['message']['content']
+    
+    async def call_openai(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """OpenAI API"""
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature
+        }
+        
+        response = await self.client.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        result = response.json()
+        return result['choices'][0]['message']['content']
+    
+    async def call_claude(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """Claude API (简化实现)"""
+        # Claude API格式略有不同，这里简化处理
+        return await self.call_openai(model, api_key, messages, temperature)
+    
+    async def call_gemini(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """Gemini API (简化实现)"""
+        return await self.call_openai(model, api_key, messages, temperature)
+    
+    async def call_glm(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """GLM API (简化实现)"""
+        return await self.call_openai(model, api_key, messages, temperature)
+    
+    async def call_grok(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """Grok API (简化实现)"""
+        return await self.call_openai(model, api_key, messages, temperature)
+    
+    async def call_doubao(self, model: str, api_key: str, messages: List[Dict], temperature: float) -> str:
+        """豆包API (简化实现)"""
+        return await self.call_openai(model, api_key, messages, temperature)
+
+
+# 导出
+__all__ = ['AIDecision', 'AIGateway']
+
+if __name__ == "__main__":
+    print("AI决策系统模块加载成功")

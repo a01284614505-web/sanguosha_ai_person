@@ -1,0 +1,193 @@
+{
+  "meta": {
+    "title": "三国杀伤害结算系统",
+    "source": "公开规则 + 无名杀逻辑分析",
+    "version": "1.0",
+    "note": "这是游戏引擎最复杂的部分，需要严格按顺序结算"
+  },
+  "damage_flow": {
+    "overview": "伤害结算分为：确定伤害 → 伤害前 → 造成伤害 → 伤害后 → 濒死判定",
+    "steps": [
+      {
+        "step": 1,
+        "name": "确定伤害",
+        "description": "确定伤害来源、目标、伤害值、伤害类型",
+        "properties": {
+          "source": "造成伤害的角色（可为null，如闪电）",
+          "target": "受伤角色",
+          "amount": "伤害点数",
+          "nature": "普通/火焰/雷电/失去体力",
+          "card": "造成伤害的牌（可选）"
+        }
+      },
+      {
+        "step": 2,
+        "name": "伤害前事件",
+        "trigger": "DAMAGE_BEFORE",
+        "description": "触发伤害前技能，可以防止或修改伤害",
+        "skills_example": ["空城（无手牌免伤）", "仁王盾（防黑杀）"],
+        "can_prevent": true,
+        "can_modify_amount": true
+      },
+      {
+        "step": 3,
+        "name": "造成伤害",
+        "trigger": "DAMAGE_DEALING",
+        "description": "实际扣除体力值",
+        "action": "target.hp -= damage.amount",
+        "log": "记录伤害来源和数值"
+      },
+      {
+        "step": 4,
+        "name": "伤害后事件（来源视角）",
+        "trigger": "DAMAGE_DEALT",
+        "description": "伤害来源的技能触发",
+        "skills_example": ["英魂（吕蒙造成伤害后摸牌）"],
+        "timing": "在目标的伤害后事件之前"
+      },
+      {
+        "step": 5,
+        "name": "伤害后事件（目标视角）",
+        "trigger": "DAMAGE_RECEIVED",
+        "description": "受伤目标的技能触发",
+        "skills_example": ["奸雄（受伤获得伤害牌）", "反馈（受伤拿对方牌）"],
+        "timing": "在来源的伤害后事件之后"
+      },
+      {
+        "step": 6,
+        "name": "濒死判定",
+        "trigger": "DYING",
+        "condition": "target.hp <= 0",
+        "description": "进入濒死状态，开始求桃流程",
+        "goto": "dying_process"
+      }
+    ]
+  },
+  "dying_process": {
+    "overview": "角色体力降至0或更低时进入濒死状态",
+    "steps": [
+      {
+        "step": 1,
+        "name": "进入濒死",
+        "trigger": "DYING_BEGIN",
+        "description": "濒死角色进入濒死状态",
+        "skills_example": ["不屈（界徐盛濒死时可亮牌）"]
+      },
+      {
+        "step": 2,
+        "name": "求桃流程",
+        "description": "从当前回合角色开始，按顺时针依次询问是否使用【桃】",
+        "priority_order": "current_player → next_player → ... → dying_player",
+        "dying_player_first": "濒死角色可以先救自己",
+        "loop_condition": "直到濒死角色体力 > 0 或所有人都放弃"
+      },
+      {
+        "step": 3,
+        "name": "结算濒死结果",
+        "success": {
+          "condition": "hp > 0",
+          "trigger": "DYING_END (saved)",
+          "action": "退出濒死状态"
+        },
+        "failure": {
+          "condition": "hp <= 0 且无人救",
+          "trigger": "DEATH",
+          "action": "角色死亡"
+        }
+      }
+    ],
+    "special_rules": {
+      "multi_dying": "同一时刻多人濒死，按受伤顺序依次结算",
+      "self_save": "濒死角色可以使用酒+桃、技能自救",
+      "peach_effect": "每个桃回复1点体力"
+    }
+  },
+  "death_process": {
+    "overview": "角色死亡后的奖惩和身份揭示",
+    "steps": [
+      {
+        "step": 1,
+        "name": "死亡结算",
+        "trigger": "DEATH_BEGIN",
+        "actions": [
+          "角色死亡，alive = false",
+          "弃置所有牌（手牌+装备+判定区）",
+          "触发死亡时技能"
+        ],
+        "skills_example": ["忠义（界关羽死亡时可发动）"]
+      },
+      {
+        "step": 2,
+        "name": "身份揭示",
+        "action": "公开死亡角色的身份牌",
+        "trigger": "IDENTITY_REVEALED"
+      },
+      {
+        "step": 3,
+        "name": "奖惩结算",
+        "rewards": {
+          "kill_rebel": {
+            "condition": "击杀反贼",
+            "reward": "杀者摸3张牌",
+            "note": "任何身份击杀反贼都有奖励"
+          },
+          "kill_loyalist_by_lord": {
+            "condition": "主公击杀忠臣",
+            "penalty": "主公弃置所有手牌和装备",
+            "note": "严重惩罚"
+          }
+        },
+        "no_reward_modes": ["2v2", "斗地主"]
+      },
+      {
+        "step": 4,
+        "name": "胜利判定",
+        "check_timing": "每次有角色死亡后",
+        "conditions": "根据模式判断是否有阵营获胜"
+      }
+    ]
+  },
+  "damage_types": {
+    "normal": {
+      "name": "普通伤害",
+      "symbol": null,
+      "prevention": ["空城", "天香"]
+    },
+    "fire": {
+      "name": "火焰伤害",
+      "symbol": "🔥",
+      "source": ["火杀", "火攻"],
+      "special": "连环状态角色受到火焰伤害后，传导给其他连环角色",
+      "prevention": ["藤甲（增伤）", "天香"]
+    },
+    "thunder": {
+      "name": "雷电伤害",
+      "symbol": "⚡",
+      "source": ["雷杀", "闪电"],
+      "special": "连环状态角色受到雷电伤害后，传导给其他连环角色",
+      "prevention": ["天香"]
+    },
+    "lose_hp": {
+      "name": "失去体力",
+      "symbol": null,
+      "note": "不是伤害，不触发伤害相关技能",
+      "source": ["兵粮寸断判定失败", "决斗平局"]
+    }
+  },
+  "damage_prevention": {
+    "methods": [
+      "技能防止（空城、仁王盾）",
+      "装备防具（八卦阵闪避）",
+      "其他角色帮忙出闪（护驾）"
+    ],
+    "priority": "技能 > 装备 > 求助"
+  },
+  "worldbook_usage": {
+    "ai_decision": {
+      "attack": "计算目标是否有防伤手段，评估击杀概率",
+      "defense": "濒死时优先自救，再呼叫队友",
+      "skill_timing": "伤害前/后技能的时机选择"
+    },
+    "example_prompt": "【濒死求桃】你的队友X濒死（0/3血），你有1张桃。场上局势：主公健康，2个反贼存活。决策：是否救？"
+  }
+}

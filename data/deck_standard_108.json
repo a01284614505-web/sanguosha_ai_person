@@ -1,0 +1,1942 @@
+{
+  "meta": {
+    "id": "standard",
+    "name": "标准牌堆",
+    "source": "noname-main/apps/core/card/standard.js",
+    "cards_count": 108,
+    "type_counts": {
+      "basic": 53,
+      "equipment": 19,
+      "trick": 36
+    },
+    "name_counts": {
+      "万箭齐发": 1,
+      "丈八蛇矛": 1,
+      "乐不思蜀": 3,
+      "五谷丰登": 2,
+      "仁王盾": 1,
+      "借刀杀人": 2,
+      "八卦阵": 2,
+      "决斗": 3,
+      "南蛮入侵": 3,
+      "大宛": 1,
+      "寒冰剑": 1,
+      "方天画戟": 1,
+      "无中生有": 4,
+      "无懈可击": 4,
+      "杀": 30,
+      "桃": 8,
+      "桃园结义": 1,
+      "爪黄飞电": 1,
+      "的卢": 1,
+      "紫骍": 1,
+      "绝影": 1,
+      "诸葛连弩": 2,
+      "贯石斧": 1,
+      "赤兔": 1,
+      "过河拆桥": 6,
+      "闪": 15,
+      "闪电": 2,
+      "雌雄双股剑": 1,
+      "青釭剑": 1,
+      "青龙偃月刀": 1,
+      "顺手牵羊": 5,
+      "麒麟弓": 1
+    }
+  },
+  "cards": [
+    {
+      "id": "standard_sha_spade_7_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 7,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "worldbook": "【杀】是主要输出手段。每回合限用1次（咆哮等技能可突破）。需要在攻击范围内（默认距离1，武器可增加）。目标可以出【闪】响应。",
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_spade_8_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 8,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_spade_8_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 8,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_spade_9_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 9,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_spade_9_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 9,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_spade_10_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_spade_10_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "spade",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_2_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 2,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_3_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 3,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_4_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 4,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "worldbook": "【杀】是主要输出手段。每回合限用1次（咆哮等技能可突破）。需要在攻击范围内（默认距离1，武器可增加）。目标可以出【闪】响应。",
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_5_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 5,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "worldbook": "【杀】是主要输出手段。每回合限用1次（咆哮等技能可突破）。需要在攻击范围内（默认距离1，武器可增加）。目标可以出【闪】响应。",
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_6_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 6,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "worldbook": "【杀】是主要输出手段。每回合限用1次（咆哮等技能可突破）。需要在攻击范围内（默认距离1，武器可增加）。目标可以出【闪】响应。",
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_7_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 7,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "worldbook": "【杀】是主要输出手段。每回合限用1次（咆哮等技能可突破）。需要在攻击范围内（默认距离1，武器可增加）。目标可以出【闪】响应。",
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_8_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 8,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_8_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 8,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_9_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 9,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_9_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 9,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_10_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_10_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_11_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 11,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_club_11_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "club",
+      "rank": 11,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_heart_10_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "heart",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_heart_10_2",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "heart",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_heart_11_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "heart",
+      "rank": 11,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_diamond_6_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "diamond",
+      "rank": 6,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_diamond_7_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "diamond",
+      "rank": 7,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_diamond_8_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "diamond",
+      "rank": 8,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_diamond_9_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "diamond",
+      "rank": 9,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_diamond_10_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "diamond",
+      "rank": 10,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_sha_diamond_13_1",
+      "source_name": "sha",
+      "name": "杀",
+      "suit": "diamond",
+      "rank": 13,
+      "type": "basic",
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": [
+        "play"
+      ]
+    },
+    {
+      "id": "standard_shan_heart_2_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "heart",
+      "rank": 2,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_heart_2_2",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "heart",
+      "rank": 2,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_heart_13_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "heart",
+      "rank": 13,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_2_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 2,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_2_2",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 2,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_3_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 3,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_4_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 4,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_5_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 5,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_6_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 6,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_7_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 7,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_8_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 8,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_9_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 9,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_10_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 10,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。",
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_11_1",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 11,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_shan_diamond_11_2",
+      "source_name": "shan",
+      "name": "闪",
+      "suit": "diamond",
+      "rank": 11,
+      "type": "basic",
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {
+        "type": "self"
+      },
+      "usage_phase": [
+        "response"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_3_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 3,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "worldbook": "【桃】有两种用法：1.出牌阶段给自己回血（满血禁用）；2.濒死时救自己或别人。",
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_4_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 4,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_6_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 6,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_7_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 7,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_8_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 8,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_9_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 9,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_heart_12_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "heart",
+      "rank": 12,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_tao_diamond_12_1",
+      "source_name": "tao",
+      "name": "桃",
+      "suit": "diamond",
+      "rank": 12,
+      "type": "basic",
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "self_or_dying"
+      },
+      "usage_phase": [
+        "play",
+        "response_dying"
+      ]
+    },
+    {
+      "id": "standard_bagua_spade_2_1",
+      "source_name": "bagua",
+      "name": "八卦阵",
+      "suit": "spade",
+      "rank": 2,
+      "type": "equipment",
+      "effect": "当你需要使用或打出【闪】时，你可以进行判定，若结果为红色，视为你使用或打出一张【闪】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "armor",
+      "worldbook": "【八卦阵】防具。特效：50%概率自动闪。诸葛亮、司马懿等判定流武将神器。"
+    },
+    {
+      "id": "standard_bagua_club_2_1",
+      "source_name": "bagua",
+      "name": "八卦阵",
+      "suit": "club",
+      "rank": 2,
+      "type": "equipment",
+      "effect": "当你需要使用或打出【闪】时，你可以进行判定，若结果为红色，视为你使用或打出一张【闪】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "armor",
+      "worldbook": "【八卦阵】防具。特效：50%概率自动闪。诸葛亮、司马懿等判定流武将神器。"
+    },
+    {
+      "id": "standard_jueying_spade_5_1",
+      "source_name": "jueying",
+      "name": "绝影",
+      "suit": "spade",
+      "rank": 5,
+      "type": "equipment",
+      "effect": "装备牌【绝影】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "plus_horse"
+    },
+    {
+      "id": "standard_dilu_club_5_1",
+      "source_name": "dilu",
+      "name": "的卢",
+      "suit": "club",
+      "rank": 5,
+      "type": "equipment",
+      "effect": "装备牌【的卢】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "plus_horse"
+    },
+    {
+      "id": "standard_zhuahuang_heart_13_1",
+      "source_name": "zhuahuang",
+      "name": "爪黄飞电",
+      "suit": "heart",
+      "rank": 13,
+      "type": "equipment",
+      "effect": "装备牌【爪黄飞电】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "plus_horse"
+    },
+    {
+      "id": "standard_chitu_heart_5_1",
+      "source_name": "chitu",
+      "name": "赤兔",
+      "suit": "heart",
+      "rank": 5,
+      "type": "equipment",
+      "effect": "装备牌【赤兔】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "minus_horse"
+    },
+    {
+      "id": "standard_dawan_spade_13_1",
+      "source_name": "dawan",
+      "name": "大宛",
+      "suit": "spade",
+      "rank": 13,
+      "type": "equipment",
+      "effect": "装备牌【大宛】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "minus_horse"
+    },
+    {
+      "id": "standard_zixin_diamond_13_1",
+      "source_name": "zixin",
+      "name": "紫骍",
+      "suit": "diamond",
+      "rank": 13,
+      "type": "equipment",
+      "effect": "装备牌【紫骍】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "minus_horse"
+    },
+    {
+      "id": "standard_zhuge_club_1_1",
+      "source_name": "zhuge",
+      "name": "诸葛连弩",
+      "suit": "club",
+      "rank": 1,
+      "type": "equipment",
+      "effect": "你可以在出牌阶段使用任意数量的【杀】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【诸葛连弩】武器，攻击范围1。特效：无限杀！配合关羽武圣、张飞咆哮威力巨大。"
+    },
+    {
+      "id": "standard_zhuge_diamond_1_1",
+      "source_name": "zhuge",
+      "name": "诸葛连弩",
+      "suit": "diamond",
+      "rank": 1,
+      "type": "equipment",
+      "effect": "你可以在出牌阶段使用任意数量的【杀】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【诸葛连弩】武器，攻击范围1。特效：无限杀！配合关羽武圣、张飞咆哮威力巨大。"
+    },
+    {
+      "id": "standard_cixiong_spade_2_1",
+      "source_name": "cixiong",
+      "name": "雌雄双股剑",
+      "suit": "spade",
+      "rank": 2,
+      "type": "equipment",
+      "effect": "当你使用【杀】指定异性角色为目标后，你可以令其选择一项：弃置一张手牌，或令你摸一张牌",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【雌雄双股剑】武器，攻击范围2。特效：打异性摸牌或拆牌。"
+    },
+    {
+      "id": "standard_qinggang_spade_6_1",
+      "source_name": "qinggang",
+      "name": "青釭剑",
+      "suit": "spade",
+      "rank": 6,
+      "type": "equipment",
+      "effect": "装备牌【青釭剑】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon"
+    },
+    {
+      "id": "standard_qinglong_spade_5_1",
+      "source_name": "qinglong",
+      "name": "青龙偃月刀",
+      "suit": "spade",
+      "rank": 5,
+      "type": "equipment",
+      "effect": "当你使用的【杀】被【闪】抵消时，你可以对同一目标再使用一张【杀】",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【青龙偃月刀】武器，攻击范围3。特效：杀被闪后可以再出一张杀。持续压制能力强。"
+    },
+    {
+      "id": "standard_zhangba_spade_12_1",
+      "source_name": "zhangba",
+      "name": "丈八蛇矛",
+      "suit": "spade",
+      "rank": 12,
+      "type": "equipment",
+      "effect": "你可以将两张手牌当【杀】使用或打出",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【丈八蛇矛】武器，攻击范围3。特效：2张牌当杀。手牌多时威力大。"
+    },
+    {
+      "id": "standard_guanshi_diamond_5_1",
+      "source_name": "guanshi",
+      "name": "贯石斧",
+      "suit": "diamond",
+      "rank": 5,
+      "type": "equipment",
+      "effect": "当你使用的【杀】被【闪】抵消时，你可以弃置两张牌，然后此【杀】依然造成伤害",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【贯石斧】武器，攻击范围3。特效：弃2牌强制伤害。适合手牌多的武将。"
+    },
+    {
+      "id": "standard_fangtian_diamond_12_1",
+      "source_name": "fangtian",
+      "name": "方天画戟",
+      "suit": "diamond",
+      "rank": 12,
+      "type": "equipment",
+      "effect": "当你使用的【杀】是你最后一张手牌时，你可以指定最多三名角色为目标",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【方天画戟】武器，攻击范围4。特效：最后一张手牌杀可以打3人。空城吕布神器。"
+    },
+    {
+      "id": "standard_qilin_heart_5_1",
+      "source_name": "qilin",
+      "name": "麒麟弓",
+      "suit": "heart",
+      "rank": 5,
+      "type": "equipment",
+      "effect": "当你使用【杀】对目标角色造成伤害时，你可以弃置其装备区的一匹马",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【麒麟弓】武器，攻击范围5。特效：伤害后拆马。破防神器。"
+    },
+    {
+      "id": "standard_wugu_heart_3_1",
+      "source_name": "wugu",
+      "name": "五谷丰登",
+      "suit": "heart",
+      "rank": 3,
+      "type": "trick",
+      "effect": "亮出等同于现存角色数量的牌，每名角色获得其中一张",
+      "target_rule": {
+        "type": "all"
+      },
+      "sub_type": "normal",
+      "worldbook": "【五谷丰登】亮出N张牌（N=存活人数），按顺序每人选一张。主公先选。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wugu_heart_4_1",
+      "source_name": "wugu",
+      "name": "五谷丰登",
+      "suit": "heart",
+      "rank": 4,
+      "type": "trick",
+      "effect": "亮出等同于现存角色数量的牌，每名角色获得其中一张",
+      "target_rule": {
+        "type": "all"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_taoyuan_heart_1_1",
+      "source_name": "taoyuan",
+      "name": "桃园结义",
+      "suit": "heart",
+      "rank": 1,
+      "type": "trick",
+      "effect": "所有角色各回复1点体力",
+      "target_rule": {
+        "type": "all"
+      },
+      "sub_type": "normal",
+      "worldbook": "【桃园结义】全体回血，包括自己。残血时慎用（敌人也回血）。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_nanman_spade_7_1",
+      "source_name": "nanman",
+      "name": "南蛮入侵",
+      "suit": "spade",
+      "rank": 7,
+      "type": "trick",
+      "effect": "所有其他角色需打出一张杀，否则受到1点伤害",
+      "target_rule": {
+        "type": "all_others"
+      },
+      "sub_type": "normal",
+      "worldbook": "【南蛮入侵】AOE锦囊，所有其他角色按顺序打杀，否则受伤。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_nanman_spade_13_1",
+      "source_name": "nanman",
+      "name": "南蛮入侵",
+      "suit": "spade",
+      "rank": 13,
+      "type": "trick",
+      "effect": "所有其他角色需打出一张杀，否则受到1点伤害",
+      "target_rule": {
+        "type": "all_others"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_nanman_club_7_1",
+      "source_name": "nanman",
+      "name": "南蛮入侵",
+      "suit": "club",
+      "rank": 7,
+      "type": "trick",
+      "effect": "所有其他角色需打出一张杀，否则受到1点伤害",
+      "target_rule": {
+        "type": "all_others"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wanjian_heart_1_1",
+      "source_name": "wanjian",
+      "name": "万箭齐发",
+      "suit": "heart",
+      "rank": 1,
+      "type": "trick",
+      "effect": "所有其他角色需打出一张闪，否则受到1点伤害",
+      "target_rule": {
+        "type": "all_others"
+      },
+      "sub_type": "normal",
+      "worldbook": "【万箭齐发】AOE锦囊，所有其他角色打闪，否则受伤。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_juedou_spade_1_1",
+      "source_name": "juedou",
+      "name": "决斗",
+      "suit": "spade",
+      "rank": 1,
+      "type": "trick",
+      "effect": "与目标角色轮流打出杀，先不出者受到1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other"
+      },
+      "sub_type": "normal",
+      "worldbook": "【决斗】与目标拼杀，轮流打杀，先不出者受伤。消耗对方手牌的好方式。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_juedou_club_1_1",
+      "source_name": "juedou",
+      "name": "决斗",
+      "suit": "club",
+      "rank": 1,
+      "type": "trick",
+      "effect": "与目标角色轮流打出杀，先不出者受到1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_juedou_diamond_1_1",
+      "source_name": "juedou",
+      "name": "决斗",
+      "suit": "diamond",
+      "rank": 1,
+      "type": "trick",
+      "effect": "与目标角色轮流打出杀，先不出者受到1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuzhong_heart_7_1",
+      "source_name": "wuzhong",
+      "name": "无中生有",
+      "suit": "heart",
+      "rank": 7,
+      "type": "trick",
+      "effect": "摸两张牌",
+      "target_rule": {
+        "type": "self"
+      },
+      "sub_type": "normal",
+      "worldbook": "【无中生有】自己摸2张牌，补充手牌。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuzhong_heart_8_1",
+      "source_name": "wuzhong",
+      "name": "无中生有",
+      "suit": "heart",
+      "rank": 8,
+      "type": "trick",
+      "effect": "摸两张牌",
+      "target_rule": {
+        "type": "self"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuzhong_heart_9_1",
+      "source_name": "wuzhong",
+      "name": "无中生有",
+      "suit": "heart",
+      "rank": 9,
+      "type": "trick",
+      "effect": "摸两张牌",
+      "target_rule": {
+        "type": "self"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuzhong_heart_11_1",
+      "source_name": "wuzhong",
+      "name": "无中生有",
+      "suit": "heart",
+      "rank": 11,
+      "type": "trick",
+      "effect": "摸两张牌",
+      "target_rule": {
+        "type": "self"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_shunshou_spade_3_1",
+      "source_name": "shunshou",
+      "name": "顺手牵羊",
+      "suit": "spade",
+      "rank": 3,
+      "type": "trick",
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "sub_type": "normal",
+      "worldbook": "【顺手牵羊】获得距离1以内角色的一张牌（你选择）。注意距离限制！",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_shunshou_spade_4_1",
+      "source_name": "shunshou",
+      "name": "顺手牵羊",
+      "suit": "spade",
+      "rank": 4,
+      "type": "trick",
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_shunshou_spade_11_1",
+      "source_name": "shunshou",
+      "name": "顺手牵羊",
+      "suit": "spade",
+      "rank": 11,
+      "type": "trick",
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_shunshou_diamond_3_1",
+      "source_name": "shunshou",
+      "name": "顺手牵羊",
+      "suit": "diamond",
+      "rank": 3,
+      "type": "trick",
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_shunshou_diamond_4_1",
+      "source_name": "shunshou",
+      "name": "顺手牵羊",
+      "suit": "diamond",
+      "rank": 4,
+      "type": "trick",
+      "effect": "获得一名距离为1的角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_guohe_spade_3_1",
+      "source_name": "guohe",
+      "name": "过河拆桥",
+      "suit": "spade",
+      "rank": 3,
+      "type": "trick",
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": null
+      },
+      "sub_type": "normal",
+      "worldbook": "【过河拆桥】指定一名其他角色，弃置其手牌、装备或判定区的一张牌（你选择）。强力拆牌手段。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_guohe_spade_4_1",
+      "source_name": "guohe",
+      "name": "过河拆桥",
+      "suit": "spade",
+      "rank": 4,
+      "type": "trick",
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": null
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_guohe_spade_12_1",
+      "source_name": "guohe",
+      "name": "过河拆桥",
+      "suit": "spade",
+      "rank": 12,
+      "type": "trick",
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": null
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_guohe_club_3_1",
+      "source_name": "guohe",
+      "name": "过河拆桥",
+      "suit": "club",
+      "rank": 3,
+      "type": "trick",
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": null
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_guohe_club_4_1",
+      "source_name": "guohe",
+      "name": "过河拆桥",
+      "suit": "club",
+      "rank": 4,
+      "type": "trick",
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": null
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_guohe_heart_12_1",
+      "source_name": "guohe",
+      "name": "过河拆桥",
+      "suit": "heart",
+      "rank": 12,
+      "type": "trick",
+      "effect": "弃置一名其他角色区域内的一张牌",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": null
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_jiedao_club_12_1",
+      "source_name": "jiedao",
+      "name": "借刀杀人",
+      "suit": "club",
+      "rank": 12,
+      "type": "trick",
+      "effect": "指定有武器的角色对另一角色使用一张杀",
+      "target_rule": {
+        "min": 2,
+        "max": 2,
+        "type": "other"
+      },
+      "sub_type": "normal",
+      "worldbook": "【借刀杀人】指定一名有武器的角色A和另一名角色B，A对B使用一张杀，否则你获得A的武器。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_jiedao_club_13_1",
+      "source_name": "jiedao",
+      "name": "借刀杀人",
+      "suit": "club",
+      "rank": 13,
+      "type": "trick",
+      "effect": "指定有武器的角色对另一角色使用一张杀",
+      "target_rule": {
+        "min": 2,
+        "max": 2,
+        "type": "other"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuxie_spade_11_1",
+      "source_name": "wuxie",
+      "name": "无懈可击",
+      "suit": "spade",
+      "rank": 11,
+      "type": "trick",
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {
+        "type": "trick_card"
+      },
+      "sub_type": "normal",
+      "worldbook": "【无懈可击】在锦囊牌结算前使用，抵消其效果。可以无懈别人的无懈（形成无懈链）。",
+      "usage_phase": [
+        "response"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuxie_club_12_1",
+      "source_name": "wuxie",
+      "name": "无懈可击",
+      "suit": "club",
+      "rank": 12,
+      "type": "trick",
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {
+        "type": "trick_card"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "response"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuxie_club_13_1",
+      "source_name": "wuxie",
+      "name": "无懈可击",
+      "suit": "club",
+      "rank": 13,
+      "type": "trick",
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {
+        "type": "trick_card"
+      },
+      "sub_type": "normal",
+      "usage_phase": [
+        "response"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_lebu_spade_6_1",
+      "source_name": "lebu",
+      "name": "乐不思蜀",
+      "suit": "spade",
+      "rank": 6,
+      "type": "trick",
+      "effect": "放置在目标角色判定区，判定阶段判定，不为红桃则跳过出牌阶段",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other"
+      },
+      "sub_type": "delayed",
+      "worldbook": "【乐不思蜀】延时锦囊，判定阶段判红桃，失败则跳过出牌阶段。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_lebu_club_6_1",
+      "source_name": "lebu",
+      "name": "乐不思蜀",
+      "suit": "club",
+      "rank": 6,
+      "type": "trick",
+      "effect": "放置在目标角色判定区，判定阶段判定，不为红桃则跳过出牌阶段",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other"
+      },
+      "sub_type": "delayed",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_lebu_heart_6_1",
+      "source_name": "lebu",
+      "name": "乐不思蜀",
+      "suit": "heart",
+      "rank": 6,
+      "type": "trick",
+      "effect": "放置在目标角色判定区，判定阶段判定，不为红桃则跳过出牌阶段",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other"
+      },
+      "sub_type": "delayed",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_shandian_spade_1_1",
+      "source_name": "shandian",
+      "name": "闪电",
+      "suit": "spade",
+      "rank": 1,
+      "type": "trick",
+      "effect": "放置在判定区，判定阶段判定，黑桃2~9则受到3点雷电伤害，否则移动到下家",
+      "target_rule": {
+        "type": "self"
+      },
+      "sub_type": "delayed",
+      "worldbook": "【闪电】高风险高回报。判中黑桃2-9则3点雷伤，否则传给下家。可改判。",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_hanbing_spade_2_1",
+      "source_name": "hanbing",
+      "name": "寒冰剑",
+      "suit": "spade",
+      "rank": 2,
+      "type": "equipment",
+      "effect": "当你使用【杀】对目标角色造成伤害时，若其有牌，你可以防止此伤害，然后弃置其两张牌",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "weapon",
+      "worldbook": "【寒冰剑】武器，攻击范围2。特效：不伤害改拆2牌。控场神器。"
+    },
+    {
+      "id": "standard_renwang_club_2_1",
+      "source_name": "renwang",
+      "name": "仁王盾",
+      "suit": "club",
+      "rank": 2,
+      "type": "equipment",
+      "effect": "锁定技，黑色的【杀】对你无效",
+      "target_rule": {
+        "min": 0,
+        "max": 0,
+        "type": "self"
+      },
+      "sub_type": "armor",
+      "worldbook": "【仁王盾】防具。特效：免疫黑杀。对抗黑色杀流武将（如界华雄）。"
+    },
+    {
+      "id": "standard_shandian_heart_12_1",
+      "source_name": "shandian",
+      "name": "闪电",
+      "suit": "heart",
+      "rank": 12,
+      "type": "trick",
+      "effect": "放置在判定区，判定阶段判定，黑桃2~9则受到3点雷电伤害，否则移动到下家",
+      "target_rule": {
+        "type": "self"
+      },
+      "sub_type": "delayed",
+      "usage_phase": [
+        "play"
+      ],
+      "can_wuxie": true
+    },
+    {
+      "id": "standard_wuxie_diamond_12_1",
+      "source_name": "wuxie",
+      "name": "无懈可击",
+      "suit": "diamond",
+      "rank": 12,
+      "type": "trick",
+      "effect": "抵消一张锦囊牌的效果",
+      "target_rule": {
+        "type": "trick_card"
+      },
+      "sub_type": "normal",
+      "worldbook": "【无懈可击】在锦囊牌结算前使用，抵消其效果。可以无懈别人的无懈（形成无懈链）。",
+      "usage_phase": [
+        "response"
+      ],
+      "can_wuxie": true
+    }
+  ]
+}

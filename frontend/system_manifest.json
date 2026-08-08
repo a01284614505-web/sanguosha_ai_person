@@ -1,0 +1,10 @@
+{
+  "runtime_heroes": 27,
+  "source_heroes": 27,
+  "generated_skills": 54,
+  "runtime_skill_implementations": 54,
+  "worldbook_cards": 88,
+  "current_phase": "27将54技能运行时与世界书已统一",
+  "data_status": "27将/54技能四处映射一致，全部技能已接入引擎合法操作与事件钩子",
+  "worldbook_strategy": "按当前阶段、在场武将、相关卡牌和自定义关键词按需注入；引擎是唯一规则来源"
+}

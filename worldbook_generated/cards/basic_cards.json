@@ -1,0 +1,405 @@
+{
+  "meta": {
+    "title": "三国杀基本牌数据",
+    "source": "维基百科 + BWIKI完整牌表",
+    "total_count": 53,
+    "note": "基本牌包括：杀(30)、闪(15)、桃(8)"
+  },
+  "cards": [
+    {
+      "id": "sha_spade_7",
+      "name": "杀",
+      "type": "basic",
+      "suit": "spade",
+      "rank": 7,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {
+        "min": 1,
+        "max": 1,
+        "type": "other",
+        "distance_limit": 1
+      },
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan",
+      "worldbook": "【杀】是主要输出手段。每回合限用1次（咆哮等技能可突破）。需要在攻击范围内（默认距离1，武器可增加）。目标可以出【闪】响应。"
+    },
+    {
+      "id": "sha_spade_8",
+      "name": "杀",
+      "type": "basic",
+      "suit": "spade",
+      "rank": 8,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_spade_9",
+      "name": "杀",
+      "type": "basic",
+      "suit": "spade",
+      "rank": 9,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_spade_10",
+      "name": "杀",
+      "type": "basic",
+      "suit": "spade",
+      "rank": 10,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_club_2",
+      "name": "杀",
+      "type": "basic",
+      "suit": "club",
+      "rank": 2,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_club_3",
+      "name": "杀",
+      "type": "basic",
+      "suit": "club",
+      "rank": 3,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_club_8",
+      "name": "杀",
+      "type": "basic",
+      "suit": "club",
+      "rank": 8,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_club_9",
+      "name": "杀",
+      "type": "basic",
+      "suit": "club",
+      "rank": 9,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_club_10",
+      "name": "杀",
+      "type": "basic",
+      "suit": "club",
+      "rank": 10,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_club_11",
+      "name": "杀",
+      "type": "basic",
+      "suit": "club",
+      "rank": 11,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_heart_10",
+      "name": "杀",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 10,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_heart_11",
+      "name": "杀",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 11,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_diamond_6",
+      "name": "杀",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 6,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_diamond_7",
+      "name": "杀",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 7,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_diamond_8",
+      "name": "杀",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 8,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_diamond_9",
+      "name": "杀",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 9,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_diamond_10",
+      "name": "杀",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 10,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "sha_diamond_13",
+      "name": "杀",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 13,
+      "effect": "对一名其他角色造成1点伤害",
+      "target_rule": {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
+      "usage_phase": ["play"],
+      "limit_per_turn": 1,
+      "response_card": "shan"
+    },
+    {
+      "id": "shan_heart_2",
+      "name": "闪",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 2,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"],
+      "worldbook": "【闪】用于响应【杀】，防止受到伤害。只能在被杀时使用，不能主动打出。"
+    },
+    {
+      "id": "shan_heart_13",
+      "name": "闪",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 13,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"]
+    },
+    {
+      "id": "shan_diamond_2",
+      "name": "闪",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 2,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"]
+    },
+    {
+      "id": "shan_diamond_3",
+      "name": "闪",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 3,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"]
+    },
+    {
+      "id": "shan_diamond_4",
+      "name": "闪",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 4,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"]
+    },
+    {
+      "id": "shan_diamond_5",
+      "name": "闪",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 5,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"]
+    },
+    {
+      "id": "shan_diamond_11",
+      "name": "闪",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 11,
+      "effect": "响应【杀】，抵消伤害",
+      "target_rule": {"type": "self"},
+      "usage_phase": ["response"]
+    },
+    {
+      "id": "tao_heart_3",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 3,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"],
+      "worldbook": "【桃】有两种用法：1.出牌阶段给自己回血（满血禁用）；2.濒死时救自己或别人。"
+    },
+    {
+      "id": "tao_heart_4",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 4,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    },
+    {
+      "id": "tao_heart_6",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 6,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    },
+    {
+      "id": "tao_heart_7",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 7,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    },
+    {
+      "id": "tao_heart_8",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 8,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    },
+    {
+      "id": "tao_heart_9",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 9,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    },
+    {
+      "id": "tao_heart_12",
+      "name": "桃",
+      "type": "basic",
+      "suit": "heart",
+      "rank": 12,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    },
+    {
+      "id": "tao_diamond_12",
+      "name": "桃",
+      "type": "basic",
+      "suit": "diamond",
+      "rank": 12,
+      "effect": "回复1点体力（满血时不能用），或濒死时救人",
+      "target_rule": {"min": 1, "max": 1, "type": "self_or_dying"},
+      "usage_phase": ["play", "response_dying"]
+    }
+  ],
+  "usage_notes": {
+    "sha": {
+      "limit": "每回合1次（咆哮/无双等技能可突破）",
+      "distance": "需要在攻击范围内（武器增加范围）",
+      "response": "目标可以出【闪】响应，否则受到1点伤害"
+    },
+    "shan": {
+      "usage": "只能在响应【杀】时使用，不能主动打出",
+      "bypass": "无懈、无双等技能可使闪无效"
+    },
+    "tao": {
+      "self_use": "满血时禁止给自己用（浪费）",
+      "save": "濒死时所有角色按顺序可以出桃救人",
+      "priority": "濒死角色优先自救"
+    }
+  },
+  "ai_decision_guide": {
+    "sha_usage": "优先攻击低血敌人，计算击杀概率。留意目标手牌数（可能有闪）。",
+    "shan_hold": "手中有闪可以更激进地站位，但不要过度消耗。",
+    "tao_timing": "残血时留桃自保，满血时可以考虑救队友（身份局）。"
+  }
+}

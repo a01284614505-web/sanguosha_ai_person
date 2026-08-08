@@ -1,0 +1,57 @@
+/* ===== AI配置卡片 - 修复溢出 ===== */
+.ai-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.config-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.config-row label {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.config-row input,
+.config-row select,
+.config-row textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-dark);
+    border-radius: 6px;
+    background: rgba(10, 10, 10, 0.6);
+    color: var(--text-light);
+    font-size: 14px;
+    transition: all 0.3s;
+    box-sizing: border-box;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.config-row input:focus,
+.config-row select:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+}
+
+/* 特殊字段布局 */
+.ai-controls .field-name {
+    grid-column: 1 / -1;
+}
+
+.ai-controls .field-provider {
+    grid-column: 1 / -1;
+}
+
+.ai-controls .field-url {
+    grid-column: 1 / -1;
+}
+
+.ai-controls .field-key {
+    grid-column: 1 / -1;
+}
