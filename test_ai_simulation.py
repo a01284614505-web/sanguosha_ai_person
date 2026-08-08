@@ -5,11 +5,12 @@ AI模拟测试脚本 - 通过浏览器真实验证游戏功能
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 
-# 临时API密钥
-API_KEY = "sk-908ca2ab5378d5c08445f3f1cab023ee5f069d77e4f9fd3a6d806efb25f6f4f4"
+# 测试脚本不使用真实 API；如需配置请通过环境变量注入。
+API_KEY = os.getenv("SANGUOSHA_TEST_API_KEY", "")
 
 async def main():
     print("=" * 60)

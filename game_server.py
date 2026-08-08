@@ -11,6 +11,7 @@ from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from threading import Thread
+from urllib.parse import urlsplit
 from websockets.exceptions import ConnectionClosedOK
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -362,6 +363,8 @@ class GameServer:
             print(f"[发送失败] {exc}")
 
 class CustomHandler(SimpleHTTPRequestHandler):
+    ALLOWED_STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".png", ".jpg", ".mp3"}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(BASE_DIR / "frontend"), **kwargs)
 
@@ -385,8 +388,16 @@ class CustomHandler(SimpleHTTPRequestHandler):
         return data if isinstance(data, dict) else {}
 
     def do_GET(self):
-        if self.path.split("?")[0] == "/api/decks":
+        request_path = urlsplit(self.path).path
+        if request_path == "/api/decks":
             self.api_deck_list()
+            return
+        if request_path.startswith("/api/"):
+            self.send_error(404)
+            return
+        suffix = Path(request_path).suffix.lower()
+        if suffix not in self.ALLOWED_STATIC_SUFFIXES:
+            self.send_error(404)
             return
         super().do_GET()
 
