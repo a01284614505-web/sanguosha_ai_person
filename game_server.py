@@ -395,6 +395,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
         if request_path.startswith("/api/"):
             self.send_error(404)
             return
+        if request_path.endswith("/"):
+            # 白名单只认后缀；根路径与目录路径统一交给 index.html，不再列举目录。
+            request_path += "index.html"
+            self.path = request_path
         suffix = Path(request_path).suffix.lower()
         if suffix not in self.ALLOWED_STATIC_SUFFIXES:
             self.send_error(404)
