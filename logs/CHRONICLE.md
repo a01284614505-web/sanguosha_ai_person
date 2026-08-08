@@ -1367,3 +1367,4 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。
+- [R1：清除死文件与垃圾文件（2026-08-08 15:05）](handover/20260808_1505_R1清除死文件与垃圾.md)
