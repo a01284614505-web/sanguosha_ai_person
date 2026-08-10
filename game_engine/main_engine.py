@@ -7,7 +7,6 @@ import time
 from typing import Any, Callable, Dict, List
 
 from state_manager import GameState, Player, Phase
-from event_bus import EventBus, EventType
 from phase_controller import PhaseController
 from skill_manager import SkillManager
 from card_system import CardSystem, make_pass_option, option_label
@@ -28,12 +27,11 @@ class MainEngine:
         self.game_state = GameState()
         self.game_state.init_game(game_config)
 
-        self.event_bus = EventBus()
         self.skill_manager = SkillManager(self)
         self.trigger_manager = self.skill_manager  # 兼容卡牌系统旧参数名
-        self.phase_controller = PhaseController(self.game_state, self.event_bus, self.skill_manager)
+        self.phase_controller = PhaseController(self.game_state, self.skill_manager)
         self.card_system = CardSystem(
-            self.game_state, self.event_bus, self.trigger_manager,
+            self.game_state, None, self.trigger_manager,
             ui_notifier=self._notify_card_ui,
             responder=self.request_response,
         )
@@ -133,7 +131,7 @@ class MainEngine:
 
     @staticmethod
     def _hero_name(player: Player) -> str:
-        return player.hero.get("name", "") if isinstance(player.hero, dict) else getattr(player.hero, "name", "")
+        return (player.hero or {}).get("name", "")
 
     def serialize(self) -> Dict:
         gs = self.game_state
@@ -150,12 +148,12 @@ class MainEngine:
                     "alive": p.alive,
                     "hero_name": self._hero_name(p),
                     "hero": {
-                        "id": p.hero.get("id", "") if isinstance(p.hero, dict) else "",
+                        "id": (p.hero or {}).get("id", ""),
                         "name": self._hero_name(p),
-                        "faction": p.hero.get("faction", "") if isinstance(p.hero, dict) else "",
-                        "max_hp": p.hero.get("max_hp", p.max_hp) if isinstance(p.hero, dict) else p.max_hp,
+                        "faction": (p.hero or {}).get("faction", ""),
+                        "max_hp": (p.hero or {}).get("max_hp", p.max_hp),
                         "skills": self.skill_manager.public_player_skills(p),
-                        "worldbook": p.hero.get("worldbook", {}) if isinstance(p.hero, dict) else {},
+                        "worldbook": (p.hero or {}).get("worldbook", {}),
                     },
                     "is_ai": p.is_ai,
                     "ai_config": {
@@ -220,7 +218,6 @@ class MainEngine:
         for p in self.game_state.players:
             print(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
 
-        self.event_bus.trigger(EventType.GAME_START, players=self.game_state.players)
         await self.emit("state_changed", state=self.serialize())
 
         self._watchdog_task = asyncio.create_task(self._idle_watchdog())
@@ -352,7 +349,6 @@ class MainEngine:
             if not player.alive:
                 break
             await asyncio.sleep(float(self.game_config.get("phase_delay", 0.01)))
-        self.event_bus.trigger(EventType.ROUND_END, player=player)
 
     async def _auto_play_phase(self, player: Player):
         print(f"  {player.name}的出牌阶段")
@@ -650,9 +646,6 @@ class MainEngine:
             print(f"  ⚠️ 看门狗异常: {type(exc).__name__}: {exc}")
 
     # ---------- 合法操作 ----------
-
-    def _public_actions(self, player: Player) -> List[Dict]:
-        return [dict(action) for action in self.get_available_actions(player)]
 
     def get_available_actions(self, player: Player) -> List[Dict]:
         actions: List[Dict] = []

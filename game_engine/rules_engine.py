@@ -136,33 +136,6 @@ class RulesEngine:
         """统一委托给GameState，避免两套距离算法。"""
         return self.game_state.get_distance(from_player, to_player)
 
-    def can_use_skill(self, player, skill_name: str) -> Tuple[bool, str]:
-        """技能存在性由SkillManager判断；主动发动条件由合法操作列表判断。"""
-        if not self.skill_manager or not self.skill_manager.has_skill(player, skill_name):
-            return False, f"没有可运行技能【{skill_name}】"
-        if self.game_state.current_phase.value == "play":
-            legal = any(a.get("type") == "use_skill" and a.get("skill_name") == skill_name
-                        for a in self.skill_manager.get_actions(player))
-            if legal:
-                return True, "OK"
-        skill = next((s for s in self.skill_manager.player_skills(player, active_only=True) if s.name == skill_name), None)
-        if skill and skill.skill_type in ("locked", "trigger", "lord", "awaken", "limited"):
-            return True, "自动触发或响应型技能"
-        return False, "当前不满足技能发动条件"
-    
-    def can_respond(self, player, card, request_type: str) -> Tuple[bool, str]:
-        """检查是否可以响应"""
-        if card not in player.hand:
-            return False, "卡牌不在手中"
-        
-        if request_type == 'sha' and card.name == '闪':
-            return True, "OK"
-        
-        if request_type == 'jinang' and card.name == '无懈可击':
-            return True, "OK"
-        
-        return False, "响应类型不匹配"
-
 # 导出
 __all__ = ['RulesEngine']
 

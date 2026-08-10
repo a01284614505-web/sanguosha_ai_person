@@ -48,32 +48,11 @@ class Card:
         return f"{suit_symbol}{self.rank} {self.name}"
 
 @dataclass
-class Skill:
-    """技能"""
-    name: str
-    skill_type: str            # active/passive/lord/forced/limited
-    trigger: str               # 触发时机
-    description: str
-    effect: Optional[Any] = None
-
-@dataclass
-class Hero:
-    """武将"""
-    id: str
-    name: str
-    faction: str               # wei/shu/wu/qun
-    max_hp: int
-    skills: List[Skill] = field(default_factory=list)
-    title: str = ""
-    artist: str = ""
-    worldbook: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass
 class Player:
     """玩家"""
     id: int
     name: str
-    hero: Optional[Hero] = None
+    hero: Optional[Dict[str, Any]] = None
     identity: Optional[str] = None    # lord/loyalist/rebel/spy
     identity_revealed: bool = False
     
@@ -252,17 +231,6 @@ class GameState:
         if card in player.hand:
             player.hand.remove(card)
             self.discard_pile.append(card)
-    
-    def next_phase(self):
-        """进入下一阶段"""
-        phases = list(Phase)
-        current_index = phases.index(self.current_phase)
-        
-        if current_index < len(phases) - 1:
-            self.current_phase = phases[current_index + 1]
-        else:
-            # 回合结束，下一个玩家
-            self.next_turn()
     
     def next_turn(self):
         """下一回合"""

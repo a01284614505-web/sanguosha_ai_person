@@ -1365,6 +1365,7 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [牌堆切换API与前端设置（2026-08-06 10:44）](handover/20260806_1044_牌堆切换API与前端设置.md)
 - [R0：Git 基线 + 安全止血（2026-08-08 11:00）](handover/20260808_1100_R0基线与安全止血.md)
 - [R1：清除死文件与垃圾文件（2026-08-08 15:05）](handover/20260808_1505_R1清除死文件与垃圾.md)
+- [R2：精选归档与死代码清理（2026-08-10 12:19）](handover/20260810_1219_R2精选归档与死代码清理.md)
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。

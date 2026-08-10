@@ -13,7 +13,7 @@ FEMALE_HEROES = {"zhenji", "huangyueying", "daqiao", "diaochan"}
 
 
 def is_male(player):
-    hero = player.hero if isinstance(player.hero, dict) else {}
+    hero = player.hero or {}
     return hero.get("sex", "female" if hero.get("id") in FEMALE_HEROES else "male") == "male"
 
 

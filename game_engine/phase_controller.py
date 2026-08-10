@@ -5,18 +5,15 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from state_manager import GameState, Phase, Player
-    from event_bus import EventBus
 
 
 class PhaseController:
-    def __init__(self, game_state: "GameState", event_bus: "EventBus", skill_manager=None):
+    def __init__(self, game_state: "GameState", skill_manager=None):
         self.game_state = game_state
-        self.event_bus = event_bus
         self.skill_manager = skill_manager
         self.skip_phases = set()
 
     async def execute_phase(self, phase: "Phase"):
-        from event_bus import EventType
 
         if phase in self.skip_phases:
             self.skip_phases.remove(phase)
@@ -24,7 +21,6 @@ class PhaseController:
             return
 
         player = self.game_state.current_player
-        self.event_bus.trigger(EventType.PHASE_BEGIN, player=player, data={"phase": phase})
 
         handler = {
             "prepare": self.prepare_phase,
@@ -37,7 +33,6 @@ class PhaseController:
         if handler:
             await handler()
 
-        self.event_bus.trigger(EventType.PHASE_END, player=player, data={"phase": phase})
 
     async def prepare_phase(self):
         from state_manager import Phase, PlayerStatus
@@ -56,7 +51,6 @@ class PhaseController:
             await self.execute_judge(player, delayed_card)
 
     async def execute_judge(self, player: "Player", delayed_card):
-        from event_bus import EventType
 
         if not self.game_state.deck:
             self.game_state.draw_card(player, 0)
@@ -64,13 +58,6 @@ class PhaseController:
             return
 
         result = self.game_state.deck.pop(0)
-        event = self.event_bus.trigger(
-            EventType.JUDGE,
-            player=player,
-            card=result,
-            data={"delayed_card": delayed_card},
-        )
-        result = event.get("card", result)
         if self.skill_manager:
             result = await self.skill_manager.before_judge(player, result, {"delayed_card": delayed_card})
         print(f"  判定【{delayed_card.name}】: {result.suit}{result.rank}")
@@ -88,10 +75,8 @@ class PhaseController:
         if delayed_card in player.judge_area:
             player.judge_area.remove(delayed_card)
             self.game_state.discard_pile.append(delayed_card)
-        self.event_bus.trigger(EventType.JUDGE_END, player=player, card=result)
 
     async def draw_phase(self):
-        from event_bus import EventType
 
         player = self.game_state.current_player
         print(f"[摸牌阶段] {player.name}")
@@ -99,11 +84,6 @@ class PhaseController:
         if self.skill_manager:
             await self.skill_manager.on_card_gained(player, cards, "draw")
         print(f"  摸了 {len(cards)} 张牌")
-        self.event_bus.trigger(
-            EventType.CARD_GAIN,
-            player=player,
-            data={"cards": cards, "reason": "draw"},
-        )
 
     async def play_phase(self):
         player = self.game_state.current_player
@@ -111,7 +91,6 @@ class PhaseController:
         print(f"[出牌阶段] {player.name}，手牌数: {player.get_hand_count()}")
 
     async def discard_phase(self):
-        from event_bus import EventType
 
         player = self.game_state.current_player
         print(f"[弃牌阶段] {player.name}")
@@ -135,11 +114,6 @@ class PhaseController:
                 await self.skill_manager.on_cards_lost(player, [card], "hand_limit")
                 await self.skill_manager.on_card_discarded(player, card, "hand_limit")
         print(f"  自动弃置 {len(discarded)} 张牌")
-        self.event_bus.trigger(
-            EventType.CARD_DISCARD,
-            player=player,
-            data={"cards": discarded, "reason": "hand_limit"},
-        )
 
     async def end_phase(self):
         print(f"[结束阶段] {self.game_state.current_player.name}")

@@ -36,9 +36,8 @@ def option_label(option: dict) -> str:
 class CardSystem:
     """卡牌系统"""
 
-    def __init__(self, game_state, event_bus, trigger_manager, ui_notifier=None, responder=None):
+    def __init__(self, game_state, _event_bus, trigger_manager, ui_notifier=None, responder=None):
         self.game_state = game_state
-        self.event_bus = event_bus
         self.trigger_manager = trigger_manager
         self.ui_notifier = ui_notifier
         # 场外响应决策器，由引擎注入。为 None 时一律视为「不响应」，老调用点不会崩。
@@ -148,10 +147,6 @@ class CardSystem:
             'nature': card.effect if hasattr(card, 'nature') else None
         }
         
-        # 4. 触发使用前事件
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.CARD_USE, player=player, card=card, target=target)
-        
         # 5. 技能修正目标、响应数和伤害后执行杀的效果
         await self.trigger_manager.before_sha(player, target, card, event)
         success = await self._sha_effect(event)
@@ -220,8 +215,6 @@ class CardSystem:
         if shaned:
             # 闪避成功
         #     print(f"  ✓ 闪避成功")
-            from event_bus import EventType
-            self.event_bus.trigger(EventType.CARD_RESPOND, player=target)
             await self.trigger_manager.on_sha_dodged(player, target, event['card'], event)
             return True
         else:
@@ -242,11 +235,8 @@ class CardSystem:
         if player.hp > before_hp:
             await self.trigger_manager.on_recover(player, player.hp - before_hp, player, "桃")
         
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.HP_RECOVER, player=player, num=1)
-        
         return True
-    
+
     async def use_guohe(self, player, card: Card, target):
         """使用过河拆桥"""
         if not target:
@@ -428,10 +418,6 @@ class CardSystem:
             'prevented': False
         }
         
-        # 触发伤害前事件
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.DAMAGE_BEGIN, **damage_info)
-        
         # 技能可修正伤害值。
         amount = await self.trigger_manager.modify_damage(source, target, amount, card, context)
         damage_info['amount'] = amount
@@ -440,8 +426,6 @@ class CardSystem:
             target.hp -= amount
             print(f"  → {target.name} 体力: {target.hp}/{target.max_hp}")
             
-            # 触发伤害后事件
-            self.event_bus.trigger(EventType.DAMAGE, **damage_info)
             await self.trigger_manager.after_damage(source, target, amount, card, context)
             
             # 检查濒死
@@ -504,9 +488,6 @@ class CardSystem:
         player.jiu_used_this_turn = True
         print(f"  → {player.name} 使用【酒】，下一张杀伤害+1")
         
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.CARD_USE, player=player, card=card)
-        
         return True
     
     async def use_tiesuo(self, player, card: Card, targets: List):
@@ -524,9 +505,6 @@ class CardSystem:
             status = "横置" if target.chained else "重置"
             print(f"  → {target.name} {status}")
         
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.CARD_USE, player=player, card=card, targets=targets)
-        
         return True
     
     async def use_bingliang(self, player, card: Card, target):
@@ -541,9 +519,6 @@ class CardSystem:
         
         target.judge_area.append(card)
         print(f"  → {target.name} 判定区增加【兵粮寸断】")
-        
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.CARD_USE, player=player, card=card, target=target)
         
         return True
     
@@ -560,9 +535,6 @@ class CardSystem:
         target.judge_area.append(card)
         print(f"  → {target.name} 判定区增加【乐不思蜀】")
         
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.CARD_USE, player=player, card=card, target=target)
-        
         return True
     
     async def use_wuzhongshengyou(self, player, card: Card):
@@ -578,8 +550,5 @@ class CardSystem:
         if drawn:
             print(f"  → {player.name} 摸了{len(drawn)}张牌")
             await self.trigger_manager.on_card_gained(player, drawn, "无中生有")
-        
-        from event_bus import EventType
-        self.event_bus.trigger(EventType.CARD_USE, player=player, card=card)
         
         return True

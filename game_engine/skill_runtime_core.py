@@ -12,13 +12,11 @@ BLACK_SUITS = {"spade", "club", "黑桃", "梅花"}
 
 
 def hero_id(player) -> str:
-    hero = getattr(player, "hero", None)
-    return hero.get("id", "") if isinstance(hero, dict) else getattr(hero, "id", "")
+    return (player.hero or {}).get("id", "")
 
 
 def hero_faction(player) -> str:
-    hero = getattr(player, "hero", None)
-    value = hero.get("faction", "") if isinstance(hero, dict) else getattr(hero, "faction", "")
+    value = (player.hero or {}).get("faction", "")
     return FACTION_CODE.get(value, value)
 
 

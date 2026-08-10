@@ -77,9 +77,6 @@ class DeckManager:
     def get_active_deck_id(self):
         return self.active_deck_id
 
-    def get_active_deck_name(self):
-        return DECKS[self.active_deck_id]["name"]
-
     def get_deck_list(self):
         return [deepcopy(deck) for deck in DECKS.values()]
 

@@ -44,10 +44,7 @@ class WorldbookManager:
 
     @staticmethod
     def _hero_id(player) -> str:
-        hero = getattr(player, "hero", None)
-        if isinstance(hero, dict):
-            return hero.get("id", "")
-        return getattr(hero, "id", "") if hero else ""
+        return (player.hero or {}).get("id", "")
 
     def get_hero_worldbook(self, hero_id: str) -> str:
         hero = next((h for h in self.cache.get("heroes", []) if h.get("id") == hero_id), None)
@@ -116,7 +113,7 @@ class WorldbookManager:
             sections.append(hero_text)
         if game_state is not None:
             seats = "、".join(
-                f"{i}号位 {p.name}({(p.hero or {}).get('name', '未知武将') if isinstance(p.hero, dict) else '未知武将'})"
+                f"{i}号位 {p.name}({(p.hero or {}).get('name', '未知武将')})"
                 for i, p in enumerate(game_state.players)
             )
             sections.append(f"开局座次：{seats}")
@@ -133,7 +130,7 @@ class WorldbookManager:
         others = []
         for p in game_state.players:
             if p.alive and p.id != player.id:
-                hero = p.hero if isinstance(p.hero, dict) else {}
+                hero = p.hero or {}
                 identity = p.identity if getattr(p, "identity_revealed", False) else "身份未公开"
                 skills = "、".join(
                     f"{s.get('name')}[{s.get('implementation_status', 'data_only')}]"
@@ -149,12 +146,6 @@ class WorldbookManager:
             hand = "、".join(f"{i}:{c.name}({c.suit}{c.rank})" for i, c in enumerate(player.hand))
             sections.append(f"你的手牌：{hand}")
         return "\n\n".join(sections)
-
-    def build_full_worldbook(self, player, game_state, available_actions: List[Dict]) -> str:
-        """保留旧接口：静态层与局势层的拼接，老调用点行为不变。"""
-        static_part = self.build_static_worldbook(player)
-        situation = self.build_situation(player, game_state, available_actions)
-        return "\n\n".join(x for x in (static_part, situation) if x)
 
 
 
@@ -358,15 +349,6 @@ class AIDecision:
 只返回JSON：
 {{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由"}}
 目标必须来自所选操作的合法目标列表。不能新增操作、卡牌或目标。"""
-
-    def build_decision_prompt_with_worldbook(self, player, available_actions: List[Dict]) -> str:
-        """保留旧接口：静态层 + 局势层的单串拼接（不走会话窗口时使用）。"""
-        settings = self.engine.game_config.get("global_settings") or {}
-        static_part = ""
-        if settings.get("worldbook_enabled", True):
-            static_part = self.worldbook_manager.build_static_worldbook(player, self.engine.game_state)
-        turn_part = self.build_decision_turn_message(player, available_actions)
-        return "\n\n".join(x for x in (static_part, turn_part) if x)
 
     @staticmethod
     def format_action(action: Dict) -> str:

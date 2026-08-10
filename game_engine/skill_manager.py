@@ -34,11 +34,8 @@ class SkillManager:
             ("skills_wu", "WuSkillHandler"),
             ("skills_qun", "QunSkillHandler"),
         ]:
-            try:
-                module = __import__(module_name, fromlist=[class_name])
-                self.handlers.append(getattr(module, class_name)(self))
-            except ImportError:
-                continue
+            module = __import__(module_name, fromlist=[class_name])
+            self.handlers.append(getattr(module, class_name)(self))
 
     def all_definitions(self):
         return get_all_skills()
@@ -51,7 +48,7 @@ class SkillManager:
 
     def public_player_skills(self, player):
         by_name = {s.name: s for s in self.player_skills(player)}
-        raw = player.hero.get("skills", []) if isinstance(player.hero, dict) else []
+        raw = (player.hero or {}).get("skills", [])
         result = []
         for item in raw:
             item = dict(item) if isinstance(item, dict) else {"name": str(item)}
