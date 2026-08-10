@@ -1,4 +1,4 @@
-# AI三国杀酒馆 · Windows开发启动脚本
+﻿# AI三国杀酒馆 · Windows开发启动脚本
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File start_windows.ps1            前台启动
 #   powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Background 后台启动
@@ -14,6 +14,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$env:PYTHONIOENCODING = 'utf-8'
 
 $ProjectDir = $PSScriptRoot
 $PythonExe = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"

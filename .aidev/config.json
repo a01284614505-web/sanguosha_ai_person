@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "snapshot_max_file_mb": 100,
+  "search_max_file_mb": 8,
+  "exclude": [
+    ".git/**",
+    ".aidev/snapshots/**",
+    ".aidev/backups/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/node_modules/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/.gradle/**",
+    "**/.dart_tool/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/*.apk",
+    "**/*.zip",
+    "**/*.tar",
+    "**/*.tar.gz",
+    "**/*.7z",
+    "noname-main/**",
+    "data/backup/**",
+    "logs/runtime/**",
+    "frontend/assets/heroes/**",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.png",
+    "**/*.webp",
+    "**/*.gif"
+  ],
+  "commands": {
+    "server": {
+      "status": "powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action status",
+      "start": "powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action start -Background",
+      "restart": "powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action restart -Background",
+      "stop": "powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action stop"
+    },
+    "test": {
+      "unit": "set PYTHONIOENCODING=utf-8&& python -m unittest discover -s tests -v",
+      "compileall": "python -m compileall -q game_server.py game_engine tests",
+      "frontend_syntax": "python scripts/check_frontend_js.py",
+      "http_smoke": "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/', timeout=5); print('HTTP_SMOKE_OK')\""
+    },
+    "log": {
+      "server": "powershell -NoProfile -Command \"Get-Content logs/runtime/server_windows.log -Tail 100\""
+    }
+  },
+  "project_name": "sanguosha_tavern",
+  "notes": {
+    "source_of_truth": ".",
+    "public_backup": "not_configured_on_windows",
+    "http": "http://127.0.0.1:8888",
+    "websocket": "ws://127.0.0.1:8889"
+  }
+}
