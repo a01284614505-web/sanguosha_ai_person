@@ -5,7 +5,6 @@ import asyncio
 import copy
 import json
 import os
-import sys
 import traceback
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -15,10 +14,8 @@ from urllib.parse import urlsplit
 from websockets.exceptions import ConnectionClosedOK
 
 BASE_DIR = Path(__file__).resolve().parent
-ENGINE_DIR = BASE_DIR / "game_engine"
-sys.path.insert(0, str(ENGINE_DIR))
 
-from main_engine import MainEngine
+from game_engine import MainEngine
 
 HTTP_PORT = 8888
 WS_PORT = 8889
@@ -138,7 +135,7 @@ class GameServer:
 
         requested_deck = cfg.get("deck_id")
         if requested_deck:
-            from deck_manager import DECKS, DeckManager
+            from game_engine.deck_manager import DECKS, DeckManager
 
             deck_id = DeckManager.normalize_deck_id(requested_deck)
             if deck_id not in DECKS:
@@ -414,7 +411,7 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
     def api_deck_list(self):
         """返回全部可用牌堆和当前默认牌堆。"""
-        from deck_manager import DeckManager
+        from game_engine.deck_manager import DeckManager
 
         try:
             manager = DeckManager(BASE_DIR)
@@ -431,7 +428,7 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
     def api_switch_deck(self):
         """切换默认牌堆。只影响之后新开的对局，不热替换进行中的牌堆。"""
-        from deck_manager import DeckManager
+        from game_engine.deck_manager import DeckManager
 
         try:
             requested = self._read_json_body().get("deck_id")

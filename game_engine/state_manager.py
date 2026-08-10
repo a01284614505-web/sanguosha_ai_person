@@ -10,7 +10,7 @@ from pathlib import Path
 import random
 import json
 
-from deck_manager import DeckManager
+from .deck_manager import DeckManager
 
 class Phase(Enum):
     """游戏阶段"""

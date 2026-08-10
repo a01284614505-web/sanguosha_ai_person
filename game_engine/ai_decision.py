@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from card_system import option_label
+from .card_system import option_label
 
 
 class WorldbookManager:

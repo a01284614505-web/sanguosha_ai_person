@@ -2,14 +2,11 @@
 """同步技能实现状态到运行时武将、技能索引和AI世界书。"""
 
 import json
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-ENGINE = ROOT / "game_engine"
-sys.path.insert(0, str(ENGINE))
+from game_engine.skills_generated import get_all_skills
 
-from skills_generated import get_all_skills
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def atomic_write(path: Path, data):

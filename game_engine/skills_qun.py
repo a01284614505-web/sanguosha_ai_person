@@ -3,8 +3,8 @@
 
 from itertools import combinations
 
-from state_manager import Card, Phase
-from skill_runtime_core import (
+from .state_manager import Card, Phase
+from .skill_runtime_core import (
     FactionSkillHandler, alive_others, card_color, ensure_flags, hero_faction,
     mark_once_per_turn, once_per_turn,
 )

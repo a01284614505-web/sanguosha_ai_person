@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """自动生成：27将54技能运行时元数据类。具体机制由势力处理器执行。"""
 
-from skill_runtime_core import RuntimeSkill
+from .skill_runtime_core import RuntimeSkill
 
 class Skill_caocao_01(RuntimeSkill):
     def __init__(self):

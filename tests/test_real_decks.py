@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """真实牌堆数据与 GameState 接入回归测试。"""
 
-import sys
 import unittest
 from collections import Counter
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "game_engine"))
 
-from deck_manager import DeckManager  # noqa: E402
-from rules_engine import RulesEngine  # noqa: E402
-from state_manager import Card, GameState, Phase, Player  # noqa: E402
+
+from game_engine.deck_manager import DeckManager
+from game_engine.rules_engine import RulesEngine
+from game_engine.state_manager import Card, GameState, Phase, Player
 
 
 class RealDeckTest(unittest.TestCase):

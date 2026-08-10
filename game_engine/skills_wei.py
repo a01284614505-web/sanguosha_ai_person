@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """界限突破魏国7将11技能运行实现。"""
 
-from state_manager import Phase
-from skill_runtime_core import FactionSkillHandler, card_color, card_type_group, ensure_flags, hero_faction, mark_once_per_turn, once_per_turn
+from .state_manager import Phase
+from .skill_runtime_core import FactionSkillHandler, card_color, card_type_group, ensure_flags, hero_faction, mark_once_per_turn, once_per_turn
 
 
 class WeiSkillHandler(FactionSkillHandler):

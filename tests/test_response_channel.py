@@ -4,17 +4,12 @@
 import asyncio
 import contextlib
 import io
-import sys
 import unittest
-from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "game_engine"))
-
-import httpx  # noqa: E402
-from main_engine import MainEngine  # noqa: E402
-from state_manager import Card  # noqa: E402
+import httpx
+from game_engine import MainEngine
+from game_engine.state_manager import Card
 
 
 BASE_CONFIG = {
@@ -485,7 +480,7 @@ class CardSystemResponderTest(unittest.TestCase):
 
     def test_skill_conversion_appears_alongside_plain_card(self):
         """R5：黑桃闪既能直接打出也能被倾国转化，两项都要在，靠 skill_name 区分。"""
-        from card_system import CardSystem
+        from game_engine.card_system import CardSystem
 
         player = self.engine.game_state.players[0]
         black_shan = Card("t_shan_black", "闪", "spade", 2, "basic")
@@ -507,7 +502,7 @@ class CardSystemResponderTest(unittest.TestCase):
 
     def test_no_responder_returns_false(self):
         async def scenario():
-            from card_system import CardSystem
+            from game_engine.card_system import CardSystem
             player = self.engine.game_state.players[0]
             player.hand.append(make_shan("orphan"))
             cs = CardSystem(self.engine.game_state, None, DummyTrigger())

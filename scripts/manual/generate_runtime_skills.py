@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 FACTION_BY_HERO = {}
 for hero in json.loads((ROOT / "data/heroes.json").read_text(encoding="utf-8")):
     FACTION_BY_HERO[hero["id"]] = {"魏": "wei", "蜀": "shu", "吴": "wu", "群": "qun"}.get(hero["faction"], hero["faction"])
@@ -17,7 +17,7 @@ def generate(active_factions):
         "#!/usr/bin/env python3",
         '"""自动生成：27将54技能运行时元数据类。具体机制由势力处理器执行。"""',
         "",
-        "from skill_runtime_core import RuntimeSkill",
+        "from .skill_runtime_core import RuntimeSkill",
         "",
     ]
     registry_lines = ["SKILL_REGISTRY = {"]

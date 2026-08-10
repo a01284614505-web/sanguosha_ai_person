@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """54技能统一注册、合法操作和事件分发。"""
 
+from importlib import import_module
 from typing import Dict, List
 
-from skill_runtime_core import hero_id, reset_turn_flags
-from skills_generated import get_all_skills, get_hero_skills
+from .skill_runtime_core import hero_id, reset_turn_flags
+from .skills_generated import get_all_skills, get_hero_skills
 
 
 class SkillManager:
@@ -26,15 +27,15 @@ class SkillManager:
 
     def _load_handlers(self):
         self.handlers = []
-        from skills_shu import ShuSkillHandler
-        self.handlers.append(ShuSkillHandler(self))
+        shu_module = import_module(".skills_shu", __package__)
+        self.handlers.append(shu_module.ShuSkillHandler(self))
         # 其他势力处理器在蜀国试点验证后注册。
         for module_name, class_name in [
             ("skills_wei", "WeiSkillHandler"),
             ("skills_wu", "WuSkillHandler"),
             ("skills_qun", "QunSkillHandler"),
         ]:
-            module = __import__(module_name, fromlist=[class_name])
+            module = import_module(f".{module_name}", __package__)
             self.handlers.append(getattr(module, class_name)(self))
 
     def all_definitions(self):

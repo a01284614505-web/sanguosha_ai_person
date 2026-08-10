@@ -6,14 +6,14 @@ import random
 import time
 from typing import Any, Callable, Dict, List
 
-from state_manager import GameState, Player, Phase
-from phase_controller import PhaseController
-from skill_manager import SkillManager
-from card_system import CardSystem, make_pass_option, option_label
-from rules_engine import RulesEngine
-from ai_decision import AIDecision
-from identity_system import IdentitySystem
-from chat_engine import ChatEngine
+from .state_manager import GameState, Player, Phase
+from .phase_controller import PhaseController
+from .skill_manager import SkillManager
+from .card_system import CardSystem, make_pass_option, option_label
+from .rules_engine import RulesEngine
+from .ai_decision import AIDecision
+from .identity_system import IdentitySystem
+from .chat_engine import ChatEngine
 
 
 class MainEngine:

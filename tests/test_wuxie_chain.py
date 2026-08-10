@@ -1,14 +1,9 @@
 import asyncio
-import sys
 import unittest
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'game_engine'))
-
-from card_system import CardSystem
-from main_engine import MainEngine
-from state_manager import Card
+from game_engine.card_system import CardSystem
+from game_engine import MainEngine
+from game_engine.state_manager import Card
 
 
 class WuxieChainTest(unittest.TestCase):

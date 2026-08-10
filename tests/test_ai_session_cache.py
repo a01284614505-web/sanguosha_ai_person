@@ -12,17 +12,13 @@ import asyncio
 import contextlib
 import io
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "game_engine"))
-
-from ai_decision import AIGateway  # noqa: E402
-from main_engine import MainEngine  # noqa: E402
+from game_engine.ai_decision import AIGateway
+from game_engine import MainEngine
 
 
 BASE_CONFIG = {

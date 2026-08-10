@@ -5,7 +5,6 @@
 
 import json
 import os
-import sys
 from pathlib import Path
 
 def test_worldbook_data():
@@ -79,8 +78,7 @@ def test_ai_integration():
     print("=" * 60)
     
     try:
-        sys.path.insert(0, 'game_engine')
-        from ai_decision import WorldbookManager
+        from game_engine.ai_decision import WorldbookManager
         
         wb = WorldbookManager()
         
@@ -118,8 +116,7 @@ def test_skill_generation():
     print("⚙️  技能运行时完整性测试")
     print("=" * 60)
     try:
-        sys.path.insert(0, 'game_engine')
-        from skills_generated import SKILL_REGISTRY, HERO_SKILLS, get_all_skills
+        from game_engine.skills_generated import SKILL_REGISTRY, HERO_SKILLS, get_all_skills
         skills = get_all_skills()
         active = [s for s in skills if s.implementation_status == 'active']
         todo_count = Path('game_engine/skills_generated.py').read_text(encoding='utf-8').count('TODO')

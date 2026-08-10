@@ -3,8 +3,10 @@
 
 from typing import TYPE_CHECKING
 
+from .state_manager import Phase, PlayerStatus
+
 if TYPE_CHECKING:
-    from state_manager import GameState, Phase, Player
+    from .state_manager import GameState, Player
 
 
 class PhaseController:
@@ -35,7 +37,6 @@ class PhaseController:
 
 
     async def prepare_phase(self):
-        from state_manager import Phase, PlayerStatus
 
         player = self.game_state.current_player
         print(f"[准备阶段] {player.name}")
@@ -65,11 +66,9 @@ class PhaseController:
         if not claimed:
             self.game_state.discard_pile.append(result)
         if delayed_card.name == "兵粮寸断" and result.suit != "club":
-            from state_manager import Phase
             self.skip_phases.add(Phase.DRAW)
             print(f"  {player.name}的【兵粮寸断】生效：跳过摸牌阶段")
         if delayed_card.name == "乐不思蜀" and result.suit != "heart":
-            from state_manager import Phase
             self.skip_phases.add(Phase.PLAY)
             print(f"  {player.name}的【乐不思蜀】生效：跳过出牌阶段")
         if delayed_card in player.judge_area:

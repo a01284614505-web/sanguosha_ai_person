@@ -5,7 +5,7 @@
 
 from typing import List, Callable
 
-from state_manager import Card
+from .state_manager import Card
 
 
 def make_pass_option() -> dict:

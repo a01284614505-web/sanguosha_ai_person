@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """界限突破吴国7将12技能运行实现。"""
 
-from state_manager import Card, Phase
-from skill_runtime_core import (
+from .state_manager import Card, Phase
+from .skill_runtime_core import (
     FactionSkillHandler, alive_others, card_color, ensure_flags, hero_faction,
     mark_once_per_turn, once_per_turn,
 )
