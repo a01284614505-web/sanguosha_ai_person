@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .card_system import option_label
+from .hero_registry import HeroRegistry
 
 
 class WorldbookManager:
@@ -25,10 +26,7 @@ class WorldbookManager:
     def _load_all_data(self):
         base_path = os.path.join(os.path.dirname(__file__), "..", self.worldbook_dir)
 
-        heroes_path = os.path.join(base_path, "heroes", "heroes_27_complete.json")
-        if os.path.exists(heroes_path):
-            with open(heroes_path, "r", encoding="utf-8") as f:
-                self.cache["heroes"] = json.load(f).get("heroes", [])
+        self.cache["heroes"] = HeroRegistry().all_heroes()
 
         self.cache["cards"] = []
         for card_type in ["basic_cards", "trick_cards", "equipment_cards"]:

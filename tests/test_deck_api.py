@@ -16,8 +16,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+from game_engine import MainEngine
 from game_engine.deck_manager import DECKS, DeckManager
-from game_server import CustomHandler, GameServer
+from game_server import CustomHandler
 
 SETTINGS_PATH = PROJECT_ROOT / "data" / "deck_settings.json"
 
@@ -125,7 +126,6 @@ class DeckApiTest(unittest.TestCase):
 
 class ConfigDeckTest(unittest.TestCase):
     def setUp(self):
-        self.server = GameServer()
         self.raw_config = {
             "mode": "5人身份局",
             "player_name": "测试玩家",
@@ -133,20 +133,20 @@ class ConfigDeckTest(unittest.TestCase):
         }
 
     def test_legacy_deck_id_normalized_into_config(self):
-        cfg = self.server.normalize_config({**self.raw_config, "deck_id": "complete_deck"})
+        cfg = MainEngine.normalize_config({**self.raw_config, "deck_id": "complete_deck"})
         self.assertEqual(cfg["deck_id"], "standard")
 
     def test_valid_deck_id_passthrough(self):
-        cfg = self.server.normalize_config({**self.raw_config, "deck_id": "combined"})
+        cfg = MainEngine.normalize_config({**self.raw_config, "deck_id": "combined"})
         self.assertEqual(cfg["deck_id"], "combined")
 
     def test_absent_deck_id_left_to_server_default(self):
-        cfg = self.server.normalize_config(dict(self.raw_config))
+        cfg = MainEngine.normalize_config(dict(self.raw_config))
         self.assertNotIn("deck_id", cfg)
 
     def test_unknown_deck_id_rejected_at_create(self):
         with self.assertRaises(ValueError):
-            self.server.normalize_config({**self.raw_config, "deck_id": "no_such_deck"})
+            MainEngine.normalize_config({**self.raw_config, "deck_id": "no_such_deck"})
 
 
 if __name__ == "__main__":

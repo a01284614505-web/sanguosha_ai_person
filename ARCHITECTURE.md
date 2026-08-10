@@ -1,13 +1,13 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前开发环境：Windows 10 / Python 3.12  
-> 当前阶段：Stage 5 已完成，R0–R3 重构进行中  
+> 当前阶段：Stage 5 与 C 档重构 R0–R5 已完成
 > 更新时间：2026-08-10
 ## 1. 架构铁律
 ```text
 引擎自驱（全部游戏逻辑） / 服务器纯消息泵 / 前端纯 UI
 ```
 - **引擎是唯一真理来源**：`game_engine/` 计算合法操作、复核选择并执行结算。
-- **服务器只负责传输**：`game_server.py` 管理 HTTP/WebSocket、会话与消息转发。R5 将继续搬走其中遗留的配置校验、武将分配和牌堆接口逻辑。
+- **服务器只负责传输**：`game_server.py` 管理 HTTP/WebSocket、连接映射、消息转发及动画 ACK/Future；配置、武将、牌堆、结算和统计均经 `MainEngine` 门面决定。
 - **前端只负责显示和输入**：`frontend/` 渲染引擎状态并提交用户选择，不自行决定规则合法性。
 ## 2. 当前结构
 ```text
@@ -16,7 +16,9 @@ sanguosha_data/
 ├── start_windows.ps1           # Windows 开发启动器
 ├── requirements.txt            # Python 运行依赖
 ├── game_engine/
-│   ├── main_engine.py          # 自驱主循环、输入等待、事件、序列化
+│   ├── main_engine.py          # 自驱主循环、输入等待、事件、序列化及服务器门面
+│   ├── hero_registry.py        # data/heroes.json 权威武将注册表
+│   ├── config_validator.py     # 开局配置与规则规范化
 │   ├── state_manager.py        # 玩家、卡牌、牌堆与游戏状态
 │   ├── rules_engine.py         # 合法性校验
 │   ├── card_system.py          # 卡牌效果、响应链、伤害与濒死
@@ -64,7 +66,7 @@ GameServer 转成 WebSocket 出站消息
 ```
 典型对局流程：
 1. 前端发送 `create_game`，服务器构造 `MainEngine` 并启动 `run()`。
-2. 引擎分配身份与武将，持续发出状态和回合事件。
+2. 引擎从权威注册表规范化武将、分配身份并持续发出状态和回合事件。
 3. 真人只从 `your_turn` 或 `require_response` 给出的合法候选中选择。
 4. `player_action` 进入 `MainEngine.submit_action()`，由引擎再次复核。
 5. AI 从引擎候选中决策；规则 AI 或外部模型都不越过合法操作列表。
@@ -130,8 +132,8 @@ python scripts/check_frontend_js.py
 ```
 ## 7. 已知边界与后续阶段
 - 当前只支持 5 人身份局。
-- R4：Python 包化与 import 统一。
-- R5：将服务器遗留游戏域逻辑搬回引擎。
+- R4：Python 包化与 import 统一（已完成）。
+- R5：服务器去逻辑化（已完成，`game_server.py` 249 行）。
 - R6：协议、Provider、牌表与序列化单一真相源。
 - R7：拆分 `game.html`、样式变量化并接线武将头像。
 - R8：日志机制与重构总交接。

@@ -4,6 +4,7 @@
 import asyncio
 import random
 import time
+from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from .state_manager import GameState, Player, Phase
@@ -14,11 +15,45 @@ from .rules_engine import RulesEngine
 from .ai_decision import AIDecision
 from .identity_system import IdentitySystem
 from .chat_engine import ChatEngine
+from .config_validator import normalize_config
+from .deck_manager import DeckManager
+from .hero_registry import HeroRegistry
 
 
 class MainEngine:
     """自驱动游戏引擎。服务器仅负责消息转发。"""
 
+    normalize_config = staticmethod(normalize_config)
+    @staticmethod
+    def server_info():
+        registry = HeroRegistry()
+        stats = SkillManager().registration_stats()
+        return {
+            "engine": "MainEngine-v2",
+            "supported_modes": ["5人身份局"],
+            "hero_count": registry.count(),
+            "worldbook_hero_count": registry.count(),
+            "generated_skill_count": stats["total_classes"],
+            "runtime_skill_count": stats["active_classes"],
+        }
+    @staticmethod
+    def deck_list(project_root=None):
+        manager = DeckManager(project_root or Path(__file__).resolve().parents[1])
+        return {
+            "active_deck": manager.get_active_deck_id(),
+            "decks": manager.get_deck_list(),
+        }
+    @staticmethod
+    def switch_deck(deck_id, project_root=None):
+        manager = DeckManager(project_root or Path(__file__).resolve().parents[1])
+        normalized = manager.normalize_deck_id(deck_id)
+        switched = manager.switch_deck(normalized)
+        return {
+            "success": switched,
+            "active_deck": manager.get_active_deck_id(),
+            "deck": manager.get_deck_info(normalized) if switched else {},
+            "decks": manager.get_deck_list(),
+        }
     def __init__(self, game_config: Dict):
         if not isinstance(game_config, dict):
             raise TypeError("game_config必须是字典")
@@ -59,6 +94,7 @@ class MainEngine:
         self._trustee_active = False
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
+        self._game_end_emitted = False
 
         print(f"\n{'=' * 60}")
         print("  🎮 引擎v2初始化")
@@ -88,13 +124,13 @@ class MainEngine:
 
     async def _notify_card_ui(self, **data):
         """卡牌系统统一通知前端，并等待浏览器确认动画完成。"""
-        entry = {"event_kind": "card_to_discard", **data}
+        entry = {"event_kind": "card_to_discard", "await_ui": True, **data}
         self.game_log.append(entry)
         await self.emit("card_animation", **entry)
 
     async def _present_used_card(self, **data):
         """展示使用牌；浏览器ACK后才进入卡牌效果和后续AI步骤。"""
-        entry = {"event_kind": "card_to_discard", **data}
+        entry = {"event_kind": "card_to_discard", "await_ui": True, **data}
         self.game_log.append(entry)
         await self.emit("card_animation", **entry)
 
@@ -263,14 +299,7 @@ class MainEngine:
                 self._watchdog_task.cancel()
                 self._watchdog_task = None
 
-        await self.emit("state_changed", state=self.serialize())
-        message = getattr(self.game_state, "end_message", None) or (
-            "平局" if self.game_state.winner == "draw" else f"{self.game_state.winner}方获胜！"
-        )
-        await self.emit(
-            "game_end", winner=self.game_state.winner, message=message,
-            state=self.serialize()
-        )
+        await self._emit_game_end_once()
         print(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
         return self.game_state.winner
 
@@ -784,11 +813,31 @@ class MainEngine:
             traceback.print_exc()
             return False
 
-    def request_end_game(self, reason: str = "玩家主动结束游戏"):
+    async def _emit_game_end_once(self):
+        if self._game_end_emitted:
+            return False
+        self._game_end_emitted = True
+        state = self.serialize()
+        message = getattr(self.game_state, "end_message", None) or (
+            "平局" if self.game_state.winner == "draw"
+            else f"{self.game_state.winner}方获胜！"
+        )
+        await self.emit("state_changed", state=state)
+        await self.emit(
+            "game_end", winner=self.game_state.winner, message=message, state=state
+        )
+        return True
+    async def request_end_game(self, reason: str = "玩家主动结束游戏"):
         self.game_state.game_over = True
         self.game_state.winner = "aborted"
         self.game_state.end_message = reason
-        self.submit_action({"type": "end_phase"}, [])
+        for future in list(self._pending_requests.values()):
+            if not future.done():
+                future.set_result(None)
+        self._player_input = {"action": {"type": "end_phase"}, "target_ids": []}
+        if self._player_event and not self._player_event.is_set():
+            self._player_event.set()
+        await self._emit_game_end_once()
 
     def update_ai_config(self, player_id: int, config: Dict) -> Dict:
         player = next((p for p in self.game_state.players if p.id == player_id), None)
