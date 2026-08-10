@@ -1,4 +1,9 @@
 // WebSocket客户端 - 完整重写
+// 协议常量来自自动生成的 protocol.js（页面须先加载）；node 测试环境直接 require。
+if (typeof module !== 'undefined' && module.exports) {
+    var Protocol = require('./protocol.js');
+}
+
 class GameClient {
     constructor() {
         this.ws = null;
@@ -39,69 +44,75 @@ class GameClient {
     
     handleMessage(data) {
         switch (data.type) {
-            case 'game_created':
+            case Protocol.OUTBOUND.GAME_CREATED:
                 this.gameId = data.game_id;
                 console.log('[游戏] 已创建:', this.gameId);
                 break;
-            
-            case 'game_state':
+
+            case Protocol.OUTBOUND.GAME_STATE:
                 if (this.onStateUpdate) this.onStateUpdate(data.state);
                 break;
-            
-            case 'your_turn':
+
+            case Protocol.OUTBOUND.YOUR_TURN:
                 if (this.onYourTurn) this.onYourTurn(data);
                 break;
-            
-            case 'action_result':
+
+            case Protocol.OUTBOUND.ACTION_RESULT:
                 if (this.onActionResult) this.onActionResult(data.success);
                 break;
-            
-            case 'game_end':
+
+            case Protocol.OUTBOUND.GAME_END:
                 if (this.onGameEnd) this.onGameEnd(data);
                 break;
-            
-            case 'chat':
+
+            case Protocol.OUTBOUND.CHAT:
                 if (this.onChat) this.onChat(data);
                 break;
-            
-            case 'ai_action':
+
+            case Protocol.OUTBOUND.AI_ACTION:
                 if (this.onAIAction) this.onAIAction(data);
                 break;
-            
-            case 'require_response':
+
+            case Protocol.OUTBOUND.REQUIRE_RESPONSE:
                 if (this.onRequireResponse) this.onRequireResponse(data);
                 break;
-            case 'event_notification':
+            case Protocol.OUTBOUND.EVENT_NOTIFICATION:
                 if (this.onEventNotification) this.onEventNotification(data);
                 break;
-            case 'ai_config_updated':
+            case Protocol.OUTBOUND.AI_CONFIG_UPDATED:
                 if (this.onAIConfigUpdated) this.onAIConfigUpdated(data.config);
                 break;
-            case 'end_game_accepted':
+            case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
                 break;
-            case 'error':
+            case Protocol.OUTBOUND.ERROR:
                 console.error('[服务器错误]', data.message);
                 if (this.onError) this.onError(data);
                 break;
+            case Protocol.OUTBOUND.PONG:
+                if (this.onPong) this.onPong(data);
+                break;
+            case Protocol.OUTBOUND.SERVER_INFO:
+                if (this.onServerInfo) this.onServerInfo(data);
+                break;
         }
     }
-    
+
     createGame(config) {
         if (!this.connected) { console.error('[WS] 未连接'); return; }
-        this.send({ type: 'create_game', config: config });
+        this.send({ type: Protocol.INBOUND.CREATE_GAME, config: config });
     }
-    
+
     playerAction(action, targetIds) {
         if (!this.connected || !this.gameId) return;
         targetIds = targetIds || [];
         console.log('[操作]', action.type);
-        this.send({ type: 'player_action', action: action, target_ids: targetIds });
+        this.send({ type: Protocol.INBOUND.PLAYER_ACTION, action: action, target_ids: targetIds });
     }
-    
+
     sendChat(msg) {
         if (!this.connected || !this.gameId) return;
-        this.send({ type: 'chat', message: msg });
+        this.send({ type: Protocol.INBOUND.CHAT, message: msg });
     }
     
     send(data) {
@@ -125,6 +136,8 @@ GameClient.prototype.onEventNotification = null;
 GameClient.prototype.onError = null;
 GameClient.prototype.onAIConfigUpdated = null;
 GameClient.prototype.onEndGameAccepted = null;
+GameClient.prototype.onPong = null;
+GameClient.prototype.onServerInfo = null;
 
 // 全局实例
 const gameClient = new GameClient();

@@ -1380,6 +1380,8 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [R4：Python 包化与导入统一（2026-08-10 15:43）](handover/20260810_1543_R4Python包化.md)
 - [R5：服务器去逻辑化方案（2026-08-10 17:41）](handover/20260810_1741_R5服务器去逻辑化方案.md)
 - [R5：服务器去逻辑化实施（2026-08-10 19:40）](handover/20260810_1940_R5服务器去逻辑化.md)
+- [R6：单一真相源方案（2026-08-10 19:03）](handover/20260810_1903_R6单一真相源方案.md)
+- [R6：单一真相源实施（2026-08-10）](handover/20260810_R6单一真相源实施.md)
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。

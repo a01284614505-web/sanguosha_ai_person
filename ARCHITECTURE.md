@@ -1,6 +1,6 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前开发环境：Windows 10 / Python 3.12  
-> 当前阶段：Stage 5 与 C 档重构 R0–R5 已完成
+> 当前阶段：Stage 5 与 C 档重构 R0–R6 已完成
 > 更新时间：2026-08-10
 ## 1. 架构铁律
 ```text
@@ -134,7 +134,7 @@ python scripts/check_frontend_js.py
 - 当前只支持 5 人身份局。
 - R4：Python 包化与 import 统一（已完成）。
 - R5：服务器去逻辑化（已完成，`game_server.py` 249 行）。
-- R6：协议、Provider、牌表与序列化单一真相源。
+- R6：协议、Provider、牌表与序列化单一真相源（已完成；`protocol.py` + `CARD_TABLE` + `card_to_dict`，前端经 `gen_protocol_js.py` 生成同步）。
 - R7：拆分 `game.html`、样式变量化并接线武将头像。
 - R8：日志机制与重构总交接。
 - 主线后续：剩余锦囊、皮肤、聊天、牌面美术、真人 API 实测和完整托管系统。

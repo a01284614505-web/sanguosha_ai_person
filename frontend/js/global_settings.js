@@ -68,7 +68,7 @@
                 </div>
                 <div class="gs-section">
                     <h4>🤖 新AI默认参数</h4>
-                    <label class="gs-row"><span>Provider</span><select id="gsProvider"><option value="deepseek">DeepSeek</option><option value="qwen">Qwen</option><option value="openai">OpenAI兼容</option><option value="glm">GLM</option><option value="grok">Grok</option><option value="doubao">豆包</option></select></label>
+                    <label class="gs-row"><span>Provider</span><select id="gsProvider"></select></label>
                     <label class="gs-row"><span>默认模型</span><input id="gsModel"></label>
                     <label class="gs-row"><span>Temperature</span><input id="gsTemperature" type="number" min="0" max="2" step="0.1"></label>
                 </div>
@@ -107,6 +107,37 @@
             <div class="gs-stat">数据状态：<b>${manifest.data_status || '待检测'}</b></div>`;
     }
 
+    // Provider 下拉：以服务端 /api/providers 为准（来源 protocol.py），
+    // 拉取完成前/失败时回退到自动生成的 Protocol.PROVIDERS（同源保证一致性）。
+    // 失败后不重试——Protocol.PROVIDERS 即同一真相源的导出，功能等价。
+    let gsProviderList = null;
+    let gsProvidersLoaded = false;
+    function fillProviderSelect() {
+        const sel = document.getElementById('gsProvider');
+        if (!sel) return;
+        const list = (gsProviderList && gsProviderList.length) ? gsProviderList : (window.Protocol ? Protocol.PROVIDERS : []);
+        sel.innerHTML = list.map(p => `<option value="${p.value}">${p.name}</option>`).join('');
+    }
+    function restoreProviderSelect() {
+        const sel = document.getElementById('gsProvider');
+        if (!sel) return;
+        sel.value = window.getGlobalSettings().default_provider;
+    }
+    function loadProviders() {
+        if (gsProvidersLoaded) { fillProviderSelect(); restoreProviderSelect(); return; }
+        gsProvidersLoaded = true;
+        fetch('/api/providers', { cache: 'no-store' })
+            .then(r => r.json())
+            .then(d => {
+                if (d && d.providers && d.providers.length) {
+                    gsProviderList = d.providers;
+                    fillProviderSelect();
+                    restoreProviderSelect();
+                }
+            })
+            .catch(() => {});
+    }
+
     function fillForm() {
         const s = window.getGlobalSettings();
         document.getElementById('gsAnimation').value = String(s.animation_ms);
@@ -134,7 +165,9 @@
 
     window.openGlobalSettings = function () {
         injectDOM();
+        fillProviderSelect();
         fillForm();
+        loadProviders();
         document.getElementById('globalSettingsOverlay').classList.add('show');
     };
     window.closeGlobalSettings = function () {

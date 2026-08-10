@@ -5,7 +5,11 @@
 
 from typing import List, Callable
 
-from .state_manager import Card
+from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
+from .state_manager import Card, card_to_dict
+
+# 可被无懈可击响应的锦囊（单一来源：CARD_TABLE.wuxie_targetable）。
+WUXIEABLE = frozenset(name for name, spec in CARD_TABLE.items() if spec.wuxie_targetable)
 
 
 def make_pass_option() -> dict:
@@ -59,59 +63,39 @@ class CardSystem:
             card_name=card.name,
             card_index=card_index,
             system_text=action_text,
-            card={
-                "id": card.id, "name": card.name, "suit": card.suit,
-                "rank": card.rank, "card_type": card.card_type,
-            },
+            card=card_to_dict(card),
             reason=reason,
             discard_count=len(self.game_state.discard_pile),
             message=message or f"{actor.name}{'打出' if reason == 'respond' else '弃置'}【{card.name}】",
         )
 
     async def use_card(self, player, card: Card, targets: List = None):
-        """使用卡牌（统一入口）"""
-    #     print(f"\n[出牌] {player.name} 使用 {card}")
-        
+        """使用卡牌（统一入口）。分发由 CARD_TABLE 的 resolver/usage 驱动。"""
+        spec = CARD_TABLE.get(card.name)
+
         # 锦囊结算前统一走无懈链；无懈本身只作为响应牌进入 ask_wuxie。
-        wuxieable = {
-            '过河拆桥', '顺手牵羊', '决斗', '南蛮入侵', '万箭齐发',
-            '桃园结义', '五谷丰登', '借刀杀人', '无中生有', '火攻',
-            '铁索连环', '兵粮寸断', '乐不思蜀', '闪电',
-        }
-        if card.name in wuxieable:
+        if spec and spec.wuxie_targetable:
             wuxie_targets = targets or []
             if await self.ask_wuxie(card, player, wuxie_targets):
                 print(f"  → 【{card.name}】被无懈可击抵消")
                 return True
 
-        # 根据卡牌类型分发
-        if card.name == '杀':
-            return await self.use_sha(player, card, targets[0] if targets else None)
-        elif card.name == '闪':
-            print("闪只能响应使用")
+        if spec and spec.usage == "response":
+            print(f"{card.name}只能响应使用")
             return False
-        elif card.name == '桃':
-            return await self.use_tao(player, card)
-        elif card.name == '过河拆桥':
-            return await self.use_guohe(player, card, targets[0] if targets else None)
-        elif card.name == '顺手牵羊':
-            return await self.use_shunshou(player, card, targets[0] if targets else None)
-        elif card.name == '无懈可击':
-            print("无懈只能响应使用")
-            return False
-        elif card.name == '酒':
-            return await self.use_jiu(player, card)
-        elif card.name == '铁索连环':
-            return await self.use_tiesuo(player, card, targets if targets else [])
-        elif card.name == '兵粮寸断':
-            return await self.use_bingliang(player, card, targets[0] if targets else None)
-        elif card.name == '乐不思蜀':
-            return await self.use_lebu(player, card, targets[0] if targets else None)
-        elif card.name == '无中生有':
-            return await self.use_wuzhongshengyou(player, card)
-        else:
-            print(f"未实现的卡牌: {card.name}")
-            return False
+
+        resolver_name = spec.resolver if spec else None
+        if resolver_name:
+            method = getattr(self, resolver_name)
+            if resolver_name == "use_tiesuo":
+                return await method(player, card, targets if targets else [])
+            # 无显式目标的牌（桃/酒/无中生有等，NO_EXTERNAL_TARGET）不传 target 参数；其余单目标。
+            if spec.target_rule.get("type") in NO_EXTERNAL_TARGET:
+                return await method(player, card)
+            return await method(player, card, targets[0] if targets else None)
+
+        print(f"未实现的卡牌: {card.name}")
+        return False
     
     async def use_sha(self, player, card: Card, target):
         """使用杀（完整流程）"""
@@ -506,36 +490,29 @@ class CardSystem:
             print(f"  → {target.name} {status}")
         
         return True
-    
+
+    async def _use_delayed_trick(self, player, card: Card, target):
+        """延时锦囊共用结算：放入目标判定区。"""
+        if not target or target == player:
+            print(f"{card.name}需要指定其他角色")
+            return False
+
+        # 放入目标判定区
+        if not hasattr(target, 'judge_area'):
+            target.judge_area = []
+
+        target.judge_area.append(card)
+        print(f"  → {target.name} 判定区增加【{card.name}】")
+
+        return True
+
     async def use_bingliang(self, player, card: Card, target):
         """使用兵粮寸断（延时锦囊）"""
-        if not target or target == player:
-            print("兵粮寸断需要指定其他角色")
-            return False
-        
-        # 放入目标判定区
-        if not hasattr(target, 'judge_area'):
-            target.judge_area = []
-        
-        target.judge_area.append(card)
-        print(f"  → {target.name} 判定区增加【兵粮寸断】")
-        
-        return True
-    
+        return await self._use_delayed_trick(player, card, target)
+
     async def use_lebu(self, player, card: Card, target):
         """使用乐不思蜀（延时锦囊）"""
-        if not target or target == player:
-            print("乐不思蜀需要指定其他角色")
-            return False
-        
-        # 放入目标判定区
-        if not hasattr(target, 'judge_area'):
-            target.judge_area = []
-        
-        target.judge_area.append(card)
-        print(f"  → {target.name} 判定区增加【乐不思蜀】")
-        
-        return True
+        return await self._use_delayed_trick(player, card, target)
     
     async def use_wuzhongshengyou(self, player, card: Card):
         """使用无中生有"""

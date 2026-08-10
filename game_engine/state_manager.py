@@ -272,41 +272,22 @@ class GameState:
         if 'minus_horse' in from_player.equipment:
             distance -= 1
         return max(1, distance)
-    
-    def to_dict(self) -> Dict:
-        """序列化为字典（用于前端显示）"""
-        return {
-            "round_number": self.round_number,
-            "current_phase": self.current_phase.value,
-            "current_turn": self.current_player_index,
-            "mode": self.mode,
-            "deck_id": self.deck_id,
-            "initial_deck_count": self.initial_deck_count,
-            "deck_count": len(self.deck),
-            "discard_count": len(self.discard_pile),
-            "players": [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "hp": p.hp,
-                    "max_hp": p.max_hp,
-                    "hand_count": p.get_hand_count(),
-                    "alive": p.alive,
-                    "status": p.status.value,
-                    "equipment": {k: {"name": v.name} for k, v in p.equipment.items()},
-                    "judge_area": [{"name": c.name} for c in p.judge_area],
-                    "hand": [
-                        {
-                            "id": c.id,
-                            "name": c.name,
-                            "suit": c.suit,
-                            "rank": c.rank,
-                            "type": c.card_type
-                        } for c in p.hand
-                    ] if p.id == 0 else []  # 只显示自己的手牌
-                } for p in self.players
-            ]
-        }
+
+
+def card_to_dict(card: "Card", include_id: bool = True, name: Optional[str] = None) -> Dict:
+    """卡牌序列化单点：id/name/suit/rank/card_type（include_id=False 用于操作候选）。
+
+    与前端字段约定一致，统一用 card_type 字段名。手牌序列化另加 index/target_rule
+    （见 main_engine.get_player_hand）。name 覆盖用于技能虚拟牌（如武圣红牌当杀）。"""
+    d = {
+        "name": name or card.name,
+        "suit": card.suit,
+        "rank": card.rank,
+        "card_type": card.card_type,
+    }
+    if include_id:
+        d["id"] = card.id
+    return d
 
 if __name__ == "__main__":
     # 测试
@@ -331,5 +312,5 @@ if __name__ == "__main__":
     game.draw_card(game.current_player, 2)
     print(f"摸牌后手牌数: {game.current_player.get_hand_count()}")
     
-    # 输出状态
-    print(json.dumps(game.to_dict(), ensure_ascii=False, indent=2))
+    # 输出状态（卡牌序列化单点 card_to_dict）
+    print(json.dumps([game.card_to_dict(c) for c in game.current_player.hand], ensure_ascii=False, indent=2))

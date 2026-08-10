@@ -3,10 +3,15 @@
 
 from typing import TYPE_CHECKING
 
+from .card_table import CARD_TABLE
 from .state_manager import Phase, PlayerStatus
 
 if TYPE_CHECKING:
     from .state_manager import GameState, Player
+
+# 弃牌托管保留分：从单一牌表 CARD_TABLE.discard_keep_score 派生，
+# 保持原行为不变（桃100/闪80/杀50/无懈可击70，其余20）。
+KEEP_SCORE = {name: spec.discard_keep_score for name, spec in CARD_TABLE.items()}
 
 
 class PhaseController:
@@ -101,10 +106,9 @@ class PhaseController:
             return
 
         # P0托管策略：优先保留桃、闪，再保留其他牌。后续接入玩家选牌交互。
-        keep_score = {"桃": 100, "闪": 80, "杀": 50, "无懈可击": 70}
         ordered = sorted(
             list(player.hand),
-            key=lambda c: (keep_score.get(c.name, 20), c.rank),
+            key=lambda c: (KEEP_SCORE.get(c.name, 20), c.rank),
         )
         discarded = ordered[:discard_count]
         for card in discarded:

@@ -9,6 +9,7 @@ from threading import Thread
 from urllib.parse import urlsplit
 from websockets.exceptions import ConnectionClosedOK
 from game_engine import MainEngine
+from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
@@ -49,15 +50,15 @@ class GameServer:
     async def dispatch(self, ws, data):
         message_type = data.get("type", "")
         handlers = {
-            "create_game": lambda: self.do_create(ws, data.get("config", {})),
-            "player_action": lambda: self.do_action(ws, data),
-            "chat": lambda: self.do_chat(ws, data),
-            "card_animation_done": lambda: self.do_animation_done(data),
-            "end_game": lambda: self.do_end_game(ws, data),
-            "update_ai_config": lambda: self.do_update_ai_config(ws, data),
-            "ping": lambda: self.send(ws, {"type": "pong"}),
-            "server_info": lambda: self.send(
-                ws, {"type": "server_info", **MainEngine.server_info()}
+            INBOUND.CREATE_GAME: lambda: self.do_create(ws, data.get("config", {})),
+            INBOUND.PLAYER_ACTION: lambda: self.do_action(ws, data),
+            INBOUND.CHAT: lambda: self.do_chat(ws, data),
+            INBOUND.CARD_ANIMATION_DONE: lambda: self.do_animation_done(data),
+            INBOUND.END_GAME: lambda: self.do_end_game(ws, data),
+            INBOUND.UPDATE_AI_CONFIG: lambda: self.do_update_ai_config(ws, data),
+            INBOUND.PING: lambda: self.send(ws, {"type": OUTBOUND.PONG}),
+            INBOUND.SERVER_INFO: lambda: self.send(
+                ws, {"type": OUTBOUND.SERVER_INFO, **MainEngine.server_info()}
             ),
         }
         handler = handlers.get(message_type)
@@ -79,13 +80,10 @@ class GameServer:
         engine = MainEngine(cfg)
         self.engines[gid] = engine
         self.ws_map[ws] = gid
-        for event in (
-            "state_changed", "your_turn", "action_result", "ai_action", "chat",
-            "event_notification", "require_response", "game_end",
-        ):
+        for event in ENGINE_EVENTS:
             engine.on(event, self._forward(ws, event))
-        engine.on("card_animation", self._animation_handler(ws, gid))
-        await self.send(ws, {"type": "game_created", "game_id": gid})
+        engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(ws, gid))
+        await self.send(ws, {"type": OUTBOUND.GAME_CREATED, "game_id": gid})
         self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine, ws))
     async def _run_engine(self, gid, engine, ws):
         try:
@@ -105,7 +103,7 @@ class GameServer:
     async def do_chat(self, ws, data):
         message = str(data.get("message", "")).strip()[:200]
         if message:
-            await self.send(ws, {"type": "chat", "from": "玩家", "message": message})
+            await self.send(ws, {"type": OUTBOUND.CHAT, "from": "玩家", "message": message})
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
         if waiter and not waiter.done():
@@ -117,7 +115,7 @@ class GameServer:
             return
         reason = str(data.get("reason", "玩家主动结束游戏"))[:100]
         await engine.request_end_game(reason)
-        await self.send(ws, {"type": "end_game_accepted"})
+        await self.send(ws, {"type": OUTBOUND.END_GAME_ACCEPTED})
     async def do_update_ai_config(self, ws, data):
         engine = self.engine_for(ws)
         if not engine:
@@ -127,18 +125,14 @@ class GameServer:
             updated = engine.update_ai_config(
                 int(data.get("player_id")), data.get("config") or {}
             )
-            await self.send(ws, {"type": "ai_config_updated", "config": updated})
+            await self.send(ws, {"type": OUTBOUND.AI_CONFIG_UPDATED, "config": updated})
         except Exception as exc:
             await self.send_error(ws, f"AI配置更新失败: {exc}")
     def _forward(self, ws, event):
-        message_types = {
-            "state_changed": "game_state",
-            "event_notification": "event_notification",
-        }
         async def handler(**data):
-            if event == "chat" and "from_" in data:
+            if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
-            await self.send(ws, {"type": message_types.get(event, event), **data})
+            await self.send(ws, {"type": ENGINE_EVENT_MAP.get(event, event), **data})
         return handler
     def _animation_handler(self, ws, gid):
         async def handler(**data):
@@ -149,7 +143,7 @@ class GameServer:
             if await_ui:
                 self.animation_waiters[animation_id] = waiter
             await self.send(
-                ws, {"type": "event_notification", "animation_id": animation_id, **data}
+                ws, {"type": OUTBOUND.EVENT_NOTIFICATION, "animation_id": animation_id, **data}
             )
             if not await_ui:
                 return
@@ -163,7 +157,7 @@ class GameServer:
                 self.animation_waiters.pop(animation_id, None)
         return handler
     async def send_error(self, ws, message, fatal=False):
-        await self.send(ws, {"type": "error", "message": message, "fatal": fatal})
+        await self.send(ws, {"type": OUTBOUND.ERROR, "message": message, "fatal": fatal})
     async def send(self, ws, data):
         try:
             await ws.send(json.dumps(data, ensure_ascii=False))
@@ -203,6 +197,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
                     500,
                     {"success": False, "message": f"{type(exc).__name__}: {exc}"},
                 )
+            return
+        if request_path == "/api/providers":
+            self._send_json(200, {"success": True, "providers": MainEngine.providers()})
             return
         if request_path.startswith("/api/"):
             self.send_error(404)

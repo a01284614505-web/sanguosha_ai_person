@@ -11,7 +11,9 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .card_system import option_label
+from .card_table import CARD_TABLE
 from .hero_registry import HeroRegistry
+from .protocol import PROVIDERS
 
 
 class WorldbookManager:
@@ -447,7 +449,15 @@ class AIDecision:
         priorities = []
         if player and player.hp < player.max_hp:
             priorities.append("桃")
-        priorities.extend(["杀", "过河拆桥", "顺手牵羊"])
+        # 出牌优先级从单一牌表 CARD_TABLE.play_priority 派生（降序，同分保持牌表顺序），
+        # 只取 priority>0 的牌参与优先匹配，其余交给兜底 playable[0]，保持原行为。
+        priorities.extend(
+            name
+            for name, spec in sorted(
+                CARD_TABLE.items(), key=lambda item: -item[1].play_priority
+            )
+            if spec.play_priority > 0
+        )
 
         selected: Optional[Dict] = None
         for name in priorities:
@@ -600,14 +610,8 @@ class AIDecision:
 class AIGateway:
     """AI API网关。当前重点保证OpenAI兼容接口可用。"""
 
-    DEFAULT_BASES = {
-        "openai": "https://api.openai.com/v1",
-        "deepseek": "https://api.deepseek.com/v1",
-        "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "glm": "https://open.bigmodel.cn/api/paas/v4",
-        "grok": "https://api.x.ai/v1",
-        "doubao": "https://ark.cn-beijing.volces.com/api/v3",
-    }
+    # Provider 清单与默认地址的唯一来源是 protocol.PROVIDERS，此处仅派生字典。
+    DEFAULT_BASES = {p["value"]: p["default_url"] for p in PROVIDERS}
 
     def __init__(self, timeout: int = 30):
         self.timeout = timeout

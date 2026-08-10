@@ -81,5 +81,33 @@ class RealDeckTest(unittest.TestCase):
         self.assertIn("仅支持摸取和弃置", reason)
 
 
+class CardTableConsistencyTest(unittest.TestCase):
+    """CARD_TABLE 单一牌表与牌堆 JSON 的一致性（R6 6c）。"""
+
+    def test_table_keys_match_deck_union(self):
+        from game_engine.card_table import CARD_TABLE
+
+        manager = DeckManager(PROJECT_ROOT)
+        names = set()
+        for deck_id in ("standard", "extra"):
+            names.update(card["name"] for card in manager.load_deck_cards(deck_id))
+        self.assertEqual(len(CARD_TABLE), 42)
+        self.assertEqual(set(CARD_TABLE), names)
+
+    def test_card_type_and_target_rule_match_decks(self):
+        from game_engine.card_table import CARD_TABLE
+
+        manager = DeckManager(PROJECT_ROOT)
+        seen = {}
+        for deck_id in ("standard", "extra"):
+            for card in manager.load_deck_cards(deck_id):
+                seen.setdefault(card["name"], card)
+        for name, spec in CARD_TABLE.items():
+            raw = seen[name]
+            with self.subTest(card=name):
+                self.assertEqual(spec.card_type, raw["type"])
+                self.assertEqual(spec.target_rule, raw.get("target_rule"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

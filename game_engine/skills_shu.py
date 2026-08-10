@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """界限突破蜀国7将14技能运行实现。"""
 
-from .state_manager import Card, Phase
+from .state_manager import Card, Phase, card_to_dict
 from .skill_runtime_core import (
     FactionSkillHandler, alive_others, card_color, card_type_group, ensure_flags,
     hero_faction, mark_once_per_turn, once_per_turn, player_by_id,
@@ -175,12 +175,12 @@ class ShuSkillHandler(FactionSkillHandler):
     async def _consume_conversion(self, player, card, skill_name, as_name):
         index = player.hand.index(card)
         await self.manager.announce(player, skill_name, f"{player.name}发动【{skill_name}】，将【{card.name}】当【{as_name}】")
-        await self.engine._present_used_card(
+        await self.engine._notify_card_ui(
             message=f"{player.name}以【{skill_name}】将【{card.name}】当【{as_name}】",
             system_text=f"[‘{player.name}’{skill_name}·{as_name}！]",
             actor_id=player.id, actor_name=player.name, source_name=player.name,
             target_name="", card_name=as_name, card_index=index,
-            card={"id": card.id, "name": as_name, "suit": card.suit, "rank": card.rank, "card_type": card.card_type},
+            card=card_to_dict(card, name=as_name),
             reason="skill_conversion", discard_count=len(self.state.discard_pile) + 1,
         )
         player.hand.remove(card)
@@ -206,11 +206,14 @@ class ShuSkillHandler(FactionSkillHandler):
                 player.hp = player.max_hp
                 self.state.draw_card(player, recovered)
                 await self.manager.announce(player, "替身", f"{player.name}发动【替身】，回复{recovered}点体力并摸{recovered}张牌")
-            # 观星：自动把当前最需要的牌置于牌堆顶。
-            if self.has(player, "观星") and self.state.deck:
-                count = 3 if len([p for p in self.state.players if p.alive]) < 4 else 5
-                cards = self.state.deck[:count]
-                score = {"桃": 100 if player.hp < player.max_hp else 40, "闪": 80, "杀": 60, "过河拆桥": 55}
+                # 观星：自动把当前最需要的牌置于牌堆顶。
+                # 评分保留现值（桃在掉血时100否则40，闪80，杀60，过河拆桥55，其余20）——
+                # 观星是"预测下一张可用牌"的战术评分，与弃牌托管保留分（phase_controller
+                # KEEP_SCORE，防弃牌）目的不同，刻意不与 CARD_TABLE 共用一套分值。
+                if self.has(player, "观星") and self.state.deck:
+                    count = 3 if len([p for p in self.state.players if p.alive]) < 4 else 5
+                    cards = self.state.deck[:count]
+                    score = {"桃": 100 if player.hp < player.max_hp else 40, "闪": 80, "杀": 60, "过河拆桥": 55}
                 cards.sort(key=lambda c: (score.get(c.name, 20), -c.rank), reverse=True)
                 self.state.deck[:count] = cards
                 await self.manager.announce(player, "观星", f"{player.name}发动【观星】，调整牌堆顶{len(cards)}张牌")

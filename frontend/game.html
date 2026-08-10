@@ -163,7 +163,7 @@
         <div class="modal-card">
             <div class="modal-head"><h3 id="aiSettingsTitle">AI模型设置</h3><button class="modal-close" onclick="closeModal('aiSettingsModal')">关闭</button></div>
             <input type="hidden" id="aiSettingPlayerId">
-            <label class="modal-field">Provider<select id="aiSettingProvider"><option value="deepseek">DeepSeek</option><option value="qwen">Qwen</option><option value="openai">OpenAI兼容</option><option value="glm">GLM</option><option value="grok">Grok</option><option value="doubao">豆包</option></select></label>
+            <label class="modal-field">Provider<select id="aiSettingProvider"></select></label>
             <label class="modal-field">Model<input id="aiSettingModel"></label>
             <label class="modal-field">API地址<input id="aiSettingUrl" placeholder="可留空使用默认地址"></label>
             <label class="modal-field">新API Key<input id="aiSettingKey" type="password" placeholder="留空则保留原Key"></label>
@@ -173,6 +173,7 @@
         </div>
     </div>
 
+    <script src="js/protocol.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/ws_client.js?v=20260803c"></script>
     <script src="js/global_settings.js?v=20260803c"></script>
@@ -265,7 +266,7 @@
                     }
                     if(window.audioManager)audioManager.play('card');
                     if(data.animation_id){
-                        gameClient.send({type:'card_animation_done',animation_id:data.animation_id});
+                        gameClient.send({type:Protocol.INBOUND.CARD_ANIMATION_DONE,animation_id:data.animation_id});
                     }
                     resolve();
                 },animationMs);
@@ -437,6 +438,10 @@
         gameClient.onAIConfigUpdated=function(config){
             showSystemToast('AI模型设置已更新');
             closeModal('aiSettingsModal');
+        };
+
+        gameClient.onEndGameAccepted=function(data){
+            showSystemToast('已请求结束对局，等待结算…');
         };
 
         gameClient.onGameEnd=function(data){
@@ -613,14 +618,31 @@
             }
         }
 
+        // AI 设置弹窗的 Provider 下拉：以服务端 /api/providers 为准（来源 protocol.py），
+        // 拉取完成前/失败时回退到自动生成的 Protocol.PROVIDERS。
+        var aiSettingProviderList = null;
+        function fillAiSettingProvider(){
+            var sel=document.getElementById('aiSettingProvider');
+            if(!sel)return;
+            var list=(aiSettingProviderList&&aiSettingProviderList.length)?aiSettingProviderList:(window.Protocol?Protocol.PROVIDERS:[]);
+            sel.innerHTML=list.map(function(p){return '<option value="'+p.value+'">'+p.name+'</option>'}).join('');
+        }
+        function loadAiSettingProviders(){
+            fetch('/api/providers',{cache:'no-store'})
+                .then(function(r){return r.json()})
+                .then(function(d){if(d&&d.providers&&d.providers.length){aiSettingProviderList=d.providers;fillAiSettingProvider();}})
+                .catch(function(){});
+        }
+
         function openAISettings(playerId){
             if(!latestState)return;
             var p=latestState.players.find(function(x){return x.id===playerId});
             if(!p||!p.is_ai)return;
+            fillAiSettingProvider();
             var c=p.ai_config||{};
             document.getElementById('aiSettingsTitle').textContent=p.name+' · AI模型设置';
             document.getElementById('aiSettingPlayerId').value=p.id;
-            document.getElementById('aiSettingProvider').value=c.provider||'deepseek';
+            document.getElementById('aiSettingProvider').value=c.provider||(aiSettingProviderList&&aiSettingProviderList[0]?aiSettingProviderList[0].value:(window.Protocol?Protocol.PROVIDERS[0].value:'deepseek'));
             document.getElementById('aiSettingModel').value=c.model||'deepseek-chat';
             document.getElementById('aiSettingUrl').value=c.api_url||'';
             document.getElementById('aiSettingKey').value='';
@@ -631,7 +653,7 @@
 
         function saveAISettings(){
             gameClient.send({
-                type:'update_ai_config',
+                type:Protocol.INBOUND.UPDATE_AI_CONFIG,
                 player_id:parseInt(document.getElementById('aiSettingPlayerId').value),
                 config:{
                     provider:document.getElementById('aiSettingProvider').value,
@@ -647,7 +669,7 @@
         function doEndGame(){
             if(!confirm('确定结束本局游戏吗？本局将记为主动终止。'))return;
             document.getElementById('quitBtn').disabled=true;
-            gameClient.send({type:'end_game',reason:'玩家主动结束游戏'});
+            gameClient.send({type:Protocol.INBOUND.END_GAME,reason:'玩家主动结束游戏'});
         }
 
         function doPlay(){
@@ -684,6 +706,7 @@
         }
 
         gameClient.connect();
+        loadAiSettingProviders();
 
         function toggleLog(){
             var logWrap=document.getElementById("logWrap");

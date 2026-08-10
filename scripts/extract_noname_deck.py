@@ -3,26 +3,19 @@
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 
+# 支持独立运行（python scripts/extract_noname_deck.py），脚本位于 scripts/ 子目录
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-NAME_MAP = {
-    "sha": "杀", "shan": "闪", "tao": "桃", "jiu": "酒",
-    "wugu": "五谷丰登", "taoyuan": "桃园结义", "nanman": "南蛮入侵",
-    "wanjian": "万箭齐发", "wuzhong": "无中生有", "juedou": "决斗",
-    "shunshou": "顺手牵羊", "guohe": "过河拆桥", "jiedao": "借刀杀人",
-    "wuxie": "无懈可击", "lebu": "乐不思蜀", "shandian": "闪电",
-    "huogong": "火攻", "tiesuo": "铁索连环", "bingliang": "兵粮寸断",
-    "zhuge": "诸葛连弩", "cixiong": "雌雄双股剑", "qinggang": "青釭剑",
-    "hanbing": "寒冰剑", "qinglong": "青龙偃月刀", "zhangba": "丈八蛇矛",
-    "guanshi": "贯石斧", "fangtian": "方天画戟", "qilin": "麒麟弓",
-    "bagua": "八卦阵", "renwang": "仁王盾", "jueying": "绝影",
-    "dilu": "的卢", "zhuahuang": "爪黄飞电", "chitu": "赤兔",
-    "dawan": "大宛", "zixin": "紫骍", "hualiu": "骅骝",
-    "baiyin": "白银狮子", "tengjia": "藤甲", "guding": "古锭刀",
-    "zhuque": "朱雀羽扇", "muniu": "木牛流马",
-}
+# noname 英文标识 → 中文名，从单一牌表 CARD_TABLE.source_key 反向派生
+from game_engine.card_table import CARD_TABLE
+
+NAME_MAP = {spec.source_key: name for name, spec in CARD_TABLE.items() if spec.source_key}
 
 BASIC = {"sha", "shan", "tao", "jiu"}
 DELAYED_TRICK = {"lebu", "shandian", "bingliang"}

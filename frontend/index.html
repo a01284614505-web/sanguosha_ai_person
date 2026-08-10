@@ -79,12 +79,7 @@
             </div>
             <div id="chatModelConfig" class="config-sub" style="display:none;">
                 <label>聊天模型：</label>
-                <select id="chatProvider">
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="qwen">通义千问</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="gemini">Gemini</option>
-                </select>
+                <select id="chatProvider"></select>
                 <input type="text" id="chatModel" value="deepseek-chat" placeholder="模型名称">
             </div>
         </section>
@@ -98,6 +93,7 @@
         </footer>
     </div>
 
+    <script src="js/protocol.js"></script>
     <script src="js/lobby.js?v=20260803c"></script>
     <script src="js/global_settings.js?v=20260803c"></script>
 </body>

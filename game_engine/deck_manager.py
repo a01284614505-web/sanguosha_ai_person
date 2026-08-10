@@ -6,6 +6,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List
 
+from .card_table import CARD_TABLE
+
 
 DECKS = {
     "standard": {
@@ -115,17 +117,9 @@ class DeckManager:
         return cards
 
     def get_card_image_path(self, card_name):
-        name_map = {
-            "杀": "sha", "闪": "shan", "桃": "tao", "酒": "jiu",
-            "过河拆桥": "guohe", "顺手牵羊": "shunshou",
-            "无懈可击": "wuxie", "决斗": "juedou", "火攻": "huogong",
-            "铁索连环": "tiesuo", "兵粮寸断": "bingliang",
-            "乐不思蜀": "lebu", "南蛮入侵": "nanman",
-            "万箭齐发": "wanjian", "桃园结义": "taoyuan",
-            "五谷丰登": "wugu", "借刀杀人": "jiedao",
-            "无中生有": "wuzhongshengyou", "闪电": "shandian",
-        }
-        filename = name_map.get(card_name, card_name)
+        # 图片文件名从单一牌表 CARD_TABLE.image 查询，未收录时回退原名。
+        spec = CARD_TABLE.get(card_name)
+        filename = spec.image if spec and spec.image else card_name
         return f"assets/cards/{filename}.png"
 
     def get_deck_info(self, deck_id=None):

@@ -6,6 +6,8 @@
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
+from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
+
 class RulesEngine:
     """规则引擎：检查所有操作的合法性"""
     
@@ -29,20 +31,19 @@ class RulesEngine:
         if getattr(player, "flags", {}).get("cannot_use_hand"):
             return False, "受技能影响，本回合不能使用或打出手牌"
         
-        # 4. 根据卡牌类型检查
+        # 4. 根据卡牌类型检查（单一来源：CARD_TABLE 的 card_type/usage/resolver）
         if card.card_type == 'equipment':
             return False, "装备效果尚未接入，本批仅支持摸取和弃置"
-        if card.name == '杀':
-            return self.can_play_sha(player, card, targets)
-        elif card.name == '桃':
-            return self.can_play_tao(player, card)
-        elif card.name == '过河拆桥':
-            return self.can_play_guohe(player, card, targets)
-        elif card.name == '顺手牵羊':
-            return self.can_play_shunshou(player, card, targets)
-        elif card.name == '无懈可击':
-            return False, "无懈只能响应使用"
-        
+        spec = CARD_TABLE.get(card.name)
+        if spec and spec.usage == "response":
+            return False, "该牌只能响应使用"
+        can_play_fn = getattr(self, f"can_play_{spec.resolver[4:]}", None) if spec and spec.resolver else None
+        if can_play_fn:
+            # 与 use_card 分发链对称（单一来源 NO_EXTERNAL_TARGET）：无外部目标不传 targets
+            if spec.target_rule.get("type") in NO_EXTERNAL_TARGET:
+                return can_play_fn(player, card)
+            return can_play_fn(player, card, targets)
+
         return True, "OK"
     
     def can_play_sha(self, player, card, targets: List) -> Tuple[bool, str]:

@@ -4,18 +4,11 @@ class LobbyController {
         this.selectedMode = null;
         this.aiCount = 0;
         this.aiConfigs = [];
-        
-        this.providers = [
-            { value: 'qwen', name: '通义千问', defaultModel: 'qwen-plus', defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-            { value: 'deepseek', name: 'DeepSeek', defaultModel: 'deepseek-chat', defaultUrl: 'https://api.deepseek.com/v1' },
-            { value: 'openai', name: 'OpenAI', defaultModel: 'gpt-4o-mini', defaultUrl: 'https://api.openai.com/v1' },
-            { value: 'gemini', name: 'Gemini', defaultModel: 'gemini-2.0-flash-exp', defaultUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-            { value: 'claude', name: 'Claude', defaultModel: 'claude-3-5-sonnet-20241022', defaultUrl: 'https://api.anthropic.com/v1' },
-            { value: 'glm', name: '智谱GLM', defaultModel: 'glm-4-flash', defaultUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-            { value: 'grok', name: 'Grok', defaultModel: 'grok-2-latest', defaultUrl: 'https://api.x.ai/v1' },
-            { value: 'doubao', name: '豆包', defaultModel: 'doubao-pro-32k', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3' }
-        ];
-        
+
+        // Provider 清单以服务端 /api/providers 为准（来源 protocol.py）；
+        // 拉取失败时回退到自动生成的 Protocol.PROVIDERS，保证一致性。
+        this.providers = [];
+
         this.init();
     }
 
@@ -47,6 +40,27 @@ class LobbyController {
 
         // 默认选择5人身份局
         this.selectMode('5人身份局');
+
+        this.loadProviders();
+    }
+
+    loadProviders() {
+        var self = this;
+        function apply(list) {
+            self.providers = (list && list.length) ? list : (window.Protocol ? Protocol.PROVIDERS : []);
+            // 聊天模型下拉（index.html）与 AI 配置共用同一 Provider 清单
+            var cp = document.getElementById('chatProvider');
+            if (cp && !cp.options.length) {
+                cp.innerHTML = self.providers.map(function (p) {
+                    return '<option value="' + p.value + '">' + p.name + '</option>';
+                }).join('');
+            }
+            self.generateAIConfigs();
+        }
+        fetch('/api/providers', { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { apply(d && d.providers); })
+            .catch(function () { apply(null); });
     }
 
     selectMode(mode) {
@@ -94,6 +108,10 @@ class LobbyController {
     }
 
     generateAIConfigs() {
+        // Provider 清单异步加载中（或拉取失败且无回退）时不渲染，
+        // 等 loadProviders 完成后重新调用本函数。
+        if (!this.providers.length) return;
+
         const aiList = document.getElementById('aiConfigList');
         aiList.innerHTML = '';
 
