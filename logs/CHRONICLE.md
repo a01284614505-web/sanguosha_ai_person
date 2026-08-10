@@ -1377,6 +1377,7 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [R1：清除死文件与垃圾文件（2026-08-08 15:05）](handover/20260808_1505_R1清除死文件与垃圾.md)
 - [R2：精选归档与死代码清理（2026-08-10 12:19）](handover/20260810_1219_R2精选归档与死代码清理.md)
 - [R3：文档整理与工程配置（2026-08-10 13:50）](handover/20260810_1350_R3文档整理与工程配置.md)
+- [R4：Python 包化与导入统一（2026-08-10 15:43）](handover/20260810_1543_R4Python包化.md)
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。
