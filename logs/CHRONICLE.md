@@ -1382,6 +1382,8 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [R5：服务器去逻辑化实施（2026-08-10 19:40）](handover/20260810_1940_R5服务器去逻辑化.md)
 - [R6：单一真相源方案（2026-08-10 19:03）](handover/20260810_1903_R6单一真相源方案.md)
 - [R6：单一真相源实施（2026-08-10）](handover/20260810_R6单一真相源实施.md)
+- [Provider 默认 API 地址修复方案（2026-08-12 16:16）](handover/20260812_1616_Provider默认API地址修复方案.md)
+- [Provider 默认 API 地址修复（2026-08-12 16:25）](handover/20260812_1625_Provider默认API地址修复.md)
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。

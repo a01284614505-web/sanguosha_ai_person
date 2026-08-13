@@ -66,6 +66,24 @@ class ProtocolSyncTest(unittest.TestCase):
             for field in ("value", "name", "default_model", "default_url"):
                 self.assertTrue(provider.get(field), f"{provider['value']} 缺字段 {field}")
 
+    def test_lobby_uses_provider_snake_case_fields(self):
+        source = (PROJECT_ROOT / "frontend" / "js" / "lobby.js").read_text(encoding="utf-8")
+
+        for field_access in (
+            "defaultProvider.default_url",
+            "defaultProvider.default_model",
+            "provider.default_url",
+            "provider.default_model",
+        ):
+            self.assertIn(field_access, source)
+        for legacy_access in (
+            "defaultProvider.defaultUrl",
+            "defaultProvider.defaultModel",
+            "provider.defaultUrl",
+            "provider.defaultModel",
+        ):
+            self.assertNotIn(legacy_access, source)
+
     def test_generated_js_is_valid_json_subset(self):
         """生成结果里 PROVIDERS 数组应能被 JSON 解析（烟雾检查）。"""
         from scripts.gen_protocol_js import generate_js

@@ -125,7 +125,7 @@ class LobbyController {
             const globalSettings = window.getGlobalSettings ? getGlobalSettings() : {};
             const preferred = this.providers.find(p => p.value === globalSettings.default_provider);
             const defaultProvider = preferred || this.providers[i % this.providers.length];
-            const defaultModel = globalSettings.default_model || defaultProvider.defaultModel;
+            const defaultModel = globalSettings.default_model || defaultProvider.default_model;
             const defaultTemperature = globalSettings.default_temperature ?? 0.8;
             
             aiItem.innerHTML = `
@@ -145,7 +145,7 @@ class LobbyController {
                     
                     <div class="config-row field-url">
                         <label>API地址:</label>
-                        <input type="text" placeholder="API地址" value="${defaultProvider.defaultUrl}" data-field="apiUrl">
+                        <input type="text" placeholder="API地址" value="${defaultProvider.default_url}" data-field="apiUrl">
                     </div>
                     
                     <div class="config-row field-key">
@@ -196,8 +196,8 @@ class LobbyController {
         if (!provider) return;
 
         const aiItem = document.querySelector(`[data-ai-index="${aiIndex}"]`);
-        aiItem.querySelector('[data-field="apiUrl"]').value = provider.defaultUrl;
-        aiItem.querySelector('[data-field="model"]').value = provider.defaultModel;
+        aiItem.querySelector('[data-field="apiUrl"]').value = provider.default_url;
+        aiItem.querySelector('[data-field="model"]').value = provider.default_model;
     }
 
     generateSyncOptions(sourceIndex) {
