@@ -284,9 +284,23 @@ body::after {
 .mode-btn.selected {
     background: linear-gradient(135deg, rgba(196, 30, 58, 0.2) 0%, rgba(212, 175, 55, 0.2) 100%);
     border-width: 3px;
-    box-shadow: 
+    box-shadow:
         0 0 30px rgba(212, 175, 55, 0.5),
         inset 0 0 20px rgba(212, 175, 55, 0.1);
+}
+
+.mode-btn.mode-locked,
+.mode-btn:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+    filter: grayscale(0.55);
+}
+
+.mode-btn.mode-locked:hover,
+.mode-btn:disabled:hover {
+    transform: none;
+    background: linear-gradient(135deg, rgba(42, 31, 26, 0.6) 0%, rgba(58, 47, 42, 0.6) 100%);
+    box-shadow: none;
 }
 
 .mode-icon {

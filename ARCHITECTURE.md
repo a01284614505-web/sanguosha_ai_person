@@ -1,7 +1,7 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前开发环境：Windows 10 / Python 3.12  
-> 当前阶段：Stage 5 与 C 档重构 R0–R6 已完成
-> 更新时间：2026-08-10
+> 当前阶段：Stage 5 与 C 档重构 R0–R7 已完成
+> 更新时间：2026-08-13
 ## 1. 架构铁律
 ```text
 引擎自驱（全部游戏逻辑） / 服务器纯消息泵 / 前端纯 UI
@@ -38,12 +38,12 @@ sanguosha_data/
 │   ├── settings.html           # 设置页
 │   ├── result.html             # 结算页
 │   ├── hero_manager.html       # 武将数据管理页
-│   ├── js/                     # 活跃前端逻辑
-│   ├── css/                    # 活跃样式
+│   ├── js/                     # 活跃前端逻辑（含 game_main.js / protocol.js / lobby.js）
+│   ├── css/                    # 活跃样式（main.css + game.css）
 │   └── assets/                 # 武将、卡牌和音频资产
 ├── data/                       # 武将、技能与真实牌堆 JSON
 ├── worldbook_generated/        # AI 世界书数据
-├── tests/                      # 71 项 unittest 回归
+├── tests/                      # 83 项 pytest 回归
 ├── scripts/                    # 检查、提取与手工工具
 ├── legacy_reference/           # 后续阶段仍有价值的历史参考
 └── logs/
@@ -72,7 +72,7 @@ GameServer 转成 WebSocket 出站消息
 5. AI 从引擎候选中决策；规则 AI 或外部模型都不越过合法操作列表。
 6. 引擎判定胜负并发出 `game_end`。
 ## 4. 当前 WebSocket 协议
-> 本表记录 `game_server.py` 当前实际收发类型。R6 才会将其收敛为 `protocol.py` 与自动生成的 `protocol.js`。
+> 本表记录 `game_server.py` 当前实际收发类型。R6 已收敛为 `protocol.py` 与自动生成的 `protocol.js`。
 ### 4.1 入站：前端 → 服务器（8 种）
 | 类型 | 用途 |
 |---|---|
@@ -113,7 +113,7 @@ GameServer 转成 WebSocket 出站消息
 2. AI 使用外部 API 或规则脚本从列表中选择。
 3. 引擎复核后执行，并把结果回灌到该 AI 的会话窗口。
 4. 同一 AI 整局复用窗口；L0 全局层不含玩家专属内容，以提高跨玩家缓存命中。
-当前支持的 Provider 配置散布仍将在 R6 收敛；实际适配以 `game_engine/ai_decision.py` 和服务器下发配置为准。
+Provider 清单以 `game_engine/protocol.py` 为单一来源，经 `/api/providers` 与生成的 `protocol.js` 下发；大厅读取 `default_url` / `default_model`。
 ## 6. 开发与验证
 ```powershell
 # 后台启动
@@ -135,7 +135,7 @@ python scripts/check_frontend_js.py
 - R4：Python 包化与 import 统一（已完成）。
 - R5：服务器去逻辑化（已完成，`game_server.py` 249 行）。
 - R6：协议、Provider、牌表与序列化单一真相源（已完成；`protocol.py` + `CARD_TABLE` + `card_to_dict`，前端经 `gen_protocol_js.py` 生成同步）。
-- R7：拆分 `game.html`、样式变量化并接线武将头像。
+- R7：拆分 `game.html`、样式变量化并接线武将头像（已完成；`game.html` 79 行纯结构 + `css/game.css` + `js/game_main.js`，回归 83）。
 - R8：日志机制与重构总交接。
 - 主线后续：剩余锦囊、皮肤、聊天、牌面美术、真人 API 实测和完整托管系统。
 当前完成状态以 `logs/handover/` 最新交接及真实测试输出为准；`logs/CHRONICLE.md` 的早期章节只代表当时记录。

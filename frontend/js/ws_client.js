@@ -1,7 +1,8 @@
 // WebSocket客户端 - 完整重写
-// 协议常量来自自动生成的 protocol.js（页面须先加载）；node 测试环境直接 require。
+// 协议常量来自自动生成的 protocol.js（页面须先加载）；node 测试环境挂到 globalThis，
+// 禁止再用 var Protocol —— 会与 protocol.js 的 const Protocol 在经典脚本全局词法环境冲突。
 if (typeof module !== 'undefined' && module.exports) {
-    var Protocol = require('./protocol.js');
+    globalThis.Protocol = require('./protocol.js');
 }
 
 class GameClient {
@@ -141,6 +142,9 @@ GameClient.prototype.onServerInfo = null;
 
 // 全局实例
 const gameClient = new GameClient();
+if (typeof window !== 'undefined') {
+    window.gameClient = gameClient;
+}
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = GameClient;

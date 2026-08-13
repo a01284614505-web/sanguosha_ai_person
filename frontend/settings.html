@@ -109,10 +109,7 @@
         });
         loadStats();renderEntries();
 
-        // 牌堆设置：选项由服务器 /api/decks 提供，页面不再自己维护牌堆清单
-        const DECK_ALIAS={test_deck:'standard',complete_deck:'standard'};
-        function normalizeDeckId(id){return DECK_ALIAS[id]||id||'standard'}
-
+        // 牌堆设置：选项由服务器 /api/decks 提供，页面只使用返回的 id / active_deck
         function readGameConfig(){try{return JSON.parse(localStorage.getItem('gameConfig')||'{}')}catch(_){return{}}}
 
         async function loadDeckSetting(){
@@ -121,9 +118,9 @@
                 const data=await fetch('/api/decks',{cache:'no-store'}).then(r=>r.json());
                 if(!data.success||!Array.isArray(data.decks))throw new Error(data.message||'返回格式不正确');
                 const stored=localStorage.getItem('active_deck');
-                const current=stored?normalizeDeckId(stored):normalizeDeckId(data.active_deck);
+                const current=stored||data.active_deck;
                 const known=data.decks.some(d=>d.id===current);
-                const checkedId=known?current:normalizeDeckId(data.active_deck);
+                const checkedId=known?current:data.active_deck;
                 box.innerHTML=data.decks.map(d=>`
                 <div style="margin:8px 0">
                     <label style="display:block;background:#17110e;border-radius:7px;padding:12px;cursor:pointer">

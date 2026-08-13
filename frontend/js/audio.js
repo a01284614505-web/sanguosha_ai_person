@@ -65,6 +65,9 @@ class AudioManager {
 }
 
 const audioManager = new AudioManager();
+if (typeof window !== 'undefined') {
+    window.audioManager = audioManager;
+}
 
 // 预加载音效
 audioManager.load('card', 'assets/audio/coin.mp3');

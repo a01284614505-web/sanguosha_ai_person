@@ -16,7 +16,12 @@ class LobbyController {
         // 绑定模式选择按钮
         document.querySelectorAll('.mode-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                this.selectMode(e.currentTarget.dataset.mode);
+                const mode = e.currentTarget.dataset.mode;
+                if (btn.classList.contains('mode-locked') || btn.getAttribute('aria-disabled') === 'true' || mode !== '5人身份局') {
+                    alert('后续阶段开放');
+                    return;
+                }
+                this.selectMode(mode);
             });
         });
 
@@ -64,20 +69,17 @@ class LobbyController {
     }
 
     selectMode(mode) {
+        if (mode !== '5人身份局') {
+            alert('后续阶段开放');
+            return;
+        }
         this.selectedMode = mode;
-        
+
         document.querySelectorAll('.mode-btn').forEach(btn => {
             btn.classList.toggle('selected', btn.dataset.mode === mode);
         });
 
-        const aiCountMap = {
-            '5人身份局': 4,
-            '8人身份局': 7,
-            '2v2': 3,
-            '斗地主': 2
-        };
-        
-        this.aiCount = aiCountMap[mode] || 4;
+        this.aiCount = 4;
         document.getElementById('requiredAI').textContent = this.aiCount;
 
         this.updateIdentityOptions(mode);
@@ -87,19 +89,9 @@ class LobbyController {
     updateIdentityOptions(mode) {
         const identitySelect = document.getElementById('identitySelect');
         identitySelect.innerHTML = '<option value="">选择身份</option>';
+        if (mode !== '5人身份局') return;
 
-        let identities = [];
-        if (mode === '5人身份局') {
-            identities = ['主公', '忠臣', '反贼', '内奸'];
-        } else if (mode === '8人身份局') {
-            identities = ['主公', '忠臣', '反贼', '内奸'];
-        } else if (mode === '2v2') {
-            identities = ['队伍A', '队伍B'];
-        } else if (mode === '斗地主') {
-            identities = ['地主', '农民'];
-        }
-
-        identities.forEach(identity => {
+        ['主公', '忠臣', '反贼', '内奸'].forEach(identity => {
             const option = document.createElement('option');
             option.value = identity;
             option.textContent = identity;
