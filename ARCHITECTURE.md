@@ -1,7 +1,7 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前开发环境：Windows 10 / Python 3.12  
-> 当前阶段：Stage 5 与 C 档重构 R0–R7 已完成
-> 更新时间：2026-08-13
+> 当前阶段：Stage 5 与 C 档重构 R0–R8 已完成
+> 更新时间：2026-08-14
 ## 1. 架构铁律
 ```text
 引擎自驱（全部游戏逻辑） / 服务器纯消息泵 / 前端纯 UI
@@ -43,7 +43,7 @@ sanguosha_data/
 │   └── assets/                 # 武将、卡牌和音频资产
 ├── data/                       # 武将、技能与真实牌堆 JSON
 ├── worldbook_generated/        # AI 世界书数据
-├── tests/                      # 83 项 pytest 回归
+├── tests/                      # 86 项 pytest 回归
 ├── scripts/                    # 检查、提取与手工工具
 ├── legacy_reference/           # 后续阶段仍有价值的历史参考
 └── logs/
@@ -114,6 +114,10 @@ GameServer 转成 WebSocket 出站消息
 3. 引擎复核后执行，并把结果回灌到该 AI 的会话窗口。
 4. 同一 AI 整局复用窗口；L0 全局层不含玩家专属内容，以提高跨玩家缓存命中。
 Provider 清单以 `game_engine/protocol.py` 为单一来源，经 `/api/providers` 与生成的 `protocol.js` 下发；大厅读取 `default_url` / `default_model`。
+### 日志与缓存统计轮转
+- 引擎全部 `print` 已迁移至 `logging`（模块级 `logger = logging.getLogger(__name__)`）；正常流程 `INFO`，拒绝/未实现/异常路径 `WARNING`/`ERROR`。
+- `game_server.py` 在 `__main__` 调用 `configure_logging()`（`basicConfig(stream=sys.stdout, force=True)`）。服务器自身的连接/错误横幅仍用 `print`，不在引擎日志范围内。
+- AI 会话缓存统计写入 `logs/ai_cache_stats.jsonl` 前先做 5 MiB 轮转：超阈值即用可排序时间戳命名为 `ai_cache_stats.YYYYMMDD_HHMMSS.jsonl`（冲突追加只读序号 `.N`）归档，`os.replace` 原子替换，不清理旧档。
 ## 6. 开发与验证
 ```powershell
 # 后台启动
@@ -126,7 +130,7 @@ powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action stop
 WebSocket：`ws://127.0.0.1:8889`
 ```bash
 # 完整回归（Windows Git Bash 需固定 UTF-8 输出）
-PYTHONIOENCODING=utf-8 python -m unittest discover -s tests -v
+PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 # 前端内联与外部 JavaScript 语法检查
 python scripts/check_frontend_js.py
 ```
@@ -136,6 +140,7 @@ python scripts/check_frontend_js.py
 - R5：服务器去逻辑化（已完成，`game_server.py` 249 行）。
 - R6：协议、Provider、牌表与序列化单一真相源（已完成；`protocol.py` + `CARD_TABLE` + `card_to_dict`，前端经 `gen_protocol_js.py` 生成同步）。
 - R7：拆分 `game.html`、样式变量化并接线武将头像（已完成；`game.html` 79 行纯结构 + `css/game.css` + `js/game_main.js`，回归 83）。
-- R8：日志机制与重构总交接。
+- R8：日志机制与重构总交接（已完成；引擎 84 处 `print` → `logging`，缓存统计 5 MiB 轮转，回归提升至 86）。
+- R9：重构阶段剩余项，见总交接收尾清单。
 - 主线后续：剩余锦囊、皮肤、聊天、牌面美术、真人 API 实测和完整托管系统。
 当前完成状态以 `logs/handover/` 最新交接及真实测试输出为准；`logs/CHRONICLE.md` 的早期章节只代表当时记录。

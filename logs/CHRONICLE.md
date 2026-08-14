@@ -1386,6 +1386,7 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [Provider 默认 API 地址修复（2026-08-12 16:25）](handover/20260812_1625_Provider默认API地址修复.md)
 - [R7：前端拆分与变量化方案（2026-08-13 11:21）](handover/20260813_1121_R7前端拆分与变量化方案.md)
 - [R7：前端拆分与变量化实施（2026-08-13 16:48）](handover/20260813_1648_R7前端拆分与变量化.md)
+- [R8：日志机制与重构总交接（2026-08-14 19:06）](handover/20260814_1906_R8日志机制与重构总交接.md)
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。
