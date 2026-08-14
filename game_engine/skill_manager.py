@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """54技能统一注册、合法操作和事件分发。"""
 
+import logging
 from importlib import import_module
 from typing import Dict, List
 
 from .skill_runtime_core import hero_id, reset_turn_flags
 from .skills_generated import get_all_skills, get_hero_skills
+
+
+logger = logging.getLogger(__name__)
 
 
 class SkillManager:
@@ -89,7 +93,7 @@ class SkillManager:
             **details,
         }
         self.activation_log.append(entry)
-        print(f"  [技能] {player.name}发动【{skill_name}】({event})")
+        logger.info(f"  [技能] {player.name}发动【{skill_name}】({event})")
         return entry
 
     async def draw_cards(self, player, count, reason="skill"):

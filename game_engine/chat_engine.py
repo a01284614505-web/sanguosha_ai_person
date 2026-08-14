@@ -3,7 +3,10 @@
 
 import asyncio
 import random
+import logging
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 class ChatEngine:
     def __init__(self, ai_gateway):
@@ -47,7 +50,8 @@ class ChatEngine:
             self.last_chat_time[player.id] = now
             
             return msg
-        except:
+        except Exception:
+            logger.warning("聊天AI调用失败", exc_info=True)
             return None
     
     def build_chat_prompt(self, event_type: str, player, context: Dict) -> str:

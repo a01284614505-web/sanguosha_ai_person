@@ -3,10 +3,14 @@
 卡牌系统 - 基于无名杀架构完整实现
 """
 
+import logging
 from typing import List, Callable
 
 from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
 from .state_manager import Card, card_to_dict
+
+
+logger = logging.getLogger(__name__)
 
 # 可被无懈可击响应的锦囊（单一来源：CARD_TABLE.wuxie_targetable）。
 WUXIEABLE = frozenset(name for name, spec in CARD_TABLE.items() if spec.wuxie_targetable)
@@ -77,11 +81,11 @@ class CardSystem:
         if spec and spec.wuxie_targetable:
             wuxie_targets = targets or []
             if await self.ask_wuxie(card, player, wuxie_targets):
-                print(f"  → 【{card.name}】被无懈可击抵消")
+                logger.info(f"  → 【{card.name}】被无懈可击抵消")
                 return True
 
         if spec and spec.usage == "response":
-            print(f"{card.name}只能响应使用")
+            logger.info(f"{card.name}只能响应使用")
             return False
 
         resolver_name = spec.resolver if spec else None
@@ -94,13 +98,13 @@ class CardSystem:
                 return await method(player, card)
             return await method(player, card, targets[0] if targets else None)
 
-        print(f"未实现的卡牌: {card.name}")
+        logger.info(f"未实现的卡牌: {card.name}")
         return False
     
     async def use_sha(self, player, card: Card, target):
         """使用杀（完整流程）"""
         if not target:
-            print("杀需要指定目标")
+            logger.info("杀需要指定目标")
             return False
         
         # 1. 检查距离
@@ -109,12 +113,12 @@ class CardSystem:
         
         distance = self.trigger_manager.modify_distance(player, target, distance)
         if not (getattr(card, "ignore_distance", False) or self.trigger_manager.ignore_distance(player, card)) and distance > weapon_range:
-            print(f"距离不够：{distance} > {weapon_range}")
+            logger.info(f"距离不够：{distance} > {weapon_range}")
             return False
         
         # 2. 检查出杀次数
         if player.sha_count >= player.max_sha:
-            print(f"本回合已使用{player.sha_count}次杀")
+            logger.info(f"本回合已使用{player.sha_count}次杀")
             return False
         
         # 3. 技能可转移目标（如流离）。
@@ -150,15 +154,15 @@ class CardSystem:
         if hasattr(player, 'jiu_buff') and player.jiu_buff:
             base_damage += 1
             player.jiu_buff = False
-            print(f"  → 酒杀！伤害+1，总计{base_damage}点")
+            logger.info(f"  → 酒杀！伤害+1，总计{base_damage}点")
         shan_required = event['shanRequired']
         
-    #     print(f"  → 目标: {target.name}")
+    #     logger.info(f"  → 目标: {target.name}")
         
         # 1. 要求打出闪
         shaned = False
         for i in range(shan_required):
-            print(f"  → 要求出闪 ({i+1}/{shan_required})")
+            logger.info(f"  → 要求出闪 ({i+1}/{shan_required})")
             
             result = await self.choose_to_respond(
                 target,
@@ -170,7 +174,7 @@ class CardSystem:
             
             if result and result.get('bool'):
                 response_card = result.get('card')
-                print(f"  → {target.name} 打出 {response_card}")
+                logger.info(f"  → {target.name} 打出 {response_card}")
                 
                 # 从实际提供者手牌移除（护驾等技能可由队友提供）。
                 owner = result.get('owner') or target
@@ -191,29 +195,29 @@ class CardSystem:
                 
                 shaned = True
             else:
-                print(f"  → {target.name} 没有闪")
+                logger.info(f"  → {target.name} 没有闪")
                 shaned = False
                 break
         
         # 2. 判断结果
         if shaned:
             # 闪避成功
-        #     print(f"  ✓ 闪避成功")
+        #     logger.info(f"  ✓ 闪避成功")
             await self.trigger_manager.on_sha_dodged(player, target, event['card'], event)
             return True
         else:
             # 造成伤害
-        #     print(f"  ✗ 造成 {base_damage} 点伤害")
+        #     logger.info(f"  ✗ 造成 {base_damage} 点伤害")
             await self.damage(player, target, base_damage, card=event['card'], context=event)
             return True
     
     async def use_tao(self, player, card: Card):
         """使用桃"""
         if player.hp >= player.max_hp:
-            print("体力已满")
+            logger.info("体力已满")
             return False
         
-        print(f"  → {player.name} 回复1点体力")
+        logger.info(f"  → {player.name} 回复1点体力")
         before_hp = player.hp
         player.hp = min(player.hp + 1, player.max_hp)
         if player.hp > before_hp:
@@ -224,14 +228,14 @@ class CardSystem:
     async def use_guohe(self, player, card: Card, target):
         """使用过河拆桥"""
         if not target:
-            print("过河拆桥需要指定目标")
+            logger.info("过河拆桥需要指定目标")
             return False
         
         target = await self.trigger_manager.before_card_target(player, target, card)
         if target and getattr(target, "flags", {}).pop("qianxun_cancelled_card", None) == card.id:
             return True
         if not target or (not target.hand and not target.equipment):
-            print("目标没有牌")
+            logger.info("目标没有牌")
             return False
         
         # 当前交互层未提供选牌时，确定性优先弃置手牌；只有无手牌才处理装备。
@@ -244,13 +248,13 @@ class CardSystem:
         elif target.equipment:
             candidate = next(iter(target.equipment.values()))
             if self.trigger_manager.protect_card(target, candidate, "other_discard_equipment"):
-                print(f"  → {target.name}的装备受技能保护，不能被弃置")
+                logger.info(f"  → {target.name}的装备受技能保护，不能被弃置")
                 return True
             slot = next(k for k, v in target.equipment.items() if v is candidate)
             discarded = target.equipment.pop(slot)
         if discarded:
             self.game_state.discard_pile.append(discarded)
-            print(f"  → {target.name} 弃置 {discarded}")
+            logger.info(f"  → {target.name} 弃置 {discarded}")
             await self.notify_card_to_discard(
                 target, discarded, reason="discard", card_index=discarded_index,
                 message=f"{target.name}因【过河拆桥】弃置【{discarded.name}】"
@@ -324,7 +328,7 @@ class CardSystem:
         """选择响应（核心方法）：引擎算候选 → 真人或AI从候选里挑 → 引擎复核后返回。"""
         options = self.build_response_options(player, card_filter, requested_name)
         if not options:
-            print(f"  → {player.name} 没有符合条件的牌")
+            logger.info(f"  → {player.name} 没有符合条件的牌")
             return {'bool': False}
         if self.responder is None:
             return {'bool': False}
@@ -408,7 +412,7 @@ class CardSystem:
         # 造成伤害
         if not damage_info['prevented'] and amount > 0:
             target.hp -= amount
-            print(f"  → {target.name} 体力: {target.hp}/{target.max_hp}")
+            logger.info(f"  → {target.name} 体力: {target.hp}/{target.max_hp}")
             
             await self.trigger_manager.after_damage(source, target, amount, card, context)
             
@@ -418,7 +422,7 @@ class CardSystem:
     
     async def enter_dying(self, player):
         """濒死求桃：按座次逐个询问存活角色，每人都可以拒绝。"""
-        print(f"  ⚠️ {player.name} 进入濒死状态！HP:{player.hp}")
+        logger.info(f"  ⚠️ {player.name} 进入濒死状态！HP:{player.hp}")
         while player.hp <= 0:
             rescued = False
             rescuers = [player] + [p for p in self.game_state.players if p.alive and p is not player]
@@ -450,7 +454,7 @@ class CardSystem:
                 await self.trigger_manager.on_card_responded(rescuer, card, as_name, {'target': player, 'owner': owner})
                 player.hp += 1
                 await self.trigger_manager.on_recover(player, 1, rescuer, 'dying_rescue')
-                print(f"  🍑 {owner.name}救援{player.name}，体力回复至{player.hp}")
+                logger.info(f"  🍑 {owner.name}救援{player.name}，体力回复至{player.hp}")
                 rescued = True
                 break
             if not rescued:
@@ -458,26 +462,26 @@ class CardSystem:
         if player.hp <= 0:
             player.alive = False
             player.identity_revealed = True
-            print(f"  💀 {player.name} 阵亡，身份揭示为 {player.identity}")
+            logger.info(f"  💀 {player.name} 阵亡，身份揭示为 {player.identity}")
 
     async def use_jiu(self, player, card: Card):
         """使用酒"""
         # 检查本回合是否已经使用过酒（非濒死情况）
         if hasattr(player, 'jiu_used_this_turn') and player.jiu_used_this_turn:
-            print("本回合已使用过酒")
+            logger.info("本回合已使用过酒")
             return False
         
         # 标记酒效果：下一张杀伤害+1
         player.jiu_buff = True
         player.jiu_used_this_turn = True
-        print(f"  → {player.name} 使用【酒】，下一张杀伤害+1")
+        logger.info(f"  → {player.name} 使用【酒】，下一张杀伤害+1")
         
         return True
     
     async def use_tiesuo(self, player, card: Card, targets: List):
         """使用铁索连环"""
         if not targets or len(targets) == 0:
-            print("铁索连环需要指定1-2个目标")
+            logger.info("铁索连环需要指定1-2个目标")
             return False
         
         if len(targets) > 2:
@@ -487,14 +491,14 @@ class CardSystem:
             # 切换横置状态
             target.chained = not getattr(target, 'chained', False)
             status = "横置" if target.chained else "重置"
-            print(f"  → {target.name} {status}")
+            logger.info(f"  → {target.name} {status}")
         
         return True
 
     async def _use_delayed_trick(self, player, card: Card, target):
         """延时锦囊共用结算：放入目标判定区。"""
         if not target or target == player:
-            print(f"{card.name}需要指定其他角色")
+            logger.info(f"{card.name}需要指定其他角色")
             return False
 
         # 放入目标判定区
@@ -502,7 +506,7 @@ class CardSystem:
             target.judge_area = []
 
         target.judge_area.append(card)
-        print(f"  → {target.name} 判定区增加【{card.name}】")
+        logger.info(f"  → {target.name} 判定区增加【{card.name}】")
 
         return True
 
@@ -525,7 +529,7 @@ class CardSystem:
                 drawn.append(drawn_card)
         
         if drawn:
-            print(f"  → {player.name} 摸了{len(drawn)}张牌")
+            logger.info(f"  → {player.name} 摸了{len(drawn)}张牌")
             await self.trigger_manager.on_card_gained(player, drawn, "无中生有")
         
         return True

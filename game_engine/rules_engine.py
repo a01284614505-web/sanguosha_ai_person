@@ -3,10 +3,15 @@
 规则引擎 - 游戏规则和合法性检查
 """
 
+import logging
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
+
+
+logger = logging.getLogger(__name__)
+
 
 class RulesEngine:
     """规则引擎：检查所有操作的合法性"""
@@ -141,4 +146,4 @@ class RulesEngine:
 __all__ = ['RulesEngine']
 
 if __name__ == "__main__":
-    print("规则引擎模块加载成功")
+    logger.info("规则引擎模块加载成功")

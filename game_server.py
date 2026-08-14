@@ -2,6 +2,8 @@
 '''游戏服务器 v2：HTTP 静态页面 + WebSocket 纯消息泵。'''
 import asyncio
 import json
+import logging
+import sys
 import traceback
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -13,6 +15,21 @@ from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_M
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
+
+
+def configure_logging():
+    """进程入口统一配置：引擎/服务器日志输出到控制台，保留原始消息文本。
+
+    尊重既有的 stderr 过滤习惯，并保留被启动器重定向 stdout 的兼容路径。
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+
+
 class GameServer:
     def __init__(self):
         self.engines = {}
@@ -245,6 +262,7 @@ async def main():
     async with serve(server.handle, "0.0.0.0", WS_PORT, max_size=2**20):
         await asyncio.Future()
 if __name__ == "__main__":
+    configure_logging()
     Thread(target=start_http, daemon=True).start()
     try:
         asyncio.run(main())

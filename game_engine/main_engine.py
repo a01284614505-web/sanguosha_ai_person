@@ -2,6 +2,7 @@
 """主游戏引擎 v2：引擎生成合法操作，玩家或AI只能从中选择。"""
 
 import asyncio
+import logging
 import random
 import time
 from pathlib import Path
@@ -18,6 +19,9 @@ from .identity_system import IdentitySystem
 from .chat_engine import ChatEngine
 from .config_validator import normalize_config
 from .deck_manager import DeckManager
+
+
+logger = logging.getLogger(__name__)
 from .hero_registry import HeroRegistry
 from .protocol import ENGINE_EVENT, PROVIDERS
 
@@ -103,13 +107,13 @@ class MainEngine:
         self._watchdog_task: Any = None
         self._game_end_emitted = False
 
-        print(f"\n{'=' * 60}")
-        print("  🎮 引擎v2初始化")
-        print(f"  模式: {game_config.get('mode', '5人身份局')}")
-        print(f"  玩家: {game_config.get('player_name', '玩家')}")
-        print(f"  AI数: {sum(1 for p in self.game_state.players if p.is_ai)}")
-        print(f"  牌堆: {self.game_state.deck_id} / {self.game_state.initial_deck_count}张")
-        print(f"{'=' * 60}\n")
+        logger.info(f"\n{'=' * 60}")
+        logger.info("  🎮 引擎v2初始化")
+        logger.info(f"  模式: {game_config.get('mode', '5人身份局')}")
+        logger.info(f"  玩家: {game_config.get('player_name', '玩家')}")
+        logger.info(f"  AI数: {sum(1 for p in self.game_state.players if p.is_ai)}")
+        logger.info(f"  牌堆: {self.game_state.deck_id} / {self.game_state.initial_deck_count}张")
+        logger.info(f"{'=' * 60}\n")
 
     # ---------- 外部事件 ----------
 
@@ -122,7 +126,7 @@ class MainEngine:
             try:
                 await handler(**data)
             except Exception as exc:
-                print(f"[事件异常] {event_type}: {exc}")
+                logger.info(f"[事件异常] {event_type}: {exc}")
 
     async def log_event(self, message: str, **data):
         entry = {"message": message, **data}
@@ -225,7 +229,7 @@ class MainEngine:
     # ---------- 主流程 ----------
 
     async def run(self):
-        print("\n🎮 游戏开始！\n")
+        logger.info("\n🎮 游戏开始！\n")
         assigned = self.identity_system.assign_identities(
             self.game_state.players,
             self.game_state.mode,
@@ -242,7 +246,7 @@ class MainEngine:
         self.game_state.round_anchor_index = self.game_state.current_player_index
 
         for p in self.game_state.players:
-            print(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
+            logger.info(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
 
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
@@ -290,13 +294,13 @@ class MainEngine:
                 self._watchdog_task = None
 
         await self._emit_game_end_once()
-        print(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
+        logger.info(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
         return self.game_state.winner
 
     # ---------- 玩家回合 ----------
 
     async def _ai_turn(self, player: Player):
-        print(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
+        logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
 
@@ -309,7 +313,7 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     async def _human_turn(self, player: Player):
-        print(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
+        logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
@@ -359,7 +363,7 @@ class MainEngine:
             if self.game_state.game_over:
                 break
             self.game_state.current_phase = phase
-            print(f"\n[{phase.value}阶段]")
+            logger.info(f"\n[{phase.value}阶段]")
             if phase == Phase.PLAY:
                 player.sha_count = 0
                 await self._auto_play_phase(player)
@@ -370,7 +374,7 @@ class MainEngine:
             await asyncio.sleep(float(self.game_config.get("phase_delay", 0.01)))
 
     async def _auto_play_phase(self, player: Player):
-        print(f"  {player.name}的出牌阶段")
+        logger.info(f"  {player.name}的出牌阶段")
         for _ in range(20):
             if self.game_state.game_over:
                 break
@@ -405,7 +409,7 @@ class MainEngine:
             ok = await self.execute_action(player, action, target_ids)
             self._record_ai_outcome(player, action, target_ids, ok)
             if not ok:
-                print("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
+                logger.info("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
                 break
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
@@ -493,15 +497,15 @@ class MainEngine:
             return {"bool": False}
         owner = option.get("owner") or player
         if not getattr(owner, "alive", True):
-            print(f"  ❌ 响应复核失败：{getattr(owner, 'name', '?')} 已阵亡")
+            logger.info(f"  ❌ 响应复核失败：{getattr(owner, 'name', '?')} 已阵亡")
             return {"bool": False}
         if card not in owner.hand:
-            print(f"  ❌ 响应复核失败：【{card.name}】已不在 {owner.name} 手上")
+            logger.info(f"  ❌ 响应复核失败：【{card.name}】已不在 {owner.name} 手上")
             return {"bool": False}
         as_name = option.get("as_name") or card.name
         requested = request.get("requested_name")
         if requested and as_name != requested:
-            print(f"  ❌ 响应复核失败：需要【{requested}】，候选给的是【{as_name}】")
+            logger.info(f"  ❌ 响应复核失败：需要【{requested}】，候选给的是【{as_name}】")
             return {"bool": False}
         return {
             "bool": True,
@@ -544,7 +548,7 @@ class MainEngine:
             try:
                 return await handler(player, request)
             except Exception as exc:
-                print(f"  ⚠️ 响应AI失败，切换规则AI: {type(exc).__name__}: {exc}")
+                logger.info(f"  ⚠️ 响应AI失败，切换规则AI: {type(exc).__name__}: {exc}")
         return self.ai_decision.simple_response_decision(player, request)
 
     async def _human_choose_option(self, player: Player, request: Dict, request_id: str):
@@ -566,7 +570,7 @@ class MainEngine:
             )
             return await asyncio.wait_for(future, timeout=self.response_timeout)
         except asyncio.TimeoutError:
-            print(f"  ⏱️ 响应请求 {request_id} 超时，交规则托管")
+            logger.info(f"  ⏱️ 响应请求 {request_id} 超时，交规则托管")
             return await self._trustee_choose(player, request)
         finally:
             self._pending_requests.pop(request_id, None)
@@ -609,7 +613,7 @@ class MainEngine:
         try:
             index = self.ai_decision.simple_response_decision(player, request)
         except Exception as exc:
-            print(f"  ⚠️ 托管决策失败: {type(exc).__name__}: {exc}")
+            logger.info(f"  ⚠️ 托管决策失败: {type(exc).__name__}: {exc}")
             index = None
         options = request.get("options") or []
         label = "不响应"
@@ -659,7 +663,7 @@ class MainEngine:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"  ⚠️ 看门狗异常: {type(exc).__name__}: {exc}")
+            logger.info(f"  ⚠️ 看门狗异常: {type(exc).__name__}: {exc}")
 
     # ---------- 合法操作 ----------
 
@@ -730,7 +734,7 @@ class MainEngine:
                 targets = [p for p in self.game_state.players if p.id in target_ids]
                 can_play, reason = self.rules.can_play_card(player, card, targets)
                 if not can_play:
-                    print(f"  ❌ 不能出牌: {reason}")
+                    logger.info(f"  ❌ 不能出牌: {reason}")
                     return False
 
                 # 先广播“使用牌”，使客户端按正确顺序展示：使用牌 → 响应牌 → 弃牌堆。
@@ -770,12 +774,12 @@ class MainEngine:
                               and candidate.get("card_indices", []) == action.get("card_indices", [])
                               and candidate.get("fixed_target_ids", []) == action.get("fixed_target_ids", [])), None)
                 if not legal:
-                    print("  ❌ 技能不在当前合法操作列表")
+                    logger.info("  ❌ 技能不在当前合法操作列表")
                     return False
                 valid_targets = legal.get("valid_targets", [])
                 if legal.get("requires_target"):
                     if len(target_ids) != 1 or target_ids[0] not in valid_targets:
-                        print("  ❌ 技能目标非法")
+                        logger.info("  ❌ 技能目标非法")
                         return False
                 else:
                     target_ids = []
@@ -786,7 +790,7 @@ class MainEngine:
                 return True
             return False
         except Exception as exc:
-            print(f"  ❌ 执行出错: {exc}")
+            logger.info(f"  ❌ 执行出错: {exc}")
             import traceback
 
             traceback.print_exc()

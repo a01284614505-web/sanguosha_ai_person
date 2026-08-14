@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """六阶段控制器：负责非交互阶段的确定性结算。"""
 
+import logging
 from typing import TYPE_CHECKING
 
 from .card_table import CARD_TABLE
@@ -8,6 +9,9 @@ from .state_manager import Phase, PlayerStatus
 
 if TYPE_CHECKING:
     from .state_manager import GameState, Player
+
+
+logger = logging.getLogger(__name__)
 
 # 弃牌托管保留分：从单一牌表 CARD_TABLE.discard_keep_score 派生，
 # 保持原行为不变（桃100/闪80/杀50/无懈可击70，其余20）。
@@ -24,7 +28,7 @@ class PhaseController:
 
         if phase in self.skip_phases:
             self.skip_phases.remove(phase)
-            print(f"跳过阶段: {phase.value}")
+            logger.info(f"跳过阶段: {phase.value}")
             return
 
         player = self.game_state.current_player
@@ -44,15 +48,15 @@ class PhaseController:
     async def prepare_phase(self):
 
         player = self.game_state.current_player
-        print(f"[准备阶段] {player.name}")
+        logger.info(f"[准备阶段] {player.name}")
         if player.status == PlayerStatus.TURNED:
             player.status = PlayerStatus.NORMAL
             self.skip_phases.update({Phase.JUDGE, Phase.DRAW, Phase.PLAY, Phase.DISCARD})
-            print(f"  {player.name} 翻回正面并跳过本回合后续主要阶段")
+            logger.info(f"  {player.name} 翻回正面并跳过本回合后续主要阶段")
 
     async def judge_phase(self):
         player = self.game_state.current_player
-        print(f"[判定阶段] {player.name}")
+        logger.info(f"[判定阶段] {player.name}")
         for delayed_card in list(player.judge_area):
             await self.execute_judge(player, delayed_card)
 
@@ -66,16 +70,16 @@ class PhaseController:
         result = self.game_state.deck.pop(0)
         if self.skill_manager:
             result = await self.skill_manager.before_judge(player, result, {"delayed_card": delayed_card})
-        print(f"  判定【{delayed_card.name}】: {result.suit}{result.rank}")
+        logger.info(f"  判定【{delayed_card.name}】: {result.suit}{result.rank}")
         claimed = bool(self.skill_manager and await self.skill_manager.after_judge(player, result, {"delayed_card": delayed_card}))
         if not claimed:
             self.game_state.discard_pile.append(result)
         if delayed_card.name == "兵粮寸断" and result.suit != "club":
             self.skip_phases.add(Phase.DRAW)
-            print(f"  {player.name}的【兵粮寸断】生效：跳过摸牌阶段")
+            logger.info(f"  {player.name}的【兵粮寸断】生效：跳过摸牌阶段")
         if delayed_card.name == "乐不思蜀" and result.suit != "heart":
             self.skip_phases.add(Phase.PLAY)
-            print(f"  {player.name}的【乐不思蜀】生效：跳过出牌阶段")
+            logger.info(f"  {player.name}的【乐不思蜀】生效：跳过出牌阶段")
         if delayed_card in player.judge_area:
             player.judge_area.remove(delayed_card)
             self.game_state.discard_pile.append(delayed_card)
@@ -83,21 +87,21 @@ class PhaseController:
     async def draw_phase(self):
 
         player = self.game_state.current_player
-        print(f"[摸牌阶段] {player.name}")
+        logger.info(f"[摸牌阶段] {player.name}")
         cards = self.game_state.draw_card(player, 2)
         if self.skill_manager:
             await self.skill_manager.on_card_gained(player, cards, "draw")
-        print(f"  摸了 {len(cards)} 张牌")
+        logger.info(f"  摸了 {len(cards)} 张牌")
 
     async def play_phase(self):
         player = self.game_state.current_player
         player.sha_count = 0
-        print(f"[出牌阶段] {player.name}，手牌数: {player.get_hand_count()}")
+        logger.info(f"[出牌阶段] {player.name}，手牌数: {player.get_hand_count()}")
 
     async def discard_phase(self):
 
         player = self.game_state.current_player
-        print(f"[弃牌阶段] {player.name}")
+        logger.info(f"[弃牌阶段] {player.name}")
         max_hand = max(0, player.hp)
         if self.skill_manager:
             max_hand = self.skill_manager.hand_limit(player, max_hand)
@@ -116,11 +120,11 @@ class PhaseController:
             if self.skill_manager:
                 await self.skill_manager.on_cards_lost(player, [card], "hand_limit")
                 await self.skill_manager.on_card_discarded(player, card, "hand_limit")
-        print(f"  自动弃置 {len(discarded)} 张牌")
+        logger.info(f"  自动弃置 {len(discarded)} 张牌")
 
     async def end_phase(self):
-        print(f"[结束阶段] {self.game_state.current_player.name}")
+        logger.info(f"[结束阶段] {self.game_state.current_player.name}")
 
 
 if __name__ == "__main__":
-    print("阶段控制器模块加载成功")
+    logger.info("阶段控制器模块加载成功")

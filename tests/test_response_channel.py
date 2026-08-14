@@ -543,6 +543,22 @@ class AIResponseDecisionTest(unittest.TestCase):
     def decide(self):
         return asyncio.run(self.engine.ai_decision.make_response_decision(self.ai, self.request))
 
+    # R8：引擎告警已从 print 迁到 logging，测试改为捕获 game_engine.ai_decision 日志。
+    @contextlib.contextmanager
+    def capture_ai_log(self):
+        import logging
+        logger = logging.getLogger("game_engine.ai_decision")
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        old_level = logger.level
+        logger.level = 1
+        logger.handlers.append(handler)
+        try:
+            yield stream
+        finally:
+            logger.handlers.remove(handler)
+            logger.level = old_level
+
     def test_without_key_uses_rule_ai_and_never_calls_api(self):
         gateway = FakeGateway(reply='{"option_index":1}')
         self.engine.ai_decision.gateway = gateway
@@ -570,11 +586,10 @@ class AIResponseDecisionTest(unittest.TestCase):
         gateway = FakeGateway(reply='{"option_index": 99, "reasoning": "乱选"}')
         self.engine.ai_decision.gateway = gateway
         self.ai.ai_config["api_key"] = "sk-fake-not-a-real-key"
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
+        with self.capture_ai_log() as captured:
             index = self.decide()
         self.assertEqual(index, 0, "越界应回落规则AI")
-        output = buffer.getvalue()
+        output = captured.getvalue()
         self.assertIn("ValueError", output, "日志必须带异常类型名")
         print(f"S3: 越界索引 -> 回落，日志='{output.strip().splitlines()[0]}' OK")
 
@@ -582,11 +597,10 @@ class AIResponseDecisionTest(unittest.TestCase):
         gateway = FakeGateway(error=httpx.ReadTimeout(""))
         self.engine.ai_decision.gateway = gateway
         self.ai.ai_config["api_key"] = "sk-fake-not-a-real-key"
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
+        with self.capture_ai_log() as captured:
             index = self.decide()
         self.assertEqual(index, 0)
-        output = buffer.getvalue()
+        output = captured.getvalue()
         self.assertIn("ReadTimeout", output, "空 str() 的异常也必须能在日志里认出来")
         print(f"S3: httpx.ReadTimeout('') -> 日志='{output.strip()}' OK")
 
@@ -594,11 +608,10 @@ class AIResponseDecisionTest(unittest.TestCase):
         gateway = FakeGateway(reply="我选第一张闪吧")
         self.engine.ai_decision.gateway = gateway
         self.ai.ai_config["api_key"] = "sk-fake-not-a-real-key"
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
+        with self.capture_ai_log() as captured:
             index = self.decide()
         self.assertEqual(index, 0)
-        self.assertIn("响应解析失败", buffer.getvalue())
+        self.assertIn("响应解析失败", captured.getvalue())
         print("S3: 非JSON回复 -> 回落规则AI OK")
 
     def test_engine_path_uses_real_decision(self):

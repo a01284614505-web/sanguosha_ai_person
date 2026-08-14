@@ -2,6 +2,7 @@
 """AI决策系统：合法操作约束、多Provider调用与世界书注入。"""
 
 import json
+import logging
 import os
 import random
 import re
@@ -14,6 +15,9 @@ from .card_system import option_label
 from .card_table import CARD_TABLE
 from .hero_registry import HeroRegistry
 from .protocol import PROVIDERS
+
+
+logger = logging.getLogger(__name__)
 
 
 class WorldbookManager:
@@ -152,6 +156,8 @@ class WorldbookManager:
 class AIDecision:
     """AI只能从引擎生成的操作列表中选择，不允许自行构造规则外操作。"""
 
+    CACHE_STATS_MAX_BYTES = 5 * 1024 * 1024
+
     def __init__(self, game_engine):
         self.engine = game_engine
         self.gateway = AIGateway()
@@ -235,7 +241,7 @@ class AIDecision:
         session["has_summary"] = True
         session["l2_count"] = len(recent)
         session["compressions"] += 1
-        print(f"  🗜️ 会话窗口压缩：{len(old)}条 → 并入摘要（第{session['compressions']}次）")
+        logger.info(f"  🗜️ 会话窗口压缩：{len(old)}条 → 并入摘要（第{session['compressions']}次）")
         return True
 
     def push_user(self, player, content: str) -> List[Dict]:
@@ -271,10 +277,33 @@ class AIDecision:
         }
         try:
             os.makedirs(os.path.dirname(self.cache_stats_path), exist_ok=True)
+            self._rotate_cache_stats_if_needed()
             with open(self.cache_stats_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except OSError as exc:
-            print(f"  ⚠️ 缓存统计写入失败: {type(exc).__name__}: {exc}")
+            logger.warning(f"  ⚠️ 缓存统计写入失败: {type(exc).__name__}: {exc}")
+
+    def _rotate_cache_stats_if_needed(self):
+        """主文件超过 5 MiB 就归档为带秒级时间戳的同名文件，再写新主文件。
+
+        只归档不清历史；避免同秒归档名冲突。测试会把 path 指向临时目录，
+        不存在则正常创建，不做无谓的轮转判断。
+        """
+        try:
+            if os.path.getsize(self.cache_stats_path) < self.CACHE_STATS_MAX_BYTES:
+                return
+        except OSError:
+            return
+        parent = os.path.dirname(self.cache_stats_path)
+        stem, ext = os.path.splitext(os.path.basename(self.cache_stats_path))
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target = os.path.join(parent, f"{stem}.{stamp}{ext}")
+        seq = 1
+        while os.path.exists(target):
+            target = os.path.join(parent, f"{stem}.{stamp}.{seq}{ext}")
+            seq += 1
+        os.replace(self.cache_stats_path, target)
+        logger.info(f"  🗂 缓存统计已轮转: {target}（新文件随后建立）")
 
     async def _call_with_session(self, player, kind: str, content: str) -> str:
         """统一的带会话窗口调用：追加L2 → 调API → 追加assistant → 记账。"""
@@ -304,7 +333,7 @@ class AIDecision:
             )
             return self.parse_ai_response(response, player, available_actions)
         except Exception as exc:
-            print(f"  ⚠️ AI调用失败，切换规则AI: {type(exc).__name__}: {exc}")
+            logger.warning(f"  ⚠️ AI调用失败，切换规则AI: {type(exc).__name__}: {exc}")
             return self.simple_ai_decision(player, available_actions)
 
     def _custom_worldbook_text(self, player) -> str:
@@ -404,7 +433,7 @@ class AIDecision:
                 "reasoning": str(payload.get("reasoning", ""))[:200],
             }
         except Exception as exc:
-            print(f"  ⚠️ AI响应解析失败，切换规则AI: {type(exc).__name__}: {exc}")
+            logger.warning(f"  ⚠️ AI响应解析失败，切换规则AI: {type(exc).__name__}: {exc}")
             return self.simple_ai_decision(player, available_actions)
 
     def _normalize_targets(self, action: Dict, requested: Any, player) -> List[int]:
@@ -549,7 +578,7 @@ class AIDecision:
             )
             return self.parse_response_choice(response, player, request)
         except Exception as exc:
-            print(f"  ⚠️ 响应AI调用失败，切换规则AI: {type(exc).__name__}: {exc}")
+            logger.warning(f"  ⚠️ 响应AI调用失败，切换规则AI: {type(exc).__name__}: {exc}")
             return self.simple_response_decision(player, request)
 
     def parse_response_choice(self, response: str, player, request: Dict) -> Optional[int]:
@@ -562,10 +591,10 @@ class AIDecision:
                 raise ValueError(f"option_index={index!r} 不在候选范围 0..{len(options) - 1}")
             reasoning = str(payload.get("reasoning", ""))[:200]
             if reasoning:
-                print(f"  💭 {player.name} 响应理由: {reasoning}")
+                logger.info(f"  💭 {player.name} 响应理由: {reasoning}")
             return index
         except Exception as exc:
-            print(f"  ⚠️ 响应解析失败，切换规则AI: {type(exc).__name__}: {exc}")
+            logger.warning(f"  ⚠️ 响应解析失败，切换规则AI: {type(exc).__name__}: {exc}")
             return self.simple_response_decision(player, request)
 
     # ---------- 场外响应的规则决策（同时用作真人托管兜底） ----------
@@ -696,4 +725,4 @@ __all__ = ["AIDecision", "AIGateway", "WorldbookManager"]
 
 if __name__ == "__main__":
     wb = WorldbookManager()
-    print(f"武将:{len(wb.cache.get('heroes', []))} 卡牌:{len(wb.cache.get('cards', []))} 阶段:{len(wb.cache.get('phases', []))}")
+    logger.info(f"武将:{len(wb.cache.get('heroes', []))} 卡牌:{len(wb.cache.get('cards', []))} 阶段:{len(wb.cache.get('phases', []))}")

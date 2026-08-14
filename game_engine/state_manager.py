@@ -9,8 +9,13 @@ from enum import Enum
 from pathlib import Path
 import random
 import json
+import logging
 
 from .deck_manager import DeckManager
+
+
+logger = logging.getLogger(__name__)
+
 
 class Phase(Enum):
     """游戏阶段"""
@@ -304,13 +309,13 @@ if __name__ == "__main__":
     }
     
     game.init_game(config)
-    print(f"游戏初始化完成，当前回合: {game.round_number}")
-    print(f"当前玩家: {game.current_player.name}")
-    print(f"牌堆剩余: {len(game.deck)}张")
+    logger.info(f"游戏初始化完成，当前回合: {game.round_number}")
+    logger.info(f"当前玩家: {game.current_player.name}")
+    logger.info(f"牌堆剩余: {len(game.deck)}张")
     
     # 测试摸牌
     game.draw_card(game.current_player, 2)
-    print(f"摸牌后手牌数: {game.current_player.get_hand_count()}")
+    logger.info(f"摸牌后手牌数: {game.current_player.get_hand_count()}")
     
     # 输出状态（卡牌序列化单点 card_to_dict）
-    print(json.dumps([game.card_to_dict(c) for c in game.current_player.hand], ensure_ascii=False, indent=2))
+    logger.info(json.dumps([game.card_to_dict(c) for c in game.current_player.hand], ensure_ascii=False, indent=2))
