@@ -1,7 +1,8 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前开发环境：Windows 10 / Python 3.12  
-> 当前阶段：Stage 5 与 C 档重构 R0–R8 已完成
-> 更新时间：2026-08-14
+> 当前阶段：Stage 5 与 C 档重构 R0–R8 已完成；下一步 Stage 6A（交互原语层）
+> 更新时间：2026-09-12
+> 路线图见 [ROADMAP.md](ROADMAP.md)，现状事实基线见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)
 ## 1. 架构铁律
 ```text
 引擎自驱（全部游戏逻辑） / 服务器纯消息泵 / 前端纯 UI
@@ -135,12 +136,30 @@ PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 python scripts/check_frontend_js.py
 ```
 ## 7. 已知边界与后续阶段
-- 当前只支持 5 人身份局。
+> 逐项事实核定（含实测输出与代码行号）见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)；分阶段计划见 [ROADMAP.md](ROADMAP.md)。
+### 7.1 重构阶段（已完成）
 - R4：Python 包化与 import 统一（已完成）。
 - R5：服务器去逻辑化（已完成，`game_server.py` 249 行）。
 - R6：协议、Provider、牌表与序列化单一真相源（已完成；`protocol.py` + `CARD_TABLE` + `card_to_dict`，前端经 `gen_protocol_js.py` 生成同步）。
 - R7：拆分 `game.html`、样式变量化并接线武将头像（已完成；`game.html` 79 行纯结构 + `css/game.css` + `js/game_main.js`，回归 83）。
 - R8：日志机制与重构总交接（已完成；引擎 84 处 `print` → `logging`，缓存统计 5 MiB 轮转，回归提升至 86）。
-- R9：重构阶段剩余项，见总交接收尾清单。
-- 主线后续：剩余锦囊、皮肤、聊天、牌面美术、真人 API 实测和完整托管系统。
+### 7.2 当前功能边界（2026-09-12 实测核定）
+| 领域 | 状态 |
+|---|---|
+| 模式 | 只支持 5 人身份局（`config_validator.py:29`、`identity_system.py:19` 硬阻断） |
+| 基本牌 | 4/4 |
+| 锦囊 | 6/15 已实现 + 无懈可击（响应）；8 张标 `usage="unimplemented"`，不会进 `available_actions` |
+| 装备 | 0/23 效果；武器射程表暂硬编码于 `state_manager.py:88`，待收回 `card_table.py` |
+| 距离系统 | 已实现（座位环距 + 马匹修正 + 技能 `modify_distance`/`ignore_distance`） |
+| 技能 | 54 个已注册且可执行，但除 `skills_qun.py:120` 外**全部为确定性自动结算，无发动/选目标/选牌询问** |
+| 弃牌阶段 | 引擎按 `CARD_TABLE.discard_keep_score` 自动弃，真人不可选 |
+| 结算统计 | 引擎不产出 kills/damage/healing/MVP，`result.js` 的 MVP 区块不渲染 |
+| 托管 | CHRONICLE 13.5.3 四种来源只实现第 4 种（规则脚本兜底） |
+| 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
+### 7.3 下一阶段
+**Stage 6A 交互原语层**（硬前置）：把 `MainEngine.request_response` 泛化为 `ask_confirm` / `ask_choose_players` / `ask_choose_cards` / `ask_choose_option` 四原语，并让弃牌阶段改真人手选。施工方案见 [Stage 6A](logs/handover/20260912_2245_Stage6A交互原语层施工方案.md)。
+
+此后顺序：6C 牌面补全 → 6B 技能交互 → Stage 7 系统骨架 → Stage 8 武将 DSL → Stage 9 UI 与皮肤 → Stage 10 多模式 → Stage 11 打磨。
+### 7.4 验收工具提示
+`scripts/manual/ws_engine_smoke.py` 提交场外响应时缺 `type:"response"` 字段，会使每次响应等满 30 秒再落托管（`main_engine.py:438` 靠该字段路由）。请使用 `scripts/manual/ws_diag_smoke.py`（带动画 ACK 与消息统计）作为自驱冒烟入口。
 当前完成状态以 `logs/handover/` 最新交接及真实测试输出为准；`logs/CHRONICLE.md` 的早期章节只代表当时记录。
