@@ -357,6 +357,20 @@ HTTP: 8888 | WebSocket: 8889
 - ✅ 弃牌阶段现会实际弃牌
 - ✅ 修复翻面阶段跳过标记类型和结束阶段重复事件
 - ✅ 统一距离计算，修复死亡座位距离及 `+1马/-1马` 方向
+
+---
+
+## Stage 6A 交互原语层 (2026-09-13)
+
+- ✅ `request_response` 共用机制抽为 `_ask_index`，对外契约逐字节不变
+- ✅ 四原语 `ask_confirm` / `ask_choose_players` / `ask_choose_cards` / `ask_choose_option` 挂在 `MainEngine`
+- ✅ `_resolve_choice` 引擎复核：数量越界、角色阵亡、牌离开 zone 全部拒绝并可取消或确定性兜底
+- ✅ `skill_manager.py` / `skill_runtime_core.py` 各增四个转发方法，技能层可直接调用
+- ✅ `ai_decision.simple_choice_decision` 规则兜底：confirm/choose_players/choose_cards/choose_option 全覆盖
+- ✅ 前端响应弹窗升级：`selection.mode=multi` 渲染可勾选列表 + 计数条 + 确认按钮
+- ✅ 弃牌阶段真人分支接 `ask_choose_cards`，AI/托管保留 KEEP_SCORE 策略（行为不变）
+- ✅ 回归：86 → 101 passed（+15，超目标 +11）；`test_response_channel.py` / `test_wuxie_chain.py` 零修改通过
+- 详见：[20260913_0000_Stage6A交互原语层.md](handover/20260913_0000_Stage6A交互原语层.md)
 - ✅ 重写同步事件对象，修复字典事件访问 `cancelled` 的错误
 
 #### 启动、服务器与前端
@@ -1389,6 +1403,9 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [R8：日志机制与重构总交接（2026-08-14 19:06）](handover/20260814_1906_R8日志机制与重构总交接.md)
 - [项目现状评估报告 · 接手基线（2026-09-12 22:30）](handover/20260912_2230_项目现状评估报告.md)
 - [Stage 6A：交互原语层施工方案（2026-09-12 22:45，待批准）](handover/20260912_2245_Stage6A交互原语层施工方案.md)
+- [Stage 6A：交互原语层实施（2026-09-13 00:00）](handover/20260913_0000_Stage6A交互原语层.md)
+- [Stage 6C：牌面补全阶段性交接（2026-09-13 18:00）](handover/20260913_1800_Stage6C牌面补全.md)
+- [选牌流程完善与真实对局统计（2026-10-03 18:55）](handover/20261003_1855_选牌流程完善与对局统计.md)
 - [项目排查与计划文档产出 · 任务交接（2026-09-12 23:05）](handover/20260912_2305_项目排查与计划文档交接.md)
 - [开发路线图 ROADMAP（长期文档，随批次更新）](../ROADMAP.md)
 - [日志与交接规范](handover/README.md)

@@ -50,12 +50,19 @@ async def run():
                     {"type": "player_action", "action": {"type": "end_phase"}, "target_ids": []}))
             elif t == "require_response":
                 options = msg.get("options") or []
+                selection = msg.get("selection") or {}
                 if "request_id" in msg and options:
-                    await ws.send(json.dumps({
-                        "type": "player_action",
-                        "action": {"request_id": msg["request_id"], "option_index": 0},
-                        "target_ids": [],
-                    }))
+                    if selection.get("mode") == "multi":
+                        want = max(1, int(selection.get("min") or 1))
+                        action = {
+                            "type": "response",
+                            "request_id": msg["request_id"],
+                            "option_indices": list(range(min(want, len(options)))),
+                        }
+                    else:
+                        action = {"type": "response", "request_id": msg["request_id"], "option_index": 0}
+                    await ws.send(json.dumps(
+                        {"type": "player_action", "action": action, "target_ids": []}))
             if t == "game_end":
                 print(f"[step {step}] winner={msg.get('winner')} | remain={msg.get('players_alive')}")
                 print("SMOKE_OK: 规则AI跑到非aborted胜者")

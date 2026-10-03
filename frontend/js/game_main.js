@@ -7,6 +7,7 @@ const GameUI = {
     pendingAction: null,
     availableActions: [],
     selectedLegalAction: null,
+    targetSelection: [],
     gameConfig: {},
     playerName: '玩家',
     latestState: null,
@@ -159,17 +160,71 @@ gameClient.onRequireResponse = function (data) {
     GameUI.activeResponseRequest = data;
     var modal = document.getElementById('responseModal');
     var options = document.getElementById('responseOptions');
+    var multiSelect = document.getElementById('responseMultiSelect');
+    var multiOptions = document.getElementById('responseMultiOptions');
     options.innerHTML = '';
-    document.getElementById('responseTitle').textContent = data.kind === 'dying' ? '濒死响应' : '场外响应';
+    multiOptions.innerHTML = '';
+    var titleMap = {
+        dying: '濒死响应',
+        wuxie: '无懈可击',
+        choose_cards: '选择卡牌',
+        choose_players: '选择角色',
+        confirm: '请选择',
+        choose_option: '请选择'
+    };
+    document.getElementById('responseTitle').textContent = titleMap[data.kind] || '场外响应';
     document.getElementById('responsePrompt').textContent = data.prompt || '请选择是否响应';
     document.getElementById('responseContext').textContent = data.requested_name ? '需要：' + data.requested_name : '';
-    (data.options || []).forEach(function (option, index) {
-        var button = document.createElement('button');
-        button.textContent = option.label || ((option.card && option.card.name) || '不响应');
-        if (option.is_pass || !option.card) button.className = 'pass';
-        button.onclick = function () { submitResponse(index); };
-        options.appendChild(button);
-    });
+
+    var sel = data.selection || {};
+    var isMulti = sel.mode === 'multi';
+
+    if (isMulti) {
+        options.style.display = 'none';
+        multiSelect.style.display = '';
+        GameUI.multiSelected = [];
+        var minN = sel.min || 1;
+        var maxN = sel.max || 1;
+        var confirmBtn = document.getElementById('responseMultiConfirm');
+        function updateCount() {
+            var n = GameUI.multiSelected.length;
+            document.getElementById('responseMultiCount').textContent = '已选 ' + n + ' / ' + maxN;
+            confirmBtn.disabled = n < minN || n > maxN;
+        }
+        (data.options || []).forEach(function (option, index) {
+            var item = document.createElement('div');
+            item.className = 'multi-select-item';
+            item.textContent = option.label || (option.card && option.card.name) || String(index);
+            item.dataset.index = index;
+            item.onclick = function () {
+                var idx = GameUI.multiSelected.indexOf(index);
+                if (idx === -1) {
+                    if (GameUI.multiSelected.length < maxN) {
+                        GameUI.multiSelected.push(index);
+                        item.classList.add('selected');
+                    }
+                } else {
+                    GameUI.multiSelected.splice(idx, 1);
+                    item.classList.remove('selected');
+                }
+                updateCount();
+            };
+            multiOptions.appendChild(item);
+        });
+        updateCount();
+    } else {
+        options.style.display = '';
+        multiSelect.style.display = 'none';
+        (data.options || []).forEach(function (option, index) {
+            var button = document.createElement('button');
+            button.textContent = option.label || ((option.card && option.card.name) || '不响应');
+            if (option.is_pass) button.className = 'pass';
+            if (option.hidden) button.classList.add('hidden-card');
+            button.onclick = function () { submitResponse(index); };
+            options.appendChild(button);
+        });
+    }
+
     modal.classList.add('show');
     var left = Math.max(0, Number(data.timeout) || 30);
     var countdown = document.getElementById('responseCountdown');
@@ -190,6 +245,17 @@ function submitResponse(index) {
     clearInterval(GameUI.responseTimer);
     document.getElementById('responseModal').classList.remove('show');
     gameClient.playerAction({type: 'response', request_id: request.request_id, option_index: index}, []);
+}
+
+function submitMultiResponse() {
+    if (!GameUI.activeResponseRequest) return;
+    var request = GameUI.activeResponseRequest;
+    var indices = (GameUI.multiSelected || []).slice();
+    GameUI.activeResponseRequest = null;
+    GameUI.multiSelected = [];
+    clearInterval(GameUI.responseTimer);
+    document.getElementById('responseModal').classList.remove('show');
+    gameClient.playerAction({type: 'response', request_id: request.request_id, option_indices: indices}, []);
 }
 
 gameClient.onStateUpdate = function (s) {
@@ -246,6 +312,7 @@ gameClient.onYourTurn = function (data) {
     GameUI.needTarget = false;
     GameUI.pendingAction = null;
     GameUI.selectedLegalAction = null;
+    GameUI.targetSelection = [];
     document.getElementById('actionHint').style.display = 'block';
     document.getElementById('playBtn').textContent = '出牌';
     renderHand();
@@ -313,8 +380,11 @@ gameClient.onGameEnd = function (data) {
         winner: data.winner,
         message: data.message,
         total_rounds: state.round || 0,
+        duration: data.duration || 0,
         player_identity: me.identity || '未知',
         player_won: data.winner === me.identity || (data.winner === 'lord' && (me.identity === 'lord' || me.identity === 'loyalist')),
+        mvp: data.mvp || null,
+        stats: data.stats || null,
         players: state.players || []
     };
     localStorage.setItem('gameResult', JSON.stringify(result));
@@ -354,13 +424,17 @@ function checkNeedTarget(idx) {
     if (!GameUI.selectedLegalAction) {
         GameUI.needTarget = false;
         GameUI.pendingAction = null;
+        GameUI.targetSelection = [];
         document.getElementById('actionHint').textContent = '🚫 当前不能使用此牌';
         highlightTargets(false, []);
         return;
     }
     GameUI.needTarget = !!GameUI.selectedLegalAction.requires_target;
+    GameUI.targetSelection = [];
     if (GameUI.needTarget) {
-        document.getElementById('actionHint').textContent = '👆 点击绿色目标';
+        document.getElementById('actionHint').textContent = GameUI.selectedLegalAction.target_count === 2
+            ? '👆 先选择持有武器的角色，再选择攻击目标'
+            : '👆 点击绿色目标';
         highlightTargets(true, GameUI.selectedLegalAction.valid_targets || []);
     } else {
         document.getElementById('actionHint').textContent = '👆 点击出牌';
@@ -383,18 +457,52 @@ function highlightTargets(on, validIds) {
 }
 
 function selectTarget(tid) {
-    if (!GameUI.selectedLegalAction || !(GameUI.selectedLegalAction.valid_targets || []).includes(parseInt(tid))) {
+    tid = parseInt(tid);
+    if (!GameUI.selectedLegalAction || !(GameUI.selectedLegalAction.valid_targets || []).includes(tid)) {
         L('❌ 非法目标');
         return;
     }
-    if (GameUI.selectedLegalAction.type === 'use_skill') {
-        GameUI.pendingAction = Object.assign({}, GameUI.selectedLegalAction, {target_ids: [parseInt(tid)]});
+
+    if (GameUI.selectedLegalAction.target_count === 2) {
+        var pair = GameUI.targetSelection || [];
+        if (pair.length === 0) {
+            var firstPairs = (GameUI.selectedLegalAction.valid_target_pairs || []).filter(function (p) { return p[0] === tid; });
+            if (!firstPairs.length) {
+                L('❌ 请选择有武器的角色');
+                return;
+            }
+            GameUI.targetSelection = [tid];
+            highlightTargets(true, firstPairs.map(function (p) { return p[1]; }));
+            document.querySelectorAll('.pl.chosen').forEach(function (p) { p.classList.remove('chosen'); });
+            var first = document.getElementById('opp_' + tid);
+            if (first) first.classList.add('chosen');
+            document.getElementById('actionHint').textContent = '👆 请选择该角色要攻击的目标';
+            return;
+        }
+        var candidate = [pair[0], tid];
+        var validPair = (GameUI.selectedLegalAction.valid_target_pairs || []).some(function (p) {
+            return p[0] === candidate[0] && p[1] === candidate[1];
+        });
+        if (!validPair) {
+            L('❌ 该攻击目标不在武器范围内');
+            return;
+        }
+        GameUI.targetSelection = candidate;
     } else {
-        GameUI.pendingAction = {type: 'play_card', card_index: GameUI.sel, target_ids: [parseInt(tid)]};
+        GameUI.targetSelection = [tid];
+    }
+
+    if (GameUI.selectedLegalAction.type === 'use_skill') {
+        GameUI.pendingAction = Object.assign({}, GameUI.selectedLegalAction, {target_ids: GameUI.targetSelection.slice()});
+    } else {
+        GameUI.pendingAction = {type: 'play_card', card_index: GameUI.sel, target_ids: GameUI.targetSelection.slice()};
     }
     highlightTargets(false, []);
     document.querySelectorAll('.pl.chosen').forEach(function (p) { p.classList.remove('chosen'); });
-    document.getElementById('opp_' + tid).classList.add('chosen');
+    GameUI.targetSelection.forEach(function (id) {
+        var target = document.getElementById('opp_' + id);
+        if (target) target.classList.add('chosen');
+    });
     L('已选择目标');
     updateButtons();
 }
@@ -569,6 +677,7 @@ function doPlay() {
     GameUI.pendingAction = null;
     GameUI.needTarget = false;
     GameUI.selectedLegalAction = null;
+    GameUI.targetSelection = [];
     highlightTargets(false, []);
     document.querySelectorAll('.pl.chosen').forEach(function (p) { p.classList.remove('chosen'); });
     document.getElementById('playBtn').disabled = true;

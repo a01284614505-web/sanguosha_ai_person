@@ -511,7 +511,64 @@ body.game-page::after {
 }
 
 #responseOptions button.pass { background: #3d3835; color: #ddd; }
+#responseOptions button.hidden-card {
+    border-style: dashed;
+    color: #e8d9b8;
+    letter-spacing: 1px;
+}
 .response-context { font-size: 11px; color: #cbb9a7; }
+
+.multi-select-container { margin-top: 10px; }
+
+.multi-select-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.multi-select-item {
+    padding: 10px 12px;
+    background: #5c2e20;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+    user-select: none;
+}
+
+.multi-select-item:hover { background: #7a3c29; }
+.multi-select-item:active { transform: scale(.98); }
+
+.multi-select-item.selected {
+    background: #8b452c;
+    border-color: var(--gold);
+}
+
+.multi-select-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.multi-select-count { font-size: 12px; color: #cbb9a7; }
+
+.multi-select-confirm {
+    padding: 8px 18px;
+    background: var(--gold);
+    color: #1a0a00;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+}
+
+.multi-select-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+.multi-select-confirm:not(:disabled):hover { opacity: 0.85; }
+.multi-select-confirm:not(:disabled):active { transform: scale(.97); }
 
 .system-toast {
     background: rgba(5, 45, 20, .94);

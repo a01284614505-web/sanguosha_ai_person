@@ -83,19 +83,12 @@ class Player:
         return len(self.hand)
     
     def get_equipment_range(self):
-        """获取武器攻击范围"""
+        """获取武器攻击范围（单一真相源：CARD_TABLE.weapon_range）"""
+        from .card_table import CARD_TABLE
         weapon = self.equipment.get('weapon')
         if weapon:
-            # 武器范围映射
-            ranges = {
-                '诸葛连弩': 1,
-                '青釭剑': 2,
-                '青龙偃月刀': 3,
-                '丈八蛇矛': 3,
-                '贯石斧': 3,
-                '麒麟弓': 5
-            }
-            return ranges.get(weapon.name, 1)
+            spec = CARD_TABLE.get(weapon.name)
+            return spec.weapon_range if spec else 1
         return 1
 
 class GameState:
@@ -125,6 +118,9 @@ class GameState:
         # 游戏结束
         self.game_over: bool = False
         self.winner: Optional[str] = None
+
+        # 统计口径辅助：玩家 id → 最近一次伤害来源 id（击杀归属用，None 表示无来源）
+        self.last_damage_source: Dict[int, Optional[int]] = {}
         
     def init_game(self, config: Dict):
         """初始化游戏"""

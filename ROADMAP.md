@@ -14,9 +14,14 @@ Stage 1-4  原型、核心、27将54技能、真实牌堆        ✅ 已完成
 Stage 5    场外响应真决策通道                      ✅ 已完成
 C档重构    R0-R8 基线、死代码、包化、去逻辑化、
            单一真相源、前端拆分、logging            ✅ 已完成
+Stage 6A   交互原语层                             ✅ 已完成（2026-09-13）
+Stage 6C   牌面补全（锦囊、射程、坐骑、装备槽）     ◐ 部分完成（2026-09-13）
+选牌消费者  过河拆桥/顺手牵羊/五谷丰登接原语、
+           弃牌复核加固                            ✅ 已完成（2026-10-03）
+Stage 7B   真实结算统计（7 项指标 + MVP + 结算页）  ✅ 已完成（2026-10-03）
 ───────────────────────────────────────────────────
-Stage 6    玩法深度：交互原语 + 牌面补全 + 技能交互  ◀ 下一步
-Stage 7    系统骨架：代理系统 + 结算统计 + 思考回传
+Stage 6    玩法深度：牌面补全 + 技能交互            ◀ 下一步（完成 6C-3/4/6/7 → 6B）
+Stage 7    系统骨架：代理系统 + 统计持久化 + 思考回传
 Stage 8    武将 DSL 与导入管线
 Stage 9    UI 重构与皮肤系统
 Stage 10   多模式扩展（8人 / 2v2 / 斗地主）
@@ -65,28 +70,32 @@ if not any(option.get("card") is not None for option in options):
 | `ask_choose_cards` | 从指定牌区选 N 张 | 洛神、五谷、弃牌阶段、过河拆桥 |
 | `ask_choose_option` | 从若干具名分支里选一个 | 观星、朱雀改属性、刚烈分支 |
 
-- [ ] 6A-1 泛化 `request_response`：支持无牌选项，`_resolve_option` 按 option 类型分派复核
-- [ ] 6A-2 四原语落在 `MainEngine`，`SkillManager` 与 `CardSystem` 统一经由它调用
-- [ ] 6A-3 AI 侧四原语的规则兜底（`ai_decision.py` 扩 `simple_*_decision`）
-- [ ] 6A-4 前端响应弹窗升级为通用选择面板（牌选择 / 人选择 / 分支选择 / 确认）
-- [ ] 6A-5 **弃牌阶段改真人手选**（首个可感知收益，验证原语闭环）
-- [ ] 6A-6 协议扩展：`require_response` 增 `selection` 描述；`protocol.py` 同步生成 `protocol.js`
-- [ ] 6A-7 回归：四原语各 2 项单测 + 弃牌手选端到端
+- [x] 6A-1 泛化 `request_response`：支持无牌选项，`_resolve_option` 按 option 类型分派复核
+- [x] 6A-2 四原语落在 `MainEngine`，`SkillManager` 与 `CardSystem` 统一经由它调用
+- [x] 6A-3 AI 侧四原语的规则兜底（`ai_decision.py` 扩 `simple_*_decision`）
+- [x] 6A-4 前端响应弹窗升级为通用选择面板（牌选择 / 人选择 / 分支选择 / 确认）
+- [x] 6A-5 **弃牌阶段改真人手选**（首个可感知收益，验证原语闭环）
+- [x] 6A-6 协议扩展：`require_response` 增 `selection` 描述；`protocol.py` 同步生成 `protocol.js`
+- [x] 6A-7 回归：四原语各 2 项单测 + 弃牌手选端到端
 
 **验收**：真人在弃牌阶段能自选弃哪几张；AI 走规则兜底不卡；`ws_diag_smoke.py` 仍能 60s 内跑完整局。
 
+> 后续补全（2026-10-03）：过河拆桥 / 顺手牵羊 / 五谷丰登接入同一原语（他人手牌隐藏、
+> 装备与判定区明牌、被拆牌明牌展示），`_resolve_choice` 增补重复索引去重、跨牌区与
+> 临时展示池复核、两级确定性兜底。详见 [选牌流程完善与对局统计](logs/handover/20261003_1855_选牌流程完善与对局统计.md)。
+
 ### 6C 牌面补全
 
-- [ ] 6C-1 8 张未实现锦囊：决斗、南蛮入侵、万箭齐发、桃园结义、五谷丰登、借刀杀人、闪电、火攻
-- [ ] 6C-2 武器射程表从 `state_manager.py:88` 收回 `card_table.py`（补齐 9 把武器）
+- [x] 6C-1 8 张未实现锦囊：决斗、南蛮入侵、万箭齐发、桃园结义、五谷丰登、借刀杀人、闪电、火攻
+- [x] 6C-2 武器射程表从 `state_manager.py:88` 收回 `card_table.py`（补齐 9 把武器）
 - [ ] 6C-3 武器特效 9 件：诸葛连弩、雌雄双股剑、青釭剑、寒冰剑、青龙偃月刀、丈八蛇矛、贯石斧、方天画戟、麒麟弓、古锭刀、朱雀羽扇
 - [ ] 6C-4 防具 4 件：八卦阵、仁王盾、白银狮子、藤甲
-- [ ] 6C-5 坐骑 7 件接入距离系统（`get_distance` 已支持 `plus_horse`/`minus_horse`，只需绑牌名）
+- [x] 6C-5 坐骑 7 件接入距离系统（`get_distance` 已支持 `plus_horse`/`minus_horse`，只需绑牌名）
 - [ ] 6C-6 木牛流马（特殊区域，需新增牌区概念）
 - [ ] 6C-7 牌面图补齐 16/42 → 42/42
-- [ ] 6C-8 每张新牌 ≥2 正常用例 + ≥2 边界用例
+- [x] 6C-8 8 张新锦囊及装备槽回归覆盖（专项 29 项）
 
-**验收**：`card_table.py` 里 `usage="unimplemented"` 归零；标准 108 张 + 军争 53 张全部可用。
+**阶段性验收**：`card_table.py` 中除延期的木牛流马外，已无 `usage="unimplemented"`；标准 108 张与军争牌堆的牌表一致性测试通过。武器/防具具体特效、木牛流马特殊牌区和牌面图资源仍是 6C 遗留项。
 
 ### 6B 技能交互改造
 
@@ -124,11 +133,11 @@ CHRONICLE 13.5.3 设计了四种托管来源，目前只有第 4 种。
 
 ### 7B 真实结算
 
-- [ ] 7B-1 引擎侧战绩采集器：kills / damage_dealt / damage_taken / healing / cards_played / cards_lost / 技能发动次数
-- [ ] 7B-2 `game_end` payload 增 `stats` 与 `mvp`
-- [ ] 7B-3 MVP 算分公式（参考无名杀，附权重表与示例局验算）
+- [x] 7B-1 引擎侧战绩采集器：kills / damage_dealt / damage_taken / healing / cards_played / cards_lost / 技能发动次数（`game_engine/game_stats.py`，全部在真实状态变化点记录；口径见交接日志）
+- [x] 7B-2 `game_end` payload 增 `stats` 与 `mvp`（另附 `duration`；`serialize()` 每人带 `stats`）
+- [x] 7B-3 MVP 算分公式（kills×3 + damage_dealt + healing + skill_activations×0.5 + cards_played×0.2，同分依次比伤害/击杀/座次）
 - [ ] 7B-4 服务端持久化：连胜、身份卡、历史战绩（JSON 文件，替换现在的纯 localStorage）
-- [ ] 7B-5 结算页接真实数据（`result.js` 的 MVP 区块目前永远不渲染）
+- [x] 7B-5 结算页接真实数据（真实 MVP + 全员 7 项数据表；移除写死占位）
 
 ### 7C AI 思考回传
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """界限突破吴国7将12技能运行实现。"""
 
+from .game_stats import record_stat
 from .state_manager import Card, Phase
 from .skill_runtime_core import (
     FactionSkillHandler, alive_others, card_color, ensure_flags, hero_faction,
@@ -87,6 +88,7 @@ class WuSkillHandler(FactionSkillHandler):
                 return False
             await self.manager.announce(player, "奇袭", f"{player.name}发动【奇袭】，将黑色牌当【过河拆桥】")
             await self.manager.discard_card(player, card, "奇袭")
+            record_stat(self.engine, player, "cards_played")
             virtual = Card(f"qixi_{card.id}", "过河拆桥", card.suit, card.rank, "trick")
             success = await self.engine.card_system.use_guohe(player, virtual, target)
             await self.manager.after_card_used(player, virtual, [target], success)
@@ -128,6 +130,7 @@ class WuSkillHandler(FactionSkillHandler):
                 card.name = "乐不思蜀"
                 card.card_type = "delayed_trick"
                 target.judge_area.append(card)
+                record_stat(self.engine, player, "cards_played")
                 await self.manager.on_cards_lost(player, [card], "国色")
                 await self.manager.announce(player, "国色", f"{player.name}发动【国色】，对{target.name}使用【乐不思蜀】")
             elif variant == "remove_lebu":
@@ -271,9 +274,12 @@ class WuSkillHandler(FactionSkillHandler):
         lord = next((p for p in self.state.players if p.alive and p.identity == "lord" and self.has(p, "救援")), None)
         if not lord or player.hp < lord.hp or lord.hp >= lord.max_hp:
             return
+        before_player = player.hp
         player.hp = max(0, player.hp - amount)
+        record_stat(self.engine, player, "healing", -(before_player - player.hp))
         before = lord.hp
         lord.hp = min(lord.max_hp, lord.hp + 1)
+        record_stat(self.engine, lord, "healing", lord.hp - before)
         await self.manager.draw_cards(player, 1, "救援")
         await self.manager.announce(lord, "救援", f"{player.name}响应【救援】，改为令{lord.name}回复{lord.hp - before}点体力并摸一张牌")
 

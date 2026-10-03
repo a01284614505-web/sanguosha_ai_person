@@ -19,9 +19,10 @@ KEEP_SCORE = {name: spec.discard_keep_score for name, spec in CARD_TABLE.items()
 
 
 class PhaseController:
-    def __init__(self, game_state: "GameState", skill_manager=None):
+    def __init__(self, game_state: "GameState", skill_manager=None, engine=None):
         self.game_state = game_state
         self.skill_manager = skill_manager
+        self.engine = engine
         self.skip_phases = set()
 
     async def execute_phase(self, phase: "Phase"):
@@ -80,6 +81,34 @@ class PhaseController:
         if delayed_card.name == "乐不思蜀" and result.suit != "heart":
             self.skip_phases.add(Phase.PLAY)
             logger.info(f"  {player.name}的【乐不思蜀】生效：跳过出牌阶段")
+
+        if delayed_card.name == "闪电":
+            hit = result.suit == "spade" and 2 <= result.rank <= 9
+            if hit:
+                if self.engine and getattr(self.engine, "card_system", None):
+                    await self.engine.card_system.damage(
+                        player, player, 3, card=delayed_card, context={"reason": "闪电"}
+                    )
+                else:
+                    player.hp -= 3
+                logger.info(f"  {player.name}的【闪电】命中，受到3点雷电伤害，体力：{player.hp}/{player.max_hp}")
+            else:
+                players = self.game_state.players
+                if player in players:
+                    start = players.index(player)
+                    next_player = next(
+                        (players[(start + offset) % len(players)]
+                         for offset in range(1, len(players) + 1)
+                         if players[(start + offset) % len(players)].alive),
+                        None,
+                    )
+                    if next_player and not any(c.name == "闪电" for c in next_player.judge_area):
+                        next_player.judge_area.append(delayed_card)
+                        logger.info(f"  【闪电】判定未命中，传给{next_player.name}")
+                        if delayed_card in player.judge_area:
+                            player.judge_area.remove(delayed_card)
+                        return
+
         if delayed_card in player.judge_area:
             player.judge_area.remove(delayed_card)
             self.game_state.discard_pile.append(delayed_card)
@@ -109,12 +138,30 @@ class PhaseController:
         if not discard_count:
             return
 
-        # P0托管策略：优先保留桃、闪，再保留其他牌。后续接入玩家选牌交互。
         ordered = sorted(
             list(player.hand),
             key=lambda c: (KEEP_SCORE.get(c.name, 20), c.rank),
         )
-        discarded = ordered[:discard_count]
+        trustee = getattr(self.engine, "_trustee_active", False) if self.engine else False
+        if self.engine and not player.is_ai and not trustee:
+            try:
+                chosen = await self.engine.ask_choose_cards(
+                    player,
+                    f"弃牌阶段：请弃置 {discard_count} 张手牌",
+                    list(player.hand),
+                    min_n=discard_count,
+                    max_n=discard_count,
+                    zone="hand",
+                    cancelable=False,
+                )
+                if len(chosen) == discard_count:
+                    discarded = chosen
+                else:
+                    discarded = ordered[:discard_count]
+            except Exception:
+                discarded = ordered[:discard_count]
+        else:
+            discarded = ordered[:discard_count]
         for card in discarded:
             self.game_state.discard_card(player, card)
             if self.skill_manager:

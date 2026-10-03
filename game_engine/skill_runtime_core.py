@@ -171,6 +171,18 @@ class FactionSkillHandler:
     def hand_limit(self, player, current: int) -> int:
         return current
 
+    async def ask_confirm(self, player, prompt, **kwargs):
+        return await self.manager.ask_confirm(player, prompt, **kwargs)
+
+    async def ask_choose_players(self, player, prompt, candidates, **kwargs):
+        return await self.manager.ask_choose_players(player, prompt, candidates, **kwargs)
+
+    async def ask_choose_cards(self, player, prompt, candidates, **kwargs):
+        return await self.manager.ask_choose_cards(player, prompt, candidates, **kwargs)
+
+    async def ask_choose_option(self, player, prompt, choices, **kwargs):
+        return await self.manager.ask_choose_option(player, prompt, choices, **kwargs)
+
     def protect_card(self, owner, card, reason: str) -> bool:
         return False
 

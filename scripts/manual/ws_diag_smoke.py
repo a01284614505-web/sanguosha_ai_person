@@ -61,21 +61,38 @@ async def run():
             elif t == "require_response":
                 opts = msg.get("options")
                 rid = msg.get("request_id")
+                sel = msg.get("selection") or {}
                 resp_seen.append({"rid": rid, "n_opts": len(opts) if opts is not None else None,
-                                  "keys": sorted(msg.keys())})
+                                  "mode": sel.get("mode"), "keys": sorted(msg.keys())})
                 if rid is not None and opts:
                     # 必须带 type=response，否则 submit_action 走不到 submit_response，
                     # 整个请求会静默等满 response_timeout 再落到规则托管。
-                    await ws.send(json.dumps({
-                        "type": "player_action",
-                        "action": {"type": "response", "request_id": rid, "option_index": 0},
-                        "target_ids": [],
-                    }))
+                    if sel.get("mode") == "multi":
+                        want = max(1, int(sel.get("min") or 1))
+                        indices = list(range(min(want, len(opts))))
+                        await ws.send(json.dumps({
+                            "type": "player_action",
+                            "action": {"type": "response", "request_id": rid, "option_indices": indices},
+                            "target_ids": [],
+                        }))
+                    else:
+                        await ws.send(json.dumps({
+                            "type": "player_action",
+                            "action": {"type": "response", "request_id": rid, "option_index": 0},
+                            "target_ids": [],
+                        }))
                 else:
                     print(f"[NO-REPLY] require_response 无法应答: {json.dumps(msg, ensure_ascii=False)[:300]}")
 
             if t == "game_end":
                 print(f"[step {step}] winner={msg.get('winner')} 用时={time.time()-t0:.1f}s")
+                mvp = msg.get("mvp") or {}
+                stats = msg.get("stats") or {}
+                print(f"duration={msg.get('duration')} mvp={mvp.get('player_name')} "
+                      f"kills={mvp.get('kills')} damage_dealt={mvp.get('damage_dealt')} "
+                      f"healing={mvp.get('healing')} cards_played={mvp.get('cards_played')}")
+                for pid, row in sorted(stats.items(), key=lambda kv: str(kv[0])):
+                    print(f"  player {pid}: {row}")
                 print("SMOKE_OK")
                 break
 

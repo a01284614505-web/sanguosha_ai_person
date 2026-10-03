@@ -386,7 +386,10 @@ class AIDecision:
             card = action.get("card") or {}
             text = f"使用手牌#{action.get('card_index')}【{card.get('name', '未知')}】"
             if action.get("requires_target"):
-                text += f"，合法目标={action.get('valid_targets', [])}"
+                if action.get("target_count") == 2:
+                    text += f"，合法目标对={action.get('valid_target_pairs', [])}"
+                else:
+                    text += f"，合法目标={action.get('valid_targets', [])}"
             return text
         if action_type == "use_skill":
             text = f"发动【{action.get('skill_name')}】/{action.get('variant', 'default')}"
@@ -437,15 +440,47 @@ class AIDecision:
             return self.simple_ai_decision(player, available_actions)
 
     def _normalize_targets(self, action: Dict, requested: Any, player) -> List[int]:
-        valid = list(action.get("valid_targets", []))
         if not action.get("requires_target"):
             return []
+        if action.get("target_count") == 2:
+            pairs = [list(pair) for pair in action.get("valid_target_pairs", [])]
+            if isinstance(requested, list):
+                requested_pair = [tid for tid in requested if tid in action.get("valid_targets", [])]
+                for pair in pairs:
+                    if requested_pair == pair:
+                        return pair
+            if not pairs:
+                return []
+            return self._choose_target_pair(player, pairs)
+
+        valid = list(action.get("valid_targets", []))
         if not isinstance(requested, list):
             requested = []
         chosen = [tid for tid in requested if tid in valid]
         if chosen:
             return chosen[:1]
         return self._choose_target(player, valid)
+
+    def _choose_target_pair(self, player, pairs: List[List[int]]) -> List[int]:
+        players = {p.id: p for p in self.engine.game_state.players}
+        candidates = [(players.get(pair[0]), players.get(pair[1])) for pair in pairs]
+        candidates = [(owner, victim) for owner, victim in candidates if owner and victim]
+        if not candidates:
+            return []
+
+        def score(pair):
+            owner, victim = pair
+            enemy = 0
+            if player and player.identity == "rebel":
+                enemy = int(victim.identity_revealed and victim.identity == "lord")
+            elif player and player.identity in ("lord", "loyalist"):
+                enemy = int(victim.identity_revealed and victim.identity in ("rebel", "spy"))
+            elif player and player.identity == "spy":
+                enemy = int(not (victim.identity_revealed and victim.identity == "spy"))
+            return (-enemy, victim.hp, len(victim.hand), owner.hp, owner.id, victim.id)
+
+        owner, victim = min(candidates, key=score)
+        return [owner.id, victim.id]
 
     def _choose_target(self, player, valid_ids: List[int]) -> List[int]:
         if not valid_ids:
@@ -634,6 +669,57 @@ class AIDecision:
 
         # 普通响应（闪 / 杀 / 桃）：能挡就挡，优先不消耗技能的那张。
         return indices[0]
+
+    def simple_choice_decision(self, player, request: Dict) -> List[int]:
+        """四原语规则兜底，始终返回合法 List[int]。"""
+        kind = request.get("kind", "confirm")
+
+        if kind == "confirm":
+            default = bool(request.get("default", False))
+            return [0] if default else [1]
+
+        if kind == "choose_option":
+            choices = request.get("choices") or []
+            return [0] if choices else []
+
+        if kind == "choose_players":
+            cand_ids = request.get("candidate_ids") or []
+            all_players = (request.get("context") or {}).get("all_players") or []
+            players_map = {p.id: p for p in all_players}
+            min_n = request.get("min_n", 1)
+            max_n = request.get("max_n", 1)
+            enemies = [i for i, pid in enumerate(cand_ids)
+                       if pid in players_map and players_map[pid].alive
+                       and getattr(players_map[pid], "is_ai", True) != getattr(player, "is_ai", False)]
+            enemies.sort(key=lambda i: players_map[cand_ids[i]].hp)
+            selected = enemies[:max_n]
+            if len(selected) < min_n:
+                extras = [i for i in range(len(cand_ids)) if i not in selected
+                          and cand_ids[i] in players_map and players_map[cand_ids[i]].alive]
+                selected += extras[:min_n - len(selected)]
+            return selected[:max_n]
+
+        if kind == "choose_cards":
+            cand_cards = request.get("candidate_cards") or []
+            min_n = request.get("min_n", 1)
+            max_n = request.get("max_n", 1)
+            hidden = set(request.get("hidden_indices") or [])
+
+            def card_rank(item):
+                index, card = item
+                if index in hidden:
+                    # 隐藏候选（如他人手牌）无法评估：不按牌面分值挑，按候选顺序取。
+                    return (0, 0, index)
+                score = CARD_TABLE[card.name].discard_keep_score if card.name in CARD_TABLE else 20
+                return (1, score, index)
+
+            indexed = sorted(enumerate(cand_cards), key=card_rank)
+            return [i for i, _ in indexed[:max_n]] if len(indexed) >= min_n else list(range(len(indexed)))
+
+        return []
+
+    async def make_choice_decision(self, player, request: Dict) -> List[int]:
+        return self.simple_choice_decision(player, request)
 
 
 class AIGateway:

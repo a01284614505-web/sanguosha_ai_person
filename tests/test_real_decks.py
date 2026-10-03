@@ -68,7 +68,7 @@ class RealDeckTest(unittest.TestCase):
         self.assertEqual(manager.normalize_deck_id("test_deck"), "standard")
         self.assertEqual(manager.normalize_deck_id("complete_deck"), "standard")
 
-    def test_equipment_is_not_exposed_as_playable(self):
+    def test_equipment_is_exposed_as_playable(self):
         game = GameState()
         player = Player(id=0, name="测试玩家")
         equipment = Card("standard_zhuge_club_1_1", "诸葛连弩", "club", 1, "equipment")
@@ -77,8 +77,7 @@ class RealDeckTest(unittest.TestCase):
         game.current_player = player
         game.current_phase = Phase.PLAY
         allowed, reason = RulesEngine(game).can_play_card(player, equipment, [])
-        self.assertFalse(allowed)
-        self.assertIn("仅支持摸取和弃置", reason)
+        self.assertTrue(allowed, reason)
 
 
 class CardTableConsistencyTest(unittest.TestCase):

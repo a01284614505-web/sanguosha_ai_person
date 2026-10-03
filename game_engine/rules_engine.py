@@ -37,8 +37,6 @@ class RulesEngine:
             return False, "受技能影响，本回合不能使用或打出手牌"
         
         # 4. 根据卡牌类型检查（单一来源：CARD_TABLE 的 card_type/usage/resolver）
-        if card.card_type == 'equipment':
-            return False, "装备效果尚未接入，本批仅支持摸取和弃置"
         spec = CARD_TABLE.get(card.name)
         if spec and spec.usage == "response":
             return False, "该牌只能响应使用"
@@ -138,9 +136,33 @@ class RulesEngine:
         
         return True, "OK"
     
+    def can_play_jiedao(self, player, card, targets: List) -> Tuple[bool, str]:
+        """检查借刀杀人的两个有序目标：有武器者、被攻击者。"""
+        if not targets or len(targets) != 2:
+            return False, "借刀杀人需要指定两名角色"
+
+        weapon_owner, victim = targets
+        if weapon_owner == victim:
+            return False, "借刀杀人的两个目标不能相同"
+        if weapon_owner == player or victim == player:
+            return False, "借刀杀人不能指定自己"
+        if not weapon_owner.alive or not victim.alive:
+            return False, "目标已死亡"
+        if "weapon" not in weapon_owner.equipment:
+            return False, "第一目标没有武器"
+
+        distance = self.get_distance(weapon_owner, victim)
+        if self.skill_manager:
+            distance = self.skill_manager.modify_distance(weapon_owner, victim, distance)
+        weapon_range = weapon_owner.get_equipment_range()
+        if distance > weapon_range:
+            return False, f"借刀目标距离不够：{distance} > {weapon_range}"
+        return True, "OK"
+
     def get_distance(self, from_player, to_player) -> int:
         """统一委托给GameState，避免两套距离算法。"""
         return self.game_state.get_distance(from_player, to_player)
+
 
 # 导出
 __all__ = ['RulesEngine']

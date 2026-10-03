@@ -3,6 +3,7 @@
 
 from itertools import combinations
 
+from .game_stats import record_stat
 from .state_manager import Card, Phase
 from .skill_runtime_core import (
     FactionSkillHandler, alive_others, card_color, ensure_flags, hero_faction,
@@ -115,6 +116,7 @@ class QunSkillHandler(FactionSkillHandler):
             await self.manager.announce(player, "乱击", f"{player.name}发动【乱击】，将两张{cards[0].suit}牌当【万箭齐发】")
             for card in sorted(cards, key=lambda c: player.hand.index(c), reverse=True):
                 await self.manager.discard_card(player, card, "乱击")
+            record_stat(self.engine, player, "cards_played", 2)
             targets_all = await self.manager.before_multi_target_trick(player, Card("luanji", "万箭齐发", cards[0].suit, cards[0].rank, "trick"), alive_others(self.state, player))
             for victim in list(targets_all):
                 result = await self.engine.card_system.choose_to_respond(
@@ -130,6 +132,7 @@ class QunSkillHandler(FactionSkillHandler):
                         self.state.discard_pile.append(response)
                         await self.engine.card_system.notify_card_to_discard(owner, response, "respond", index, f"{owner.name}打出【闪】响应【万箭齐发】")
                         await self.manager.on_cards_lost(owner, [response], "万箭齐发")
+                        record_stat(self.engine, owner, "cards_played")
                         await self.manager.on_card_discarded(owner, response, "万箭齐发")
                         await self.manager.on_card_responded(victim, response, result.get("as_name", response.name), {"source": player, "owner": owner})
                 else:

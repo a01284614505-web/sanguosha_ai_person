@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """界限突破蜀国7将14技能运行实现。"""
 
+from .game_stats import record_stat
 from .state_manager import Card, Phase, card_to_dict
 from .skill_runtime_core import (
     FactionSkillHandler, alive_others, card_color, card_type_group, ensure_flags,
@@ -112,7 +113,7 @@ class ShuSkillHandler(FactionSkillHandler):
             if variant == "basic_tao":
                 if player.hp >= player.max_hp:
                     return False
-                player.hp += 1
+                await self.manager.recover(player, 1, player, "仁德")
                 return True
             virtual = Card(f"skill_rende_sha_{player.id}", "杀", "heart", 1, "basic")
             return await self.engine.card_system.use_sha(player, virtual, target)
@@ -124,6 +125,8 @@ class ShuSkillHandler(FactionSkillHandler):
             card = next(c for c in donor.hand if c.name == "杀")
             donor.hand.remove(card)
             self.state.discard_pile.append(card)
+            record_stat(self.engine, donor, "cards_lost")
+            record_stat(self.engine, donor, "cards_played")
             await self.manager.announce(player, "激将", f"{player.name}发动【激将】，{donor.name}打出【杀】")
             await self.engine.card_system.notify_card_to_discard(donor, card, "respond", message=f"{donor.name}响应【激将】打出【杀】")
             virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic")
@@ -168,6 +171,7 @@ class ShuSkillHandler(FactionSkillHandler):
         index = player.hand.index(card)
         player.hand.remove(card)
         self.state.discard_pile.append(card)
+        record_stat(self.engine, player, "cards_lost")
         await self.engine.card_system.notify_card_to_discard(
             player, card, "discard", index, f"{player.name}发动【{skill_name}】弃置【{card.name}】"
         )
@@ -185,6 +189,8 @@ class ShuSkillHandler(FactionSkillHandler):
         )
         player.hand.remove(card)
         self.state.discard_pile.append(card)
+        record_stat(self.engine, player, "cards_lost")
+        record_stat(self.engine, player, "cards_played")
 
     async def on_turn_start(self, player):
         flags = ensure_flags(player)
@@ -203,7 +209,7 @@ class ShuSkillHandler(FactionSkillHandler):
             if self.has(player, "替身") and player.hp < player.max_hp and "替身" not in flags.setdefault("limited_skills", set()):
                 recovered = player.max_hp - player.hp
                 flags["limited_skills"].add("替身")
-                player.hp = player.max_hp
+                await self.manager.recover(player, recovered, player, "替身")
                 self.state.draw_card(player, recovered)
                 await self.manager.announce(player, "替身", f"{player.name}发动【替身】，回复{recovered}点体力并摸{recovered}张牌")
                 # 观星：自动把当前最需要的牌置于牌堆顶。
@@ -281,6 +287,7 @@ class ShuSkillHandler(FactionSkillHandler):
                     if card_type_group(card_drawn) == "basic" and len(player.hand) > player.hp:
                         player.hand.remove(card_drawn)
                         self.state.discard_pile.append(card_drawn)
+                        record_stat(self.engine, player, "cards_lost")
                         flags["hand_limit_bonus"] = flags.get("hand_limit_bonus", 0) + 1
                         await self.engine.card_system.notify_card_to_discard(player, card_drawn, "discard", message=f"{player.name}因【集智】弃置摸到的基本牌")
 
@@ -343,6 +350,7 @@ class ShuSkillHandler(FactionSkillHandler):
                     removed = source.hand[0]
                     source.hand.remove(removed)
                     self.state.discard_pile.append(removed)
+                    record_stat(self.engine, source, "cards_lost")
                     await self.manager.announce(player, "涯角", f"{player.name}发动【涯角】弃置{source.name}一张牌")
 
     def can_target(self, source, target, card_name):

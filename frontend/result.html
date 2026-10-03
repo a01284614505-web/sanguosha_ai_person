@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>游戏结束 - AI三国杀酒馆</title>
-    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/main.css?v=20261003a">
 </head>
 <body>
     <div class="container">
@@ -30,19 +30,18 @@
                 </div>
             </div>
 
-            <div class="result-card">
+            <div class="result-card" id="mvpCard">
                 <h3>MVP</h3>
                 <div id="mvpInfo" class="mvp-info">
-                    <div class="mvp-hero">
-                        <img src="assets/heroes/caocao.jpg" alt="MVP" onerror="this.style.display='none'">
-                        <div class="mvp-name">诸葛亮</div>
-                    </div>
-                    <div class="mvp-stats">
-                        <div>击杀：3</div>
-                        <div>伤害：8</div>
-                        <div>治疗：2</div>
-                    </div>
+                    <div class="mvp-name">本局暂无MVP数据</div>
                 </div>
+            </div>
+        </section>
+
+        <section class="result-stats">
+            <h2>玩家数据</h2>
+            <div id="statsList" class="stats-list">
+                <!-- 引擎下发的真实对局统计将动态生成 -->
             </div>
         </section>
 
@@ -68,7 +67,7 @@
         </div>
     </div>
 
-    <script src="js/result.js?v=20260803c"></script>
+    <script src="js/result.js?v=20261003a"></script>
     <script src="js/protocol.js"></script>
     <script src="js/global_settings.js?v=20260803c"></script>
 </body>

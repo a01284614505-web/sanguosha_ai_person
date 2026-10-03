@@ -31,6 +31,7 @@ sanguosha_data/
 │   ├── skill_manager.py        # 技能注册与统一调度
 │   ├── skill_runtime_core.py   # 技能运行时基础类型
 │   ├── skills_generated.py     # 27 将技能定义
+│   ├── game_stats.py           # 真实对局统计（7 项指标口径与 MVP）
 │   └── skills_{wei,shu,wu,qun}.py
 ├── frontend/
 │   ├── index.html              # 大厅
@@ -93,14 +94,14 @@ GameServer 转成 WebSocket 出站消息
 | `game_created` | 对局创建回执 |
 | `game_state` | 完整可见状态更新 |
 | `your_turn` | 真人出牌阶段及合法候选 |
-| `require_response` | 回合外响应请求及合法候选 |
+| `require_response` | 回合外响应与交互原语的请求及合法候选（`selection` 含 mode/min/max/zone/cancelable；多选用 `option_indices` 应答） |
 | `action_result` | 真人操作执行结果 |
 | `ai_action` | AI 回合或出牌展示 |
 | `chat` | 真人或 AI 聊天消息 |
 | `event_notification` | 游戏事件与动画通知 |
 | `ai_config_updated` | AI 配置更新回执 |
 | `end_game_accepted` | 主动结束请求回执 |
-| `game_end` | 对局结束与结算状态 |
+| `game_end` | 对局结束与结算状态（含真实 `stats` / `mvp` / `duration`；全员 `serialize().players[].stats`） |
 | `error` | 协议、配置或执行错误 |
 ## 5. 游戏与 AI 系统
 ### 游戏引擎
@@ -143,23 +144,27 @@ python scripts/check_frontend_js.py
 - R6：协议、Provider、牌表与序列化单一真相源（已完成；`protocol.py` + `CARD_TABLE` + `card_to_dict`，前端经 `gen_protocol_js.py` 生成同步）。
 - R7：拆分 `game.html`、样式变量化并接线武将头像（已完成；`game.html` 79 行纯结构 + `css/game.css` + `js/game_main.js`，回归 83）。
 - R8：日志机制与重构总交接（已完成；引擎 84 处 `print` → `logging`，缓存统计 5 MiB 轮转，回归提升至 86）。
-### 7.2 当前功能边界（2026-09-12 实测核定）
+### 7.2 当前功能边界（2026-10-03 复核更新）
 | 领域 | 状态 |
 |---|---|
 | 模式 | 只支持 5 人身份局（`config_validator.py:29`、`identity_system.py:19` 硬阻断） |
 | 基本牌 | 4/4 |
-| 锦囊 | 6/15 已实现 + 无懈可击（响应）；8 张标 `usage="unimplemented"`，不会进 `available_actions` |
-| 装备 | 0/23 效果；武器射程表暂硬编码于 `state_manager.py:88`，待收回 `card_table.py` |
+| 锦囊 | 14/15 已实现 + 无懈可击（响应）；无 `usage="unimplemented"`（木牛流马特殊牌区为 6C-6 遗留） |
+| 装备 | 装备槽与武器射程已收进 `card_table.py`；武器/防具具体特效未实现（6C-3/4 遗留） |
 | 距离系统 | 已实现（座位环距 + 马匹修正 + 技能 `modify_distance`/`ignore_distance`） |
-| 技能 | 54 个已注册且可执行，但除 `skills_qun.py:120` 外**全部为确定性自动结算，无发动/选目标/选牌询问** |
-| 弃牌阶段 | 引擎按 `CARD_TABLE.discard_keep_score` 自动弃，真人不可选 |
-| 结算统计 | 引擎不产出 kills/damage/healing/MVP，`result.js` 的 MVP 区块不渲染 |
+| 技能 | 54 个已注册且可执行，但除 `skills_qun.py` 个别技能外**仍为确定性自动结算，无发动/选目标/选牌询问**（6B 待做） |
+| 选牌流程 | 四交互原语 + 加固复核（去重/跨牌区/临时池/两级兜底）；弃牌阶段、过河拆桥、顺手牵羊、五谷丰登均为真人手选，AI 走规则兜底 |
+| 弃牌阶段 | 真人手选（超时/离席落 `CARD_TABLE.discard_keep_score` 确定性策略）；AI 直接走该策略 |
+| 结算统计 | 引擎产出 7 项真实统计与 MVP（`game_stats.py`），随 `game_end` 下发，`result.js` 渲染真实数据 |
 | 托管 | CHRONICLE 13.5.3 四种来源只实现第 4 种（规则脚本兜底） |
 | 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
 ### 7.3 下一阶段
-**Stage 6A 交互原语层**（硬前置）：把 `MainEngine.request_response` 泛化为 `ask_confirm` / `ask_choose_players` / `ask_choose_cards` / `ask_choose_option` 四原语，并让弃牌阶段改真人手选。施工方案见 [Stage 6A](logs/handover/20260912_2245_Stage6A交互原语层施工方案.md)。
+**6C 剩余（武器/防具特效、木牛流马、牌面图）→ 6B 技能交互改造**；7A 代理系统与 7B-4 服务端持久化待排期。
 
-此后顺序：6C 牌面补全 → 6B 技能交互 → Stage 7 系统骨架 → Stage 8 武将 DSL → Stage 9 UI 与皮肤 → Stage 10 多模式 → Stage 11 打磨。
+6A 交互原语层与选牌消费者补全已完成（2026-09-13 / 2026-10-03），详见
+[Stage 6A](logs/handover/20260913_0000_Stage6A交互原语层.md) 与
+[选牌流程完善与对局统计](logs/handover/20261003_1855_选牌流程完善与对局统计.md)。
 ### 7.4 验收工具提示
-`scripts/manual/ws_engine_smoke.py` 提交场外响应时缺 `type:"response"` 字段，会使每次响应等满 30 秒再落托管（`main_engine.py:438` 靠该字段路由）。请使用 `scripts/manual/ws_diag_smoke.py`（带动画 ACK 与消息统计）作为自驱冒烟入口。
+`ws_diag_smoke.py`（带动画 ACK、多选应答与结算统计输出）仍是首选自驱冒烟入口；
+`ws_engine_smoke.py` 的 `type:"response"` 缺失与多选应答已于 2026-10-03 修复。
 当前完成状态以 `logs/handover/` 最新交接及真实测试输出为准；`logs/CHRONICLE.md` 的早期章节只代表当时记录。

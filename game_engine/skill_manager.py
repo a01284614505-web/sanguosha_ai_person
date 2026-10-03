@@ -5,6 +5,7 @@ import logging
 from importlib import import_module
 from typing import Dict, List
 
+from .game_stats import clear_damage_source, record_stat
 from .skill_runtime_core import hero_id, reset_turn_flags
 from .skills_generated import get_all_skills, get_hero_skills
 
@@ -93,6 +94,8 @@ class SkillManager:
             **details,
         }
         self.activation_log.append(entry)
+        if event == "activate":
+            record_stat(self.engine, player, "skill_activations")
         logger.info(f"  [技能] {player.name}发动【{skill_name}】({event})")
         return entry
 
@@ -123,11 +126,26 @@ class SkillManager:
         await self.on_card_gained(target, [card], reason)
         return True
 
+    async def ask_confirm(self, player, prompt, **kwargs):
+        return await self.engine.ask_confirm(player, prompt, **kwargs)
+
+    async def ask_choose_players(self, player, prompt, candidates, **kwargs):
+        return await self.engine.ask_choose_players(player, prompt, candidates, **kwargs)
+
+    async def ask_choose_cards(self, player, prompt, candidates, **kwargs):
+        return await self.engine.ask_choose_cards(player, prompt, candidates, **kwargs)
+
+    async def ask_choose_option(self, player, prompt, choices, **kwargs):
+        return await self.engine.ask_choose_option(player, prompt, choices, **kwargs)
+
     async def lose_hp(self, player, amount=1, reason="skill", source=None):
         amount = max(0, int(amount))
         if not amount:
             return
         player.hp -= amount
+        # 失去体力不是伤害：清掉旧伤害来源，死亡时不得把击杀记到早前的伤害上。
+        if self.engine is not None:
+            clear_damage_source(self.engine.game_state, player)
         await self.on_hp_lost(player, amount, reason, source)
         if player.hp <= 0:
             await self.engine.card_system.enter_dying(player)
@@ -137,6 +155,7 @@ class SkillManager:
         player.hp = min(player.max_hp, player.hp + max(0, int(amount)))
         recovered = player.hp - before
         if recovered:
+            record_stat(self.engine, source or player, "healing", recovered)
             await self.on_recover(player, recovered, source, reason)
         return recovered
 
@@ -170,6 +189,7 @@ class SkillManager:
                     responded = False
                     break
                 await self.discard_card(owner, response, f"响应{reason}")
+                record_stat(self.engine, owner, "cards_played")
                 await self.on_card_responded(current, response, (option or {}).get("as_name", "杀"), {"source": other, "owner": owner})
             if not responded:
                 await self.engine.card_system.damage(other, current, 1, card=None, context={"reason": reason})
@@ -297,6 +317,7 @@ class SkillManager:
     async def on_cards_lost(self, player, cards, reason="unknown"):
         if not cards:
             return
+        record_stat(self.engine, player, "cards_lost", len(cards))
         for handler in self.handlers:
             await handler.on_cards_lost(player, cards, reason)
 

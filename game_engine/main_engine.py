@@ -19,6 +19,7 @@ from .identity_system import IdentitySystem
 from .chat_engine import ChatEngine
 from .config_validator import normalize_config
 from .deck_manager import DeckManager
+from .game_stats import GameStats, record_stat
 
 
 logger = logging.getLogger(__name__)
@@ -72,14 +73,16 @@ class MainEngine:
         self.game_config = game_config
         self.game_state = GameState()
         self.game_state.init_game(game_config)
+        self.stats = GameStats(self.game_state.players)
 
         self.skill_manager = SkillManager(self)
         self.trigger_manager = self.skill_manager  # 兼容卡牌系统旧参数名
-        self.phase_controller = PhaseController(self.game_state, self.skill_manager)
+        self.phase_controller = PhaseController(self.game_state, self.skill_manager, engine=self)
         self.card_system = CardSystem(
             self.game_state, None, self.trigger_manager,
             ui_notifier=self._notify_card_ui,
             responder=self.request_response,
+            engine=self,
         )
         self.rules = RulesEngine(self.game_state, self.skill_manager)
         self.ai_decision = AIDecision(self)
@@ -106,6 +109,7 @@ class MainEngine:
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
         self._game_end_emitted = False
+        self._started_at: Any = None
 
         logger.info(f"\n{'=' * 60}")
         logger.info("  🎮 引擎v2初始化")
@@ -204,6 +208,7 @@ class MainEngine:
                     "identity": p.identity if identity_visible else None,
                     "identity_revealed": identity_visible,
                     "equipment": {slot: card.name for slot, card in p.equipment.items()},
+                    "stats": self.stats.row(p),
                 }
             )
         return {
@@ -230,6 +235,7 @@ class MainEngine:
 
     async def run(self):
         logger.info("\n🎮 游戏开始！\n")
+        self._started_at = self.time_source()
         assigned = self.identity_system.assign_identities(
             self.game_state.players,
             self.game_state.mode,
@@ -436,7 +442,9 @@ class MainEngine:
         if not isinstance(action, dict):
             return
         if action.get("type") == "response":
-            self.submit_response(action.get("request_id"), action.get("option_index"))
+            option_indices = action.get("option_indices")
+            selection = option_indices if option_indices is not None else action.get("option_index")
+            self.submit_response(action.get("request_id"), selection)
             return
         self._note_human_input()
         self._player_input = {"action": action, "target_ids": target_ids or action.get("target_ids", []) or []}
@@ -515,21 +523,23 @@ class MainEngine:
             "skill_name": option.get("skill_name"),
         }
 
+    async def _ask_index(self, player: Player, request: Dict, resolver) -> Any:
+        """共用询问机制：人/AI分派 + 超时托管 + 回灌。resolver 决定如何验证原始索引。"""
+        request_id = self._next_request_id()
+        if player.is_ai:
+            index = await self._ai_choose_option(player, request)
+            result = resolver(player, request, index)
+            self._record_response_outcome(player, request, result)
+            return result
+        index = await self._human_choose_option(player, request, request_id)
+        return resolver(player, request, index)
+
     async def request_response(self, player: Player, request: Dict) -> Dict:
         """场外响应统一入口。返回值契约与旧 choose_to_respond 一致。"""
         options = list(request.get("options") or [])
         if not any(option.get("card") is not None for option in options):
             return {"bool": False}
-
-        request_id = self._next_request_id()
-        if player.is_ai:
-            index = await self._ai_choose_option(player, request)
-            resolved = self._resolve_option(player, request, index)
-            self._record_response_outcome(player, request, resolved)
-            return resolved
-
-        index = await self._human_choose_option(player, request, request_id)
-        return self._resolve_option(player, request, index)
+        return await self._ask_index(player, request, self._resolve_option)
 
     def _record_response_outcome(self, player: Player, request: Dict, resolved: Dict):
         """AI 的响应结果同样回灌会话窗口，包括被引擎复核驳回的情况。"""
@@ -541,6 +551,331 @@ class MainEngine:
         else:
             text = f"你没有响应「{request.get('prompt', '')}」（未选择或被引擎复核驳回）。"
         recorder(player, f"【引擎执行结果】{text}")
+
+    # ---------- 四交互原语 ----------
+
+    @staticmethod
+    def _normalize_indices(raw) -> List[int]:
+        """int/列表统一成去重后的索引列表；布尔与非整数一律丢弃。"""
+        if isinstance(raw, bool):
+            return []
+        if isinstance(raw, int):
+            values = [raw]
+        elif isinstance(raw, (list, tuple)):
+            values = list(raw)
+        else:
+            return []
+        result: List[int] = []
+        seen = set()
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, int) or value in seen:
+                continue
+            seen.add(value)
+            result.append(value)
+        return result
+
+    def _card_in_zone(self, card, owner, zone: str) -> bool:
+        """复核单张牌是否仍在声明的牌区内（兼容装备字典与判定区）。"""
+        if owner is None or card is None:
+            return False
+        if zone == "hand":
+            return card in owner.hand
+        if zone == "equipment":
+            return card in owner.equipment.values()
+        if zone == "judge":
+            return card in owner.judge_area
+        if zone == "discard":
+            return card in self.game_state.discard_pile
+        if zone == "shown":
+            # 临时展示池（如五谷丰登）没有持久牌区：调用方在结算前再核对一次。
+            return True
+        return False
+
+    def _validate_choice_cards(self, request: Dict, indices: List[int]) -> List:
+        cand_cards = list(request.get("candidate_cards") or [])
+        places = request.get("candidate_places") or []
+        default_owner = request.get("card_owner")
+        default_zone = request.get("zone", "hand")
+        selected = []
+        for index in indices:
+            if not 0 <= index < len(cand_cards):
+                continue
+            card = cand_cards[index]
+            if places and index < len(places):
+                owner, zone = places[index]
+            else:
+                owner, zone = default_owner, default_zone
+            if not self._card_in_zone(card, owner, zone):
+                continue
+            if card in selected:
+                continue
+            selected.append(card)
+        return selected
+
+    def _validate_choice_players(self, request: Dict, indices: List[int]) -> List:
+        all_players = request.get("context", {}).get("all_players") or []
+        players_map = {p.id: p for p in all_players}
+        cand_ids = list(request.get("candidate_ids") or [])
+        selected = []
+        for index in indices:
+            if not 0 <= index < len(cand_ids):
+                continue
+            target = players_map.get(cand_ids[index])
+            if target is None or not target.alive or target in selected:
+                continue
+            selected.append(target)
+        return selected
+
+    @staticmethod
+    def _choice_limits(request: Dict):
+        min_n = max(0, int(request.get("min_n", 1)))
+        max_n = max(min_n, int(request.get("max_n", 1)))
+        return min_n, max_n
+
+    @staticmethod
+    def _empty_choice_result(kind: str) -> Dict:
+        if kind == "choose_players":
+            return {"bool": False, "players": []}
+        if kind == "choose_cards":
+            return {"bool": False, "cards": []}
+        if kind == "choose_option":
+            return {"bool": False, "choice": None}
+        return {"bool": False, "confirmed": False}
+
+    def _resolve_choice(self, player: Player, request: Dict, raw, *, _allow_rule_fallback=True) -> Dict:
+        """引擎复核：四原语共用的验证器。raw 是 int 或 List[int]，任何非法选择都不落地。"""
+        kind = request.get("kind", "confirm")
+        indices = self._normalize_indices(raw)
+        if self._abort_reason:
+            return self._empty_choice_result(kind)
+
+        if kind == "confirm":
+            if not indices or indices[0] not in (0, 1):
+                val = bool(request.get("default", False))
+                return {"bool": val, "confirmed": val}
+            confirmed = indices[0] == 0
+            return {"bool": confirmed, "confirmed": confirmed}
+
+        if kind == "choose_option":
+            choices = request.get("choices") or []
+            if not indices or not (0 <= indices[0] < len(choices)):
+                if request.get("cancelable", True):
+                    return {"bool": False, "choice": None}
+                logger.warning("  ⚠️ choose_option复核失败，使用兜底")
+                return {"bool": bool(choices), "choice": choices[0] if choices else None}
+            return {"bool": True, "choice": choices[indices[0]]}
+
+        if kind not in ("choose_players", "choose_cards"):
+            return {"bool": False}
+
+        min_n, max_n = self._choice_limits(request)
+        if kind == "choose_players":
+            selected = self._validate_choice_players(request, indices)
+        else:
+            selected = self._validate_choice_cards(request, indices)
+        if min_n <= len(selected) <= max_n:
+            key = "players" if kind == "choose_players" else "cards"
+            return {"bool": True, key: selected}
+        return self._choice_rejected(player, request, kind, selected, _allow_rule_fallback)
+
+    def _choice_rejected(self, player: Player, request: Dict, kind: str, selected: List, allow_rule_fallback: bool) -> Dict:
+        """数量或内容不合法：可取消则空手而归，不可取消则规则兜底 + 确定性兜底。"""
+        key = "players" if kind == "choose_players" else "cards"
+        if request.get("cancelable", True):
+            return {"bool": False, key: []}
+        logger.warning(f"  ⚠️ {kind}复核失败（有效候选 {len(selected)}），使用兜底")
+        if allow_rule_fallback:
+            try:
+                fallback_raw = self.ai_decision.simple_choice_decision(player, request)
+            except Exception as exc:
+                logger.info(f"  ⚠️ 兜底决策失败: {type(exc).__name__}: {exc}")
+                fallback_raw = []
+            result = self._resolve_choice(player, request, fallback_raw, _allow_rule_fallback=False)
+            if result.get("bool"):
+                return result
+        deterministic = self._deterministic_choice(request, kind)
+        return {"bool": bool(deterministic), key: deterministic}
+
+    def _deterministic_choice(self, request: Dict, kind: str) -> List:
+        """最终兜底：按候选顺序取仍然有效的项，绝不放行非法内容。"""
+        _, max_n = self._choice_limits(request)
+        if kind == "choose_players":
+            indices = list(range(len(request.get("candidate_ids") or [])))
+            return self._validate_choice_players(request, indices)[:max_n]
+        indices = list(range(len(request.get("candidate_cards") or [])))
+        return self._validate_choice_cards(request, indices)[:max_n]
+
+    def _serialize_choice_option(self, option: Dict, index: int) -> Dict:
+        card = option.get("card")
+        hidden = bool(option.get("hidden"))
+        return {
+            "index": index,
+            "label": option.get("label", str(index)),
+            "card": None if (card is None or hidden) else card_to_dict(card),
+            "hidden": hidden,
+            "player_id": option.get("player_id"),
+            "player_name": option.get("player_name"),
+            "key": option.get("key"),
+            "detail": option.get("detail"),
+            "is_pass": False,
+        }
+
+    async def _ai_choose_choice(self, player: Player, request: Dict):
+        """AI dispatch for four new primitives. Returns List[int]."""
+        handler = getattr(self.ai_decision, "make_choice_decision", None)
+        if handler is not None:
+            try:
+                return await handler(player, request)
+            except Exception as exc:
+                logger.info(f"  ⚠️ 选择AI失败，切换规则AI: {type(exc).__name__}: {exc}")
+        return self.ai_decision.simple_choice_decision(player, request)
+
+    async def _trustee_choose_choice(self, player: Player, request: Dict):
+        if self._abort_reason:
+            return []
+        self._trustee_active = True
+        try:
+            indices = self.ai_decision.simple_choice_decision(player, request)
+        except Exception as exc:
+            logger.info(f"  ⚠️ 托管选择决策失败: {type(exc).__name__}: {exc}")
+            indices = []
+        await self.log_event("[托管] 已代为选择", trustee=True, player_id=player.id)
+        return indices
+
+    async def _human_choose_choice(self, player: Player, request: Dict, request_id: str):
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending_requests[request_id] = future
+        self._mark_waiting_for_human()
+        selection_block = {
+            "mode": "multi" if request.get("max_n", 1) > 1 else "single",
+            "min": request.get("min_n", 1),
+            "max": request.get("max_n", 1),
+            "zone": request.get("zone"),
+            "skill_name": request.get("skill_name"),
+            "cancelable": request.get("cancelable", True),
+        }
+        try:
+            await self.emit(
+                ENGINE_EVENT.REQUIRE_RESPONSE,
+                request_id=request_id,
+                player_id=player.id,
+                kind=request.get("kind", "confirm"),
+                prompt=request.get("prompt", ""),
+                timeout=self.response_timeout,
+                options=[self._serialize_choice_option(o, i) for i, o in enumerate(request.get("options") or [])],
+                context=self._serialize_response_context(request.get("context") or {}),
+                selection=selection_block,
+            )
+            return await asyncio.wait_for(future, timeout=self.response_timeout)
+        except asyncio.TimeoutError:
+            logger.info(f"  ⏱️ 选择请求 {request_id} 超时，交规则托管")
+            return await self._trustee_choose_choice(player, request)
+        finally:
+            self._pending_requests.pop(request_id, None)
+
+    async def request_choice(self, player: Player, request: Dict) -> Dict:
+        """四交互原语的统一入口。"""
+        request_id = self._next_request_id()
+        if player.is_ai:
+            raw = await self._ai_choose_choice(player, request)
+            return self._resolve_choice(player, request, raw)
+        raw = await self._human_choose_choice(player, request, request_id)
+        return self._resolve_choice(player, request, raw)
+
+    async def ask_confirm(self, player: Player, prompt: str, *,
+                          skill_name=None, context=None, default=False) -> bool:
+        request = {
+            "kind": "confirm",
+            "prompt": prompt,
+            "skill_name": skill_name,
+            "context": context or {},
+            "default": default,
+            "options": [{"label": "是", "key": "yes"}, {"label": "否", "key": "no"}],
+            "min_n": 1, "max_n": 1, "cancelable": False,
+        }
+        result = await self.request_choice(player, request)
+        return result.get("confirmed", default)
+
+    async def ask_choose_players(self, player: Player, prompt: str, candidates, *,
+                                  min_n=1, max_n=1, skill_name=None,
+                                  context=None, cancelable=True):
+        cand_list = list(candidates)
+        if not cand_list or len(cand_list) < max(0, int(min_n)):
+            # 候选不足以完成最小选择量：不发无效询问，也不产生任何选择。
+            return []
+        ctx = dict(context or {})
+        ctx["all_players"] = list(self.game_state.players)
+        request = {
+            "kind": "choose_players",
+            "prompt": prompt,
+            "skill_name": skill_name,
+            "context": ctx,
+            "min_n": min_n,
+            "max_n": max_n,
+            "cancelable": cancelable,
+            "candidate_ids": [p.id for p in cand_list],
+            "options": [{"label": p.name, "player_id": p.id, "player_name": p.name} for p in cand_list],
+        }
+        result = await self.request_choice(player, request)
+        return result.get("players", [])
+
+    async def ask_choose_cards(self, player: Player, prompt: str, candidates, *,
+                                min_n=1, max_n=1, zone="hand",
+                                skill_name=None, context=None, cancelable=True,
+                                hidden_indices=None, places=None):
+        """从候选牌里选 min_n~max_n 张。
+
+        hidden_indices：对选择者隐藏身份的候选下标（如他人手牌），只影响序列化文案。
+        places：与候选一一对应的 (owner, zone) 位置表，用于跨牌区选择时的引擎复核；
+                缺省时全部按 card_owner + zone 复核。
+        """
+        cand_list = list(candidates)
+        if not cand_list or len(cand_list) < max(0, int(min_n)):
+            # 候选不足以完成最小选择量：不发无效询问，也不产生任何选择。
+            return []
+        hidden = set(hidden_indices or [])
+        options = []
+        for i, c in enumerate(cand_list):
+            if i in hidden:
+                options.append({"label": "手牌", "card": c, "hidden": True, "key": str(i)})
+            else:
+                options.append({"label": option_label({"card": c}), "card": c, "key": str(i)})
+        request = {
+            "kind": "choose_cards",
+            "prompt": prompt,
+            "skill_name": skill_name,
+            "context": dict(context or {}),
+            "min_n": min_n,
+            "max_n": max_n,
+            "zone": zone,
+            "cancelable": cancelable,
+            "candidate_cards": cand_list,
+            "candidate_places": list(places) if places is not None else None,
+            "hidden_indices": sorted(hidden),
+            "card_owner": player,
+            "options": options,
+        }
+        result = await self.request_choice(player, request)
+        return result.get("cards", [])
+
+    async def ask_choose_option(self, player: Player, prompt: str, choices, *,
+                                 skill_name=None, context=None) -> Any:
+        choice_list = list(choices)
+        request = {
+            "kind": "choose_option",
+            "prompt": prompt,
+            "skill_name": skill_name,
+            "context": dict(context or {}),
+            "choices": choice_list,
+            "min_n": 1, "max_n": 1, "cancelable": False,
+            "options": [{"label": c.get("label", c.get("key", str(i))), "key": c.get("key")}
+                        for i, c in enumerate(choice_list)],
+        }
+        result = await self.request_choice(player, request)
+        return result.get("choice")
+
+    # ---------- 旧响应通道（原有，下面保持不变） ----------
 
     async def _ai_choose_option(self, player: Player, request: Dict):
         handler = getattr(self.ai_decision, "make_response_decision", None)
@@ -575,17 +910,23 @@ class MainEngine:
         finally:
             self._pending_requests.pop(request_id, None)
 
-    def submit_response(self, request_id, option_index) -> bool:
-        """前端应答入口。只接受仍在等待中的 request_id。"""
+    def submit_response(self, request_id, selection) -> bool:
+        """前端应答入口。接受 int（单选）或 List[int]（多选）。"""
         future = self._pending_requests.get(request_id)
         if future is None or future.done():
             return False
-        try:
-            index = int(option_index)
-        except (TypeError, ValueError):
-            return False
+        if isinstance(selection, list):
+            try:
+                value = [int(x) for x in selection]
+            except (TypeError, ValueError):
+                return False
+        else:
+            try:
+                value = int(selection)
+            except (TypeError, ValueError):
+                return False
         self._note_human_input()
-        future.set_result(index)
+        future.set_result(value)
         return True
 
     # ---------- 托管兜底与离席看门狗 ----------
@@ -682,6 +1023,30 @@ class MainEngine:
             needs_target = bool(spec) and spec.target_rule.get("type") not in NO_EXTERNAL_TARGET
             if needs_target:
                 allow_self = spec.target_rule.get("type") == "any"
+                if spec.target_rule.get("min", 1) == 2:
+                    valid_pairs = []
+                    for first in self.game_state.players:
+                        for second in self.game_state.players:
+                            if first is second:
+                                continue
+                            if not first.alive or not second.alive:
+                                continue
+                            can_play, _ = self.rules.can_play_card(player, card, [first, second])
+                            if can_play:
+                                valid_pairs.append([first.id, second.id])
+                    if valid_pairs:
+                        actions.append(
+                            {
+                                "type": "play_card",
+                                "card_index": i,
+                                "card": card_to_dict(card, include_id=False),
+                                "requires_target": True,
+                                "target_count": 2,
+                                "valid_target_pairs": valid_pairs,
+                                "valid_targets": sorted({pid for pair in valid_pairs for pid in pair}),
+                            }
+                        )
+                    continue
                 valid = []
                 for target in self.game_state.players:
                     if not target.alive or (target == player and not allow_self):
@@ -731,7 +1096,8 @@ class MainEngine:
                     return False
                 card = player.hand[card_index]
                 target_ids = target_ids or []
-                targets = [p for p in self.game_state.players if p.id in target_ids]
+                players_by_id = {p.id: p for p in self.game_state.players}
+                targets = [players_by_id[pid] for pid in target_ids if pid in players_by_id]
                 can_play, reason = self.rules.can_play_card(player, card, targets)
                 if not can_play:
                     logger.info(f"  ❌ 不能出牌: {reason}")
@@ -760,6 +1126,7 @@ class MainEngine:
                         self.game_state.discard_pile.remove(card)
                     player.hand.insert(min(card_index, len(player.hand)), card)
                 if success:
+                    record_stat(self, player, "cards_played")
                     await self.skill_manager.on_cards_lost(player, [card], "use_card")
                     await self.skill_manager.on_card_discarded(player, card, "use_card")
                 await self.skill_manager.after_card_used(player, card, targets, success)
@@ -805,9 +1172,18 @@ class MainEngine:
             "平局" if self.game_state.winner == "draw"
             else f"{self.game_state.winner}方获胜！"
         )
+        duration = 0
+        if self._started_at is not None:
+            duration = int(max(0.0, self.time_source() - self._started_at))
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=state)
         await self.emit(
-            ENGINE_EVENT.GAME_END, winner=self.game_state.winner, message=message, state=state
+            ENGINE_EVENT.GAME_END,
+            winner=self.game_state.winner,
+            message=message,
+            state=state,
+            stats=self.stats.snapshot(),
+            mvp=self.stats.mvp(self.game_state.players),
+            duration=duration,
         )
         return True
     async def request_end_game(self, reason: str = "玩家主动结束游戏"):
