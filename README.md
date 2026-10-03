@@ -1,132 +1,103 @@
 # AI三国杀酒馆
 
-一个运行在Android Termux上的三国杀游戏服务器，通过手机浏览器游玩，所有AI对手由用户自己的API Key驱动。
+一个自托管的三国杀游戏服务器：用浏览器打开即玩，AI 对手由你自己的 API Key 驱动（8 家 Provider 可选），没有 Key 时自动回退规则 AI。
 
 ## 项目状态
 
-🚧 **开发中** - 前端框架已完成，游戏引擎开发中
+最近批次（2026-10-03）：真人选牌流程补全 + 真实对局统计入库，全量回归 161 项通过。
 
-## 已完成
-
-- ✅ 前端HTML页面（大厅、选将、游戏、结算）
-- ✅ 前端CSS样式（响应式布局，适配手机）
-- ✅ WebSocket通信框架
-- ✅ 游戏状态渲染系统
-- ✅ UI交互控制
-- ✅ 聊天系统
-- ✅ 测试服务器（返回模拟数据）
-
-## 待实现
-
-- ⏳ 游戏引擎核心
-- ⏳ 规则系统
-- ⏳ 武将技能系统
-- ⏳ AI决策系统
-- ⏳ 多AI Provider适配
+- ✅ 引擎与规则：5 人身份局完整流程；27 将 / 54 技能；标准牌堆 108 张 / 军争 53 张 / 合并 161 张可切换
+- ✅ 真人交互：弃牌阶段自己选；过河拆桥 / 顺手牵羊 / 五谷丰登由你选牌（他人手牌隐藏、装备与判定区明牌，被拆的牌明牌展示）
+- ✅ 真实结算统计：伤害 / 承伤 / 治疗 / 击杀 / 出牌 / 失牌 / 技能发动 + MVP，随结算页展示
+- ✅ WebSocket 协议单一真相源（`protocol.py` 生成前端 `protocol.js`）
+- ⏳ 武器 / 防具特效、技能交互询问、服务端战绩持久化 —— 见 [ROADMAP.md](ROADMAP.md)
 
 ## 快速开始
 
-### 1. 安装依赖
+### Windows（开发）
 
-```bash
-pkg install python
-pip install fastapi uvicorn[standard] websockets
+```powershell
+pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File start_windows.ps1              # 前台
+powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Background # 后台
+powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action stop
 ```
 
-### 2. 启动测试服务器
+### 通用（Termux / Linux）
 
 ```bash
-cd ~/sanguosha_tavern
-python test_server.py
+pip install -r requirements.txt
+python -u game_server.py
 ```
 
-### 3. 打开浏览器
-
-在手机浏览器访问: `http://localhost:8000`
+浏览器打开 `http://localhost:8888`（HTTP 8888 提供页面，WebSocket 8889 负责对局）。
+在大厅配置玩家名与各座位 AI（Provider / 模型 / API 地址 / Key；Key 留空的座位使用规则 AI）。
 
 ## 项目结构
 
+```text
+sanguosha_data/
+├── game_server.py          # 服务器：HTTP 静态服务 + WebSocket 消息泵（不含规则）
+├── game_engine/            # 引擎（唯一规则来源）
+│   ├── main_engine.py      # 对局主循环、交互原语与选择复核
+│   ├── phase_controller.py # 回合六阶段
+│   ├── card_system.py      # 卡牌效果
+│   ├── card_table.py       # 42 种牌单一牌表
+│   ├── rules_engine.py     # 规则校验与合法操作
+│   ├── skill_manager.py    # 54 技能注册与统一调度
+│   ├── skills_{wei,shu,wu,qun}.py
+│   ├── state_manager.py    # 状态管理与序列化
+│   ├── identity_system.py  # 身份分配与胜负
+│   ├── deck_manager.py     # 牌堆加载与切换
+│   ├── game_stats.py       # 真实对局统计（7 项指标 + MVP）
+│   ├── ai_decision.py      # 多 Provider 决策与会话缓存
+│   └── protocol.py         # 协议单一真相源（生成前端 protocol.js）
+├── frontend/               # 原生 HTML/CSS/JS（纯 UI）
+│   ├── index.html          # 大厅
+│   ├── select_hero.html    # 选将
+│   ├── game.html           # 对局
+│   ├── result.html         # 结算（真实统计 + MVP）
+│   ├── settings.html       # 设置（牌堆切换、全局设置、数据状态）
+│   ├── hero_manager.html   # 武将导入（UI 空壳）
+│   ├── js/                 # protocol.js(生成) / ws_client.js / lobby.js /
+│   │                       # game_main.js / result.js / global_settings.js 等
+│   └── css/                # main.css / game.css
+├── data/                   # heroes.json / skills.json / deck_*.json
+├── scripts/                # gen_protocol_js.py / check_frontend_js.py / manual/ 冒烟
+├── tests/                  # pytest 回归（161 项）
+├── logs/                   # CHRONICLE 编年史 / handover 交接 / runtime 日志 / reports 报告
+└── worldbook*, wujiang/    # 世界书与原始数据（供 AI 理解，不参与规则执行）
 ```
-sanguosha_tavern/
-├── frontend/              # 前端文件
-│   ├── index.html        # 大厅页面
-│   ├── select_hero.html  # 选将页面
-│   ├── game.html         # 游戏主界面
-│   ├── result.html       # 结算页面
-│   ├── css/              # 样式文件
-│   │   ├── main.css      # 主样式
-│   │   ├── game.css      # 游戏布局
-│   │   └── cards.css     # 卡牌样式（占位符）
-│   ├── js/               # JavaScript文件
-│   │   ├── ws_client.js  # WebSocket客户端
-│   │   ├── lobby.js      # 大厅逻辑
-│   │   ├── select_hero.js # 选将逻辑
-│   │   ├── game_render.js # 状态渲染
-│   │   ├── ui_controls.js # UI控制
-│   │   ├── chat.js       # 聊天系统
-│   │   └── result.js     # 结算页面
-│   └── assets/           # 资源文件
-│       └── heroes/       # 武将图片（待添加）
-├── game_engine/          # 游戏引擎（待实现）
-├── test_server.py        # 测试服务器
-└── README.md
+
+## 测试与验收
+
+```bash
+python -m pytest -q                     # 全量回归（161 passed）
+python scripts/check_frontend_js.py     # 前端 HTML/JS 语法检查
+
+# 先启动服务器，再跑自驱冒烟（规则 AI，无需 API Key）：
+python scripts/manual/ws_diag_smoke.py
+python scripts/manual/ws_engine_smoke.py
 ```
 
-## 前端功能
+## 架构与约定
 
-### 大厅页面
-- 4种模式选择（5人身份局、8人身份局、2v2、斗地主）
-- AI配置（名称、Provider、模型、温度、思考模式）
-- 身份卡系统
-- 聊天开关
+- **引擎自驱**：回合推进与结算全在引擎；服务器只转发消息；前端只渲染与采集输入。详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+- **服务端复核一切**：真人只从引擎下发的合法候选中选择，提交的数量、牌区、重复、过期与收摊状态都会被引擎复核，非法输入不落地。
+- **隐藏信息不越界**：他人手牌只下发占位，AI 决策不按牌面值评估隐藏手牌。
+- **统计在真实状态变化点记录**：口径见 `game_engine/game_stats.py`，不在 UI 层计算。
 
-### 选将页面
-- 武将列表展示
-- 武将选择
-- 倒计时
-- 其他玩家选择状态
+## 相关文档
 
-### 游戏主界面
-- 对手信息区（头像、体力、手牌数、装备）
-- 桌面中央区（牌堆、弃牌堆、事件日志）
-- 聊天区（可折叠）
-- 玩家区（手牌、装备、操作按钮）
-- 目标选择系统
-- 游戏菜单
-
-### 结算页面
-- 胜负展示
-- 游戏统计
-- MVP信息
-- 身份揭示
-- 连胜奖励
-
-## 样式说明
-
-### 占位符内容
-目前卡牌和武将使用的是占位符样式，需要用户后续添加：
-- 武将图片放在 `frontend/assets/heroes/` 目录
-- 卡牌样式在 `frontend/css/cards.css` 中自定义
-- 可以添加动画效果和特效
-
-### 颜色主题
-- 主色调：红色 `#c41e3a`
-- 背景：深色渐变
-- 支持自定义CSS变量
-
-## 下一步
-
-1. 实现游戏引擎核心（状态管理、规则验证）
-2. 实现卡牌系统
-3. 实现武将技能系统
-4. 接入AI API
-5. 完善前端资源
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 架构与当前功能边界
+- [ROADMAP.md](ROADMAP.md) — 开发路线图与下一步
+- [logs/CHRONICLE.md](logs/CHRONICLE.md) — 编年史与交接索引
 
 ## 技术栈
 
-- **前端**: 原生HTML/CSS/JavaScript
-- **后端**: FastAPI + WebSocket
-- **部署**: Android Termux
+- **后端**：Python 3.12 + `websockets`（HTTP 静态服务使用标准库）+ `httpx`（AI 调用）
+- **前端**：原生 HTML / CSS / JavaScript，零框架
+- **部署**：Windows / Linux / Android Termux
 
 ## 许可
 
