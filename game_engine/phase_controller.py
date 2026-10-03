@@ -137,6 +137,9 @@ class PhaseController:
         discard_count = max(0, player.get_hand_count() - max_hand)
         if not discard_count:
             return
+        if getattr(self.engine, "game_aborted", False):
+            # 对局已收摊（离席/主动结束）：不再新落地弃牌与动画事件。
+            return
 
         ordered = sorted(
             list(player.hand),

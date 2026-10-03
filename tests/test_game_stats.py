@@ -211,5 +211,82 @@ class SettlementPayloadTest(unittest.TestCase):
         self.assertTrue(engine._game_end_emitted)
 
 
+class SkillStatsEdgeTest(unittest.TestCase):
+    """审查修复回归：救援冲销行、谦逊暂存、手牌损失统一事件。"""
+
+    def setUp(self):
+        self.engine = make_engine()
+        self.players = self.engine.game_state.players
+
+    def _handler(self, cls):
+        return next(h for h in self.engine.skill_manager.handlers if isinstance(h, cls))
+
+    def test_rescue_reversal_lands_on_crediting_row(self):
+        """救援把回复改给主公时，冲销必须落在正向治疗所记的行（提供者）。"""
+        from game_engine.skills_wu import WuSkillHandler
+
+        wu = self._handler(WuSkillHandler)
+        rescuer, target = self.players[1], self.players[2]
+        lord = self.players[3]
+        lord.identity = "lord"
+        lord.hp = 1
+        lord.max_hp = 4
+        target.identity = "rebel"
+        target.hero = {"faction": "wu"}
+        target.hp = 1  # 濒死救援后回到1点；主公更濒危（1点）时才会触发救援转移
+        self.engine.game_state.current_player = target
+        wu.has = lambda p, name: name == "救援" and p is lord
+        self.engine.stats.add(rescuer, "healing", 1)  # 模拟濒死救援记给提供者
+        asyncio.run(wu.on_recover(target, 1, rescuer, "dying_rescue"))
+        self.assertEqual(stats_of(self.engine, rescuer)["healing"], 0,
+                         "被改走的治疗不得留在提供者账上")
+        self.assertEqual(stats_of(self.engine, target)["healing"], 0)
+        self.assertEqual(stats_of(self.engine, lord)["healing"], 1)
+        self.assertEqual(target.hp, 0)
+        self.assertEqual(lord.hp, 2)
+
+    def test_qianxun_parking_not_counted_nor_triggers_lianying(self):
+        """谦逊暂存不是失去：不计失牌、不触发连营；回合结束原样归还。"""
+        from game_engine.skills_wu import WuSkillHandler
+
+        wu = self._handler(WuSkillHandler)
+        target = self.players[2]
+        trick = make_card("jx", "乐不思蜀", "spade", 6)
+        stored = make_card("qc", "桃", "heart", 3)
+        target.judge_area.append(trick)
+        target.hand.append(stored)
+        wu.has = lambda p, name: name == "谦逊" and p is target
+        deck_before = len(self.engine.game_state.deck)
+        asyncio.run(wu.before_phase(target, Phase.JUDGE))
+        self.assertEqual(target.hand, [])
+        self.assertEqual(target.flags.get("qianxun_cards"), [stored])
+        self.assertEqual(stats_of(self.engine, target)["cards_lost"], 0, "暂存不得计失牌")
+        self.assertEqual(len(self.engine.game_state.deck), deck_before,
+                         "连营等失去牌监听不得因暂存触发")
+        asyncio.run(wu.after_phase(target, Phase.END))
+        self.assertIn(stored, target.hand, "暂存牌应在回合结束归还")
+        self.assertEqual(stats_of(self.engine, target)["cards_lost"], 0)
+
+    def test_hand_card_loss_routes_through_unified_event(self):
+        """武圣转化等手牌损失统一走 on_cards_lost：统计与监听器看到同一事件。"""
+        from game_engine.skills_shu import ShuSkillHandler
+        from game_engine.skills_wu import WuSkillHandler
+
+        shu = self._handler(ShuSkillHandler)
+        wu = self._handler(WuSkillHandler)
+        player = self.players[1]
+        card = make_card("ws", "桃", "heart", 8)
+        player.hand.append(card)
+        shu.has = lambda p, name: name == "武圣"
+        wu.has = lambda p, name: name == "连营" and p is player
+        deck_before = len(self.engine.game_state.deck)
+        asyncio.run(shu._consume_conversion(player, card, "武圣", "杀"))
+        self.assertEqual(stats_of(self.engine, player)["cards_lost"], 1)
+        self.assertEqual(stats_of(self.engine, player)["cards_played"], 1)
+        self.assertLess(len(self.engine.game_state.deck), deck_before,
+                        "失去最后一张手牌应经统一事件触发连营摸牌")
+        self.assertEqual(len(player.hand), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

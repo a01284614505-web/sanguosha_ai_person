@@ -153,11 +153,14 @@ gameClient.onConnect = function () {
 
     GameUI.gameConfig.player = {name: GameUI.playerName, is_ai: false, hero: hero};
     if (deckId) GameUI.gameConfig.deck_id = deckId;
+    // 清除上一局结算快照：中断或刷新后不得在结算页展示旧数据。
+    localStorage.removeItem('gameResult');
     gameClient.createGame(GameUI.gameConfig);
 };
 
 gameClient.onRequireResponse = function (data) {
     GameUI.activeResponseRequest = data;
+    GameUI.responseExpired = false;
     var modal = document.getElementById('responseModal');
     var options = document.getElementById('responseOptions');
     var multiSelect = document.getElementById('responseMultiSelect');
@@ -183,13 +186,14 @@ gameClient.onRequireResponse = function (data) {
         options.style.display = 'none';
         multiSelect.style.display = '';
         GameUI.multiSelected = [];
-        var minN = sel.min || 1;
-        var maxN = sel.max || 1;
+        var minN = sel.min != null ? Number(sel.min) : 1;
+        var maxN = sel.max != null ? Number(sel.max) : 1;
         var confirmBtn = document.getElementById('responseMultiConfirm');
         function updateCount() {
             var n = GameUI.multiSelected.length;
-            document.getElementById('responseMultiCount').textContent = '已选 ' + n + ' / ' + maxN;
-            confirmBtn.disabled = n < minN || n > maxN;
+            var hint = minN !== maxN ? '（至少 ' + minN + '）' : '';
+            document.getElementById('responseMultiCount').textContent = '已选 ' + n + ' / ' + maxN + hint;
+            confirmBtn.disabled = GameUI.responseExpired || n < minN || n > maxN;
         }
         (data.options || []).forEach(function (option, index) {
             var item = document.createElement('div');
@@ -197,6 +201,7 @@ gameClient.onRequireResponse = function (data) {
             item.textContent = option.label || (option.card && option.card.name) || String(index);
             item.dataset.index = index;
             item.onclick = function () {
+                if (GameUI.responseExpired) return;
                 var idx = GameUI.multiSelected.indexOf(index);
                 if (idx === -1) {
                     if (GameUI.multiSelected.length < maxN) {
@@ -229,9 +234,25 @@ gameClient.onRequireResponse = function (data) {
     var left = Math.max(0, Number(data.timeout) || 30);
     var countdown = document.getElementById('responseCountdown');
     clearInterval(GameUI.responseTimer);
+    function expireResponse() {
+        GameUI.responseExpired = true;
+        if (GameUI.activeResponseRequest) GameUI.activeResponseRequest.expired = true;
+        countdown.textContent = '已超时，由托管代选';
+        var confirmBtnEl = document.getElementById('responseMultiConfirm');
+        if (confirmBtnEl) confirmBtnEl.disabled = true;
+        options.querySelectorAll('button').forEach(function (btn) { btn.disabled = true; });
+        setTimeout(function () {
+            if (GameUI.responseExpired) modal.classList.remove('show');
+        }, 800);
+    }
     function tick() {
-        countdown.textContent = '剩余 ' + left + ' 秒';
-        if (left <= 0) clearInterval(GameUI.responseTimer);
+        if (GameUI.responseExpired) return;
+        countdown.textContent = '剩余 ' + Math.max(0, left) + ' 秒';
+        if (left <= 0) {
+            clearInterval(GameUI.responseTimer);
+            expireResponse();
+            return;
+        }
         left--;
     }
     tick();
@@ -239,7 +260,7 @@ gameClient.onRequireResponse = function (data) {
 };
 
 function submitResponse(index) {
-    if (!GameUI.activeResponseRequest) return;
+    if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
     var request = GameUI.activeResponseRequest;
     GameUI.activeResponseRequest = null;
     clearInterval(GameUI.responseTimer);
@@ -248,7 +269,7 @@ function submitResponse(index) {
 }
 
 function submitMultiResponse() {
-    if (!GameUI.activeResponseRequest) return;
+    if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
     var request = GameUI.activeResponseRequest;
     var indices = (GameUI.multiSelected || []).slice();
     GameUI.activeResponseRequest = null;

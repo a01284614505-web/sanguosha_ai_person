@@ -162,7 +162,7 @@ class WuSkillHandler(FactionSkillHandler):
             stored = list(player.hand)
             player.hand.clear()
             ensure_flags(player)["qianxun_cards"] = ensure_flags(player).get("qianxun_cards", []) + stored
-            await self.manager.on_cards_lost(player, stored, "谦逊")
+            # 暂存不是失去：不走 on_cards_lost，避免虚增失牌统计与误触连营等监听。
             await self.manager.announce(player, "谦逊", f"{player.name}因延时锦囊发动【谦逊】暂存所有手牌")
         if phase == Phase.PREPARE and self.has(player, "勤学"):
             await self._try_qinxue(player)
@@ -241,7 +241,7 @@ class WuSkillHandler(FactionSkillHandler):
             flags = ensure_flags(target)
             flags["qianxun_cards"] = stored
             flags["qianxun_cancelled_card"] = card.id
-            await self.manager.on_cards_lost(target, stored, "谦逊")
+            # 暂存不是失去：不走 on_cards_lost，避免虚增失牌统计与误触连营等监听。
             await self.manager.announce(target, "谦逊", f"{target.name}发动【谦逊】暂存所有手牌")
         return target
 
@@ -276,7 +276,8 @@ class WuSkillHandler(FactionSkillHandler):
             return
         before_player = player.hp
         player.hp = max(0, player.hp - amount)
-        record_stat(self.engine, player, "healing", -(before_player - player.hp))
+        # 冲销必须落在正向治疗所记的那一行（source or player），否则提供者账目虚高。
+        record_stat(self.engine, source or player, "healing", -(before_player - player.hp))
         before = lord.hp
         lord.hp = min(lord.max_hp, lord.hp + 1)
         record_stat(self.engine, lord, "healing", lord.hp - before)

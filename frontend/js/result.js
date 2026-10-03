@@ -100,6 +100,15 @@ class ResultController {
         const players = this.resultData.players || [];
         if (!players.length) return;
 
+        const hasStats = players.some(player => player && player.stats);
+        if (!hasStats) {
+            const empty = document.createElement('div');
+            empty.className = 'stats-empty';
+            empty.textContent = '本局无统计数据（旧存档或对局未完成结算）';
+            list.appendChild(empty);
+            return;
+        }
+
         const headers = ['玩家', '伤害', '承伤', '治疗', '击杀', '出牌', '失牌', '技能'];
         const head = document.createElement('div');
         head.className = 'stats-row stats-head';

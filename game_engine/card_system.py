@@ -333,6 +333,9 @@ class CardSystem:
             reason="过河拆桥", exclude_protected=True,
         )
         if chosen is None:
+            if self.engine is not None and self.engine.game_aborted:
+                logger.info("  → 对局已收摊，过河拆桥不再结算")
+                return False
             chosen = self._fallback_region_card(target)
         if chosen is None:
             logger.info("目标没有可弃置的牌")
@@ -351,7 +354,9 @@ class CardSystem:
             target, discarded, reason="discard", card_index=discarded_index,
             message=f"{target.name}因【过河拆桥】弃置【{discarded.name}】"
         )
-        await self.trigger_manager.on_cards_lost(target, [discarded], "过河拆桥")
+        # 判定区牌不是目标自己的资源：只走弃牌展示，不计失去牌。
+        if zone != "judge":
+            await self.trigger_manager.on_cards_lost(target, [discarded], "过河拆桥")
         await self.trigger_manager.on_card_discarded(target, discarded, "过河拆桥")
         return True
 
@@ -369,6 +374,9 @@ class CardSystem:
             player, target, f"【顺手牵羊】：请选择获得{target.name}的一张牌", reason="顺手牵羊",
         )
         if chosen is None:
+            if self.engine is not None and self.engine.game_aborted:
+                logger.info("  → 对局已收摊，顺手牵羊不再结算")
+                return False
             chosen = self._fallback_region_card(target)
         if chosen is None:
             return False
@@ -379,7 +387,9 @@ class CardSystem:
             return False
         player.hand.append(gained)
         logger.info(f"  → {player.name} 获得 {target.name} 的{gained}（{zone}）")
-        await self.trigger_manager.on_cards_lost(target, [gained], "顺手牵羊")
+        # 判定区牌不是目标自己的资源：不计失去牌。
+        if zone != "judge":
+            await self.trigger_manager.on_cards_lost(target, [gained], "顺手牵羊")
         await self.trigger_manager.on_card_gained(player, [gained], "顺手牵羊")
         # 真人参与时明牌告知获得的牌；纯 AI 之间保持隐藏信息不落地到日志。
         if not player.is_ai or not target.is_ai:
@@ -568,7 +578,8 @@ class CardSystem:
                 await self.trigger_manager.on_card_responded(rescuer, card, as_name, {'target': player, 'owner': owner})
                 player.hp += 1
                 record_stat(self.engine, owner, "healing", 1)
-                await self.trigger_manager.on_recover(player, 1, rescuer, 'dying_rescue')
+                # 治疗归属与统计一致：记给实际提供桃的角色（owner），不是被询问者。
+                await self.trigger_manager.on_recover(player, 1, owner, 'dying_rescue')
                 logger.info(f"  🍑 {owner.name}救援{player.name}，体力回复至{player.hp}")
                 rescued = True
                 break
@@ -776,6 +787,9 @@ class CardSystem:
                     # 复核后仍须核对临时展示池；状态变化时落回确定性命中。
                     chosen = None
             if chosen is None:
+                if self.engine is not None and self.engine.game_aborted:
+                    logger.info("  → 对局已收摊，五谷丰登停止分发")
+                    break
                 # AI/托管：取分值最高的牌
                 from .card_table import CARD_TABLE
                 chosen = max(remaining, key=lambda c: CARD_TABLE.get(c.name, CARD_TABLE.get("杀")).discard_keep_score
@@ -869,6 +883,9 @@ class CardSystem:
             )
             discarded = chosen[0] if chosen else None
         if discarded is None:
+            if self.engine is not None and self.engine.game_aborted:
+                logger.info("  → 对局已收摊，火攻不再结算")
+                return False
             discarded = same_suit[0]
         if discarded in player.hand:
             idx = player.hand.index(discarded)

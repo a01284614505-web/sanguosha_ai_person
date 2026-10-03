@@ -642,11 +642,16 @@ class MainEngine:
             return {"bool": False, "choice": None}
         return {"bool": False, "confirmed": False}
 
+    @property
+    def game_aborted(self) -> bool:
+        """对局已收摊（离席看门狗或玩家主动结束）：新效果不得再结算。"""
+        return bool(self._abort_reason) or bool(self.game_state.game_over)
+
     def _resolve_choice(self, player: Player, request: Dict, raw, *, _allow_rule_fallback=True) -> Dict:
         """引擎复核：四原语共用的验证器。raw 是 int 或 List[int]，任何非法选择都不落地。"""
         kind = request.get("kind", "confirm")
         indices = self._normalize_indices(raw)
-        if self._abort_reason:
+        if self.game_aborted:
             return self._empty_choice_result(kind)
 
         if kind == "confirm":
@@ -658,6 +663,9 @@ class MainEngine:
 
         if kind == "choose_option":
             choices = request.get("choices") or []
+            if not choices:
+                logger.warning("  ⚠️ choose_option 无候选，返回空选择")
+                return {"bool": False, "choice": None}
             if not indices or not (0 <= indices[0] < len(choices)):
                 if request.get("cancelable", True):
                     return {"bool": False, "choice": None}
@@ -694,7 +702,11 @@ class MainEngine:
             if result.get("bool"):
                 return result
         deterministic = self._deterministic_choice(request, kind)
-        return {"bool": bool(deterministic), key: deterministic}
+        min_n, _ = self._choice_limits(request)
+        if len(deterministic) < min_n:
+            # 兜底也无法凑足最小选择量：视为无法完成，不产出部分选择。
+            return {"bool": False, key: []}
+        return {"bool": True, key: deterministic}
 
     def _deterministic_choice(self, request: Dict, kind: str) -> List:
         """最终兜底：按候选顺序取仍然有效的项，绝不放行非法内容。"""
@@ -720,8 +732,25 @@ class MainEngine:
             "is_pass": False,
         }
 
+    @staticmethod
+    def _mask_hidden_candidates(request: Dict) -> Dict:
+        """决策脱敏视图：隐藏候选（他人手牌）不把真实牌面交给 AI/托管。
+
+        引擎复核仍使用原 request；只有决策函数拿到脱敏副本。
+        """
+        hidden = set(request.get("hidden_indices") or [])
+        if not hidden or not request.get("candidate_cards"):
+            return request
+        masked = dict(request)
+        cards = list(request.get("candidate_cards") or [])
+        masked["candidate_cards"] = [
+            None if index in hidden else card for index, card in enumerate(cards)
+        ]
+        return masked
+
     async def _ai_choose_choice(self, player: Player, request: Dict):
         """AI dispatch for four new primitives. Returns List[int]."""
+        request = self._mask_hidden_candidates(request)
         handler = getattr(self.ai_decision, "make_choice_decision", None)
         if handler is not None:
             try:
@@ -735,7 +764,9 @@ class MainEngine:
             return []
         self._trustee_active = True
         try:
-            indices = self.ai_decision.simple_choice_decision(player, request)
+            indices = self.ai_decision.simple_choice_decision(
+                player, self._mask_hidden_candidates(request)
+            )
         except Exception as exc:
             logger.info(f"  ⚠️ 托管选择决策失败: {type(exc).__name__}: {exc}")
             indices = []
@@ -862,6 +893,9 @@ class MainEngine:
     async def ask_choose_option(self, player: Player, prompt: str, choices, *,
                                  skill_name=None, context=None) -> Any:
         choice_list = list(choices)
+        if not choice_list:
+            # 无候选不发询问：否则会空等一个无法回答的超时。
+            return None
         request = {
             "kind": "choose_option",
             "prompt": prompt,
@@ -1190,6 +1224,8 @@ class MainEngine:
         self.game_state.game_over = True
         self.game_state.winner = "aborted"
         self.game_state.end_message = reason
+        # 与离席看门狗一致：挂起的交互请求不得在收摊后继续落地效果。
+        self._abort_reason = self._abort_reason or "player_end_game"
         for future in list(self._pending_requests.values()):
             if not future.done():
                 future.set_result(None)

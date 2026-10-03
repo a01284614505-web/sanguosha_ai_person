@@ -125,7 +125,7 @@ class ShuSkillHandler(FactionSkillHandler):
             card = next(c for c in donor.hand if c.name == "杀")
             donor.hand.remove(card)
             self.state.discard_pile.append(card)
-            record_stat(self.engine, donor, "cards_lost")
+            await self.manager.on_cards_lost(donor, [card], "激将")
             record_stat(self.engine, donor, "cards_played")
             await self.manager.announce(player, "激将", f"{player.name}发动【激将】，{donor.name}打出【杀】")
             await self.engine.card_system.notify_card_to_discard(donor, card, "respond", message=f"{donor.name}响应【激将】打出【杀】")
@@ -171,7 +171,7 @@ class ShuSkillHandler(FactionSkillHandler):
         index = player.hand.index(card)
         player.hand.remove(card)
         self.state.discard_pile.append(card)
-        record_stat(self.engine, player, "cards_lost")
+        await self.manager.on_cards_lost(player, [card], skill_name)
         await self.engine.card_system.notify_card_to_discard(
             player, card, "discard", index, f"{player.name}发动【{skill_name}】弃置【{card.name}】"
         )
@@ -189,7 +189,7 @@ class ShuSkillHandler(FactionSkillHandler):
         )
         player.hand.remove(card)
         self.state.discard_pile.append(card)
-        record_stat(self.engine, player, "cards_lost")
+        await self.manager.on_cards_lost(player, [card], skill_name)
         record_stat(self.engine, player, "cards_played")
 
     async def on_turn_start(self, player):
@@ -287,7 +287,7 @@ class ShuSkillHandler(FactionSkillHandler):
                     if card_type_group(card_drawn) == "basic" and len(player.hand) > player.hp:
                         player.hand.remove(card_drawn)
                         self.state.discard_pile.append(card_drawn)
-                        record_stat(self.engine, player, "cards_lost")
+                        await self.manager.on_cards_lost(player, [card_drawn], "集智")
                         flags["hand_limit_bonus"] = flags.get("hand_limit_bonus", 0) + 1
                         await self.engine.card_system.notify_card_to_discard(player, card_drawn, "discard", message=f"{player.name}因【集智】弃置摸到的基本牌")
 
@@ -350,7 +350,7 @@ class ShuSkillHandler(FactionSkillHandler):
                     removed = source.hand[0]
                     source.hand.remove(removed)
                     self.state.discard_pile.append(removed)
-                    record_stat(self.engine, source, "cards_lost")
+                    await self.manager.on_cards_lost(source, [removed], "涯角")
                     await self.manager.announce(player, "涯角", f"{player.name}发动【涯角】弃置{source.name}一张牌")
 
     def can_target(self, source, target, card_name):

@@ -145,6 +145,18 @@ class GuoheChoiceTest(unittest.TestCase):
         self.assertTrue(self._play_guohe(choose))
         self.assertEqual(stats_of(self.engine, self.target)["cards_lost"], 1)
 
+    def test_judge_zone_card_not_counted_as_lost(self):
+        """判定区牌不是目标自己的资源：被拆只展示弃牌，不计失牌。"""
+        judged = make_card("jd2", "乐不思蜀", "spade", 6)
+        self.target.judge_area.append(judged)
+
+        def choose(request):
+            self.engine.submit_response(request["request_id"], 0)
+
+        self.assertTrue(self._play_guohe(choose))
+        self.assertIn(judged, self.engine.game_state.discard_pile)
+        self.assertEqual(stats_of(self.engine, self.target)["cards_lost"], 0)
+
     def test_ai_chooser_needs_no_ws(self):
         """AI 使用过河拆桥走规则决策，无真人询问也不会卡住。"""
         ai_user = self.engine.game_state.players[3]
@@ -216,6 +228,26 @@ class ShunshouChoiceTest(unittest.TestCase):
         self.assertTrue(asyncio.run(scenario()))
         self.assertIn(second, self.human.hand)
         self.assertEqual(self.target.hand, [first])
+
+    def test_judge_zone_steal_not_counted_as_lost(self):
+        """顺手牵羊拿走判定区牌同样不计目标失牌。"""
+        judged = make_card("jd3", "兵粮寸断", "club", 4)
+        self.target.judge_area.append(judged)
+
+        async def scenario():
+            task = asyncio.create_task(
+                self.engine.card_system.use_shunshou(
+                    self.human, make_card("ss3", "顺手牵羊", "heart", 5), self.target
+                )
+            )
+            await asyncio.sleep(0)
+            request = self.emitted[-1]
+            self.engine.submit_response(request["request_id"], 0)
+            return await task
+
+        self.assertTrue(asyncio.run(scenario()))
+        self.assertIn(judged, self.human.hand)
+        self.assertEqual(stats_of(self.engine, self.target)["cards_lost"], 0)
 
 
 class WuguChoiceTest(unittest.TestCase):

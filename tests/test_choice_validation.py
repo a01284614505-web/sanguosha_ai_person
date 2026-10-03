@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """交互原语引擎复核加固：重复/越界/跨牌区/临时池/不可取消兜底。"""
 
+import asyncio
 import unittest
 
 from game_engine import MainEngine
@@ -121,6 +122,75 @@ class ChoiceCardValidationTest(unittest.TestCase):
         self.assertFalse(result["bool"])
         self.assertEqual(result["cards"], [])
 
+    def test_game_over_blocks_choices_without_abort_flag(self):
+        """game_over 与 _abort_reason 任一成立都不得再落地选择。"""
+        card = make_card("go1", "杀")
+        self.human.hand.append(card)
+        request = self._cards_request([card])
+        self.engine.game_state.game_over = True
+        result = self.engine._resolve_choice(self.human, request, [0])
+        self.assertFalse(result["bool"])
+        self.assertEqual(result["cards"], [])
+
+    def test_deterministic_fallback_respects_min(self):
+        """确定性兜底凑不足 min_n 时返回空，而不是部分选择。"""
+        card = make_card("f1", "杀")
+        self.human.hand.append(card)
+        request = self._cards_request([card], min_n=2, max_n=2)
+        result = self.engine._choice_rejected(self.human, request, "choose_cards", [], False)
+        self.assertFalse(result["bool"])
+        self.assertEqual(result["cards"], [])
+
+    def test_choose_option_empty_choices_returns_none(self):
+        """无候选的选项询问直接返回 None，不发无效请求。"""
+        self.assertIsNone(asyncio.run(self.engine.ask_choose_option(self.target, "请选择", [])))
+
+    def test_end_game_stops_pending_guohe(self):
+        """弹窗挂起时主动结束游戏：请求被中止，不得再拆牌或产出动画。"""
+        target_card = make_card("eg1", "闪", "diamond", 2)
+        self.target.hand.append(target_card)
+        emitted = []
+
+        async def capture(**data):
+            emitted.append(data)
+
+        self.engine.on("require_response", capture)
+
+        async def scenario():
+            task = asyncio.create_task(self.engine.card_system.use_guohe(
+                self.human, make_card("eg2", "过河拆桥", "spade", 3), self.target))
+            await asyncio.sleep(0)
+            self.assertTrue(emitted, "应先发出选牌请求")
+            await self.engine.request_end_game("测试结束")
+            return await task
+
+        self.assertFalse(asyncio.run(scenario()))
+        self.assertTrue(self.engine.game_aborted)
+        self.assertIn(target_card, self.target.hand, "收摊后不得再移除目标的牌")
+
+    def test_hidden_candidates_masked_for_decision(self):
+        """隐藏候选对决策层脱敏：只给占位，不给真实牌面。"""
+        seen = {}
+
+        class FakeAI:
+            async def make_choice_decision(self, player, request):
+                seen["request"] = request
+                return [0]
+
+        self.engine.ai_decision = FakeAI()
+        ai_player = self.engine.game_state.players[1]
+        hidden = make_card("h1", "桃", "heart", 3)
+        visible = make_card("h2", "杀", "spade", 7)
+        ai_player.hand.extend([hidden, visible])
+        result = asyncio.run(self.engine.ask_choose_cards(
+            ai_player, "请选择", [hidden, visible],
+            min_n=1, max_n=1, zone="hand", hidden_indices=[0],
+        ))
+        self.assertEqual(seen["request"]["candidate_cards"], [None, visible],
+                         "隐藏候选不得把真实牌面交给决策层")
+        self.assertEqual(seen["request"]["hidden_indices"], [0])
+        self.assertEqual(result, [hidden])
+
 
 class ChoicePlayerValidationTest(unittest.TestCase):
     def setUp(self):
@@ -144,11 +214,13 @@ class ChoicePlayerValidationTest(unittest.TestCase):
         self.assertTrue(result["bool"])
         self.assertEqual(result["players"], list(self.candidates))
 
-    def test_dead_candidate_excluded_with_best_effort(self):
+    def test_dead_candidate_makes_min_unreachable_returns_empty(self):
+        """候选不足最小选择量时不得产出部分选择（min_n 是不变量）。"""
         self.candidates[0].alive = False
         request = self._players_request(min_n=2, max_n=2)
         result = self.engine._resolve_choice(self.human, request, [0, 1])
-        self.assertEqual(result["players"], [self.candidates[1]])
+        self.assertFalse(result["bool"])
+        self.assertEqual(result["players"], [])
 
 
 if __name__ == "__main__":

@@ -649,6 +649,13 @@ input[type="checkbox"]:checked::after {
     white-space: nowrap;
 }
 
+.stats-empty {
+    padding: 14px 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
 .reward-card {
     background: var(--bg-card);
     border: 1px solid var(--gold);
