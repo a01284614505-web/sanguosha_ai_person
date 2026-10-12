@@ -13,6 +13,7 @@ const GameUI = {
     latestState: null,
     responseTimer: null,
     activeResponseRequest: null,
+    submittedResponseRequest: null,
     cardAnimationQueue: Promise.resolve(),
     aiSettingProviderList: null
 };
@@ -159,6 +160,9 @@ gameClient.onConnect = function () {
 };
 
 gameClient.onRequireResponse = function (data) {
+    if (!data.responseDeadline) {
+        data.responseDeadline = Date.now() + Math.max(0, Number(data.timeout) || 30) * 1000;
+    }
     GameUI.activeResponseRequest = data;
     GameUI.responseExpired = false;
     var modal = document.getElementById('responseModal');
@@ -231,7 +235,6 @@ gameClient.onRequireResponse = function (data) {
     }
 
     modal.classList.add('show');
-    var left = Math.max(0, Number(data.timeout) || 30);
     var countdown = document.getElementById('responseCountdown');
     clearInterval(GameUI.responseTimer);
     function expireResponse() {
@@ -247,13 +250,13 @@ gameClient.onRequireResponse = function (data) {
     }
     function tick() {
         if (GameUI.responseExpired) return;
+        var left = Math.max(0, Math.ceil((data.responseDeadline - Date.now()) / 1000));
         countdown.textContent = '剩余 ' + Math.max(0, left) + ' 秒';
         if (left <= 0) {
             clearInterval(GameUI.responseTimer);
             expireResponse();
             return;
         }
-        left--;
     }
     tick();
     GameUI.responseTimer = setInterval(tick, 1000);
@@ -262,6 +265,7 @@ gameClient.onRequireResponse = function (data) {
 function submitResponse(index) {
     if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
     var request = GameUI.activeResponseRequest;
+    GameUI.submittedResponseRequest = request;
     GameUI.activeResponseRequest = null;
     clearInterval(GameUI.responseTimer);
     document.getElementById('responseModal').classList.remove('show');
@@ -271,6 +275,7 @@ function submitResponse(index) {
 function submitMultiResponse() {
     if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
     var request = GameUI.activeResponseRequest;
+    GameUI.submittedResponseRequest = request;
     var indices = (GameUI.multiSelected || []).slice();
     GameUI.activeResponseRequest = null;
     GameUI.multiSelected = [];
@@ -341,7 +346,23 @@ gameClient.onYourTurn = function (data) {
     audioManager.play('click');
 };
 
-gameClient.onActionResult = function (ok) {
+gameClient.onActionResult = function (data) {
+    var ok = !!data.success;
+    if (data.kind === 'response') {
+        var submitted = GameUI.submittedResponseRequest;
+        if (submitted && submitted.request_id === data.request_id) {
+            GameUI.submittedResponseRequest = null;
+            if (data.status === 'invalid' && !GameUI.activeResponseRequest
+                    && Date.now() < submitted.responseDeadline) {
+                gameClient.onRequireResponse(submitted);
+            }
+        }
+        if (!ok) {
+            L('❌ ' + (data.message || '选择未被接收'));
+            showSystemToast(data.message || '选择未被接收');
+        }
+        return;
+    }
     L(ok ? '✅' : '❌');
     if (!ok) {
         GameUI.sel = null;
@@ -395,6 +416,10 @@ gameClient.onEndGameAccepted = function () {
 };
 
 gameClient.onGameEnd = function (data) {
+    clearInterval(GameUI.responseTimer);
+    GameUI.activeResponseRequest = null;
+    GameUI.submittedResponseRequest = null;
+    document.getElementById('responseModal').classList.remove('show');
     var state = data.state || GameUI.latestState || {};
     var me = (state.players || []).find(function (p) { return p.id === GameUI.myId; }) || {};
     var result = {

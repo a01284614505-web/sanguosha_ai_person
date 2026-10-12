@@ -85,6 +85,8 @@ class SkillManager:
         }
 
     def record(self, player, skill_name, event, **details):
+        if self.engine is not None and self.engine.game_aborted:
+            return None
         entry = {
             "player_id": player.id,
             "player_name": player.name,
@@ -315,13 +317,15 @@ class SkillManager:
             await handler.on_card_gained(player, cards, reason)
 
     async def on_cards_lost(self, player, cards, reason="unknown"):
-        if not cards:
+        if not cards or (self.engine is not None and self.engine.game_aborted):
             return
         record_stat(self.engine, player, "cards_lost", len(cards))
         for handler in self.handlers:
             await handler.on_cards_lost(player, cards, reason)
 
     async def on_card_discarded(self, player, card, reason="unknown"):
+        if self.engine is not None and self.engine.game_aborted:
+            return
         current = self.engine.game_state.current_player if self.engine else None
         if current:
             ensure = getattr(current, "flags", {})

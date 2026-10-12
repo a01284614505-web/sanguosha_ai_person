@@ -26,6 +26,8 @@ class PhaseController:
         self.skip_phases = set()
 
     async def execute_phase(self, phase: "Phase"):
+        if getattr(self.engine, "game_aborted", False):
+            return
 
         if phase in self.skip_phases:
             self.skip_phases.remove(phase)
@@ -165,7 +167,12 @@ class PhaseController:
                 discarded = ordered[:discard_count]
         else:
             discarded = ordered[:discard_count]
+        # 等待真人选牌期间可能主动结束或被离席看门狗结束。
+        if getattr(self.engine, "game_aborted", False):
+            return
         for card in discarded:
+            if getattr(self.engine, "game_aborted", False):
+                return
             self.game_state.discard_card(player, card)
             if self.skill_manager:
                 await self.skill_manager.on_cards_lost(player, [card], "hand_limit")

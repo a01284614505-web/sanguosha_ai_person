@@ -42,6 +42,9 @@ async def run():
             msg = json.loads(raw)
             t = msg.get("type")
             step += 1
+            if msg.get("animation_id"):
+                await ws.send(json.dumps({
+                    "type": "card_animation_done", "animation_id": msg["animation_id"]}))
             if t in ("error", "game_end"):
                 print(f"[msg {step}] {t}: {json.dumps(msg, ensure_ascii=False)[:300]}")
             # 真人座位每次都直接结束出牌阶段：全部真实决策交给规则AI，证明引擎自驱不aborted
@@ -64,6 +67,9 @@ async def run():
                     await ws.send(json.dumps(
                         {"type": "player_action", "action": action, "target_ids": []}))
             if t == "game_end":
+                if msg.get("winner") in (None, "aborted", "draw"):
+                    print(f"SMOKE_FAIL: 非正常胜负 {msg.get('winner')}")
+                    return 1
                 print(f"[step {step}] winner={msg.get('winner')} | remain={msg.get('players_alive')}")
                 print("SMOKE_OK: 规则AI跑到非aborted胜者")
                 return 0

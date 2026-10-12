@@ -59,7 +59,7 @@ class GameClient {
                 break;
 
             case Protocol.OUTBOUND.ACTION_RESULT:
-                if (this.onActionResult) this.onActionResult(data.success);
+                if (this.onActionResult) this.onActionResult(data);
                 break;
 
             case Protocol.OUTBOUND.GAME_END:

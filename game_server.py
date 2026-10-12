@@ -58,6 +58,12 @@ class GameServer:
             task = self.tasks.get(gid)
             if task and not task.done():
                 task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            self.tasks.pop(gid, None)
+            self.engines.pop(gid, None)
             prefix = f"{gid}-"
             for animation_id, waiter in list(self.animation_waiters.items()):
                 if animation_id.startswith(prefix):
@@ -90,11 +96,15 @@ class GameServer:
         if old_gid and old_gid in self.tasks and not self.tasks[old_gid].done():
             await self.send_error(ws, "当前连接已有正在运行的游戏")
             return
+        if old_gid:
+            self.tasks.pop(old_gid, None)
+            self.engines.pop(old_gid, None)
         cfg = MainEngine.normalize_config(raw_config, BASE_DIR)
         gid = str(self.next_game_id)
         self.next_game_id += 1
         print(f"\n[创建] game_{gid} | 模式: {cfg['mode']} | 玩家: {cfg['player']['name']}")
         engine = MainEngine(cfg)
+        engine.game_id = gid
         self.engines[gid] = engine
         self.ws_map[ws] = gid
         for event in ENGINE_EVENTS:
@@ -116,7 +126,9 @@ class GameServer:
         if not engine:
             await self.send_error(ws, "当前连接没有游戏")
             return
-        engine.submit_action(data.get("action", {}), data.get("target_ids", []))
+        receipt = engine.submit_action(data.get("action", {}), data.get("target_ids", []))
+        if receipt is not None:
+            await self.send(ws, {"type": OUTBOUND.ACTION_RESULT, **receipt})
     async def do_chat(self, ws, data):
         message = str(data.get("message", "")).strip()[:200]
         if message:
@@ -131,8 +143,11 @@ class GameServer:
             await self.send_error(ws, "当前连接没有游戏")
             return
         reason = str(data.get("reason", "玩家主动结束游戏"))[:100]
-        await engine.request_end_game(reason)
-        await self.send(ws, {"type": OUTBOUND.END_GAME_ACCEPTED})
+        accepted = await engine.request_end_game(reason)
+        if accepted:
+            await self.send(ws, {"type": OUTBOUND.END_GAME_ACCEPTED})
+        else:
+            await self.send_error(ws, "对局已结束")
     async def do_update_ai_config(self, ws, data):
         engine = self.engine_for(ws)
         if not engine:

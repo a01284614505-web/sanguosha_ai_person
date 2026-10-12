@@ -5,6 +5,7 @@ import asyncio
 import logging
 import random
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
@@ -94,6 +95,9 @@ class MainEngine:
         self._player_input = None
         # 场外响应专用通道：与出牌用的 _player_event 单槽位完全隔离，按 request_id 寻址。
         self._pending_requests: Dict[str, asyncio.Future] = {}
+        self._pending_request_specs: Dict[str, Dict] = {}
+        self._request_outcomes: Dict[str, str] = {}
+        self.game_id = uuid.uuid4().hex
         self._request_seq = 0
         self.game_log: List[Dict] = []
         self.completed_turns = 0
@@ -139,19 +143,29 @@ class MainEngine:
 
     async def _notify_card_ui(self, **data):
         """卡牌UI统一通知（弃牌/出牌/技能转化共用）：等待浏览器确认动画完成后才继续结算。"""
+        if self.game_aborted:
+            return
         entry = {"event_kind": "card_to_discard", "await_ui": True, **data}
         self.game_log.append(entry)
         await self.emit(ENGINE_EVENT.CARD_ANIMATION, **entry)
 
     async def _execute_phase_with_ui(self, phase: Phase):
         """执行阶段，并为阶段产生的弃牌补发可解释的卡牌UI事件。"""
+        if self.game_aborted:
+            return
         player = self.game_state.current_player
         before_discard = len(self.game_state.discard_pile)
         before_hand = list(player.hand)
         skill_result = await self.skill_manager.before_phase(player, phase)
+        if self.game_aborted:
+            return
         if not skill_result.get("skip_default"):
             await self.phase_controller.execute_phase(phase)
+        if self.game_aborted:
+            return
         await self.skill_manager.after_phase(player, phase)
+        if self.game_aborted:
+            return
         if phase == Phase.DISCARD:
             new_cards = self.game_state.discard_pile[before_discard:]
             for offset, card in enumerate(new_cards, start=1):
@@ -234,6 +248,9 @@ class MainEngine:
     # ---------- 主流程 ----------
 
     async def run(self):
+        if self.game_aborted:
+            await self._emit_game_end_once()
+            return self.game_state.winner
         logger.info("\n🎮 游戏开始！\n")
         self._started_at = self.time_source()
         assigned = self.identity_system.assign_identities(
@@ -323,6 +340,8 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
+            if self.game_aborted:
+                return
             self.game_state.current_phase = phase
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
@@ -360,6 +379,8 @@ class MainEngine:
             return
 
         for phase in [Phase.DISCARD, Phase.END]:
+            if self.game_aborted:
+                return
             self.game_state.current_phase = phase
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
@@ -440,12 +461,13 @@ class MainEngine:
 
     def submit_action(self, action: Dict, target_ids: List[int]):
         if not isinstance(action, dict):
-            return
+            return {"status": "invalid", "success": False, "message": "操作格式错误"}
         if action.get("type") == "response":
             option_indices = action.get("option_indices")
             selection = option_indices if option_indices is not None else action.get("option_index")
-            self.submit_response(action.get("request_id"), selection)
-            return
+            return self.submit_response_status(action.get("request_id"), selection)
+        if self.game_aborted:
+            return {"status": "game_ended", "success": False, "message": "对局已结束"}
         self._note_human_input()
         self._player_input = {"action": action, "target_ids": target_ids or action.get("target_ids", []) or []}
         if self._player_event and not self._player_event.is_set():
@@ -479,23 +501,32 @@ class MainEngine:
 
     @staticmethod
     def _serialize_response_context(context: Dict) -> Dict:
-        """把 context 里的 Player/Card 对象换成可 JSON 化的标识，绝不把对象丢给前端。"""
+        """只传公开的 Player 标识与标量；Card 对象不经上下文泄露。"""
         out: Dict[str, Any] = {}
         for key, value in (context or {}).items():
             if hasattr(value, "id") and hasattr(value, "name") and hasattr(value, "hp"):
                 out[key] = {"id": value.id, "name": value.name}
-            elif hasattr(value, "id") and hasattr(value, "name") and hasattr(value, "suit"):
-                out[key] = {"id": value.id, "name": value.name, "suit": value.suit, "rank": value.rank}
+            # Card may come from an unrevealed hand. Context is advisory UI data,
+            # so omit card objects instead of exposing suit/rank by accident.
             elif isinstance(value, (str, int, float, bool)) or value is None:
                 out[key] = value
         return out
 
     def _next_request_id(self) -> str:
         self._request_seq += 1
-        return f"resp{self._request_seq}"
+        return f"{self.game_id}:resp{self._request_seq}"
+
+    def _close_request(self, request_id: str):
+        self._pending_requests.pop(request_id, None)
+        self._pending_request_specs.pop(request_id, None)
+        self._request_outcomes.setdefault(request_id, "expired")
+        while len(self._request_outcomes) > 128:
+            self._request_outcomes.pop(next(iter(self._request_outcomes)))
 
     def _resolve_option(self, player: Player, request: Dict, index) -> Dict:
         """引擎复核：索引合法 → 有牌 → 牌仍在 owner 手上 → owner 存活 → 名称匹配。任一不满足即视为不响应。"""
+        if self.game_aborted:
+            return {"bool": False}
         options = request.get("options") or []
         if not isinstance(index, int) or not 0 <= index < len(options):
             return {"bool": False}
@@ -525,6 +556,8 @@ class MainEngine:
 
     async def _ask_index(self, player: Player, request: Dict, resolver) -> Any:
         """共用询问机制：人/AI分派 + 超时托管 + 回灌。resolver 决定如何验证原始索引。"""
+        if self.game_aborted:
+            return {"bool": False}
         request_id = self._next_request_id()
         if player.is_ai:
             index = await self._ai_choose_option(player, request)
@@ -777,6 +810,7 @@ class MainEngine:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         self._pending_requests[request_id] = future
+        self._pending_request_specs[request_id] = request
         self._mark_waiting_for_human()
         selection_block = {
             "mode": "multi" if request.get("max_n", 1) > 1 else "single",
@@ -790,6 +824,7 @@ class MainEngine:
             await self.emit(
                 ENGINE_EVENT.REQUIRE_RESPONSE,
                 request_id=request_id,
+                game_id=self.game_id,
                 player_id=player.id,
                 kind=request.get("kind", "confirm"),
                 prompt=request.get("prompt", ""),
@@ -803,10 +838,12 @@ class MainEngine:
             logger.info(f"  ⏱️ 选择请求 {request_id} 超时，交规则托管")
             return await self._trustee_choose_choice(player, request)
         finally:
-            self._pending_requests.pop(request_id, None)
+            self._close_request(request_id)
 
     async def request_choice(self, player: Player, request: Dict) -> Dict:
         """四交互原语的统一入口。"""
+        if self.game_aborted:
+            return self._empty_choice_result(request.get("kind", "confirm"))
         request_id = self._next_request_id()
         if player.is_ai:
             raw = await self._ai_choose_choice(player, request)
@@ -924,11 +961,13 @@ class MainEngine:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         self._pending_requests[request_id] = future
+        self._pending_request_specs[request_id] = request
         self._mark_waiting_for_human()
         try:
             await self.emit(
                 ENGINE_EVENT.REQUIRE_RESPONSE,
                 request_id=request_id,
+                game_id=self.game_id,
                 player_id=player.id,
                 kind=request.get("kind", "respond"),
                 prompt=request.get("prompt", ""),
@@ -942,26 +981,56 @@ class MainEngine:
             logger.info(f"  ⏱️ 响应请求 {request_id} 超时，交规则托管")
             return await self._trustee_choose(player, request)
         finally:
-            self._pending_requests.pop(request_id, None)
+            self._close_request(request_id)
 
     def submit_response(self, request_id, selection) -> bool:
-        """前端应答入口。接受 int（单选）或 List[int]（多选）。"""
+        """兼容旧调用方：详细回执由 submit_response_status 返回。"""
+        return self.submit_response_status(request_id, selection)["success"]
+
+    def submit_response_status(self, request_id, selection) -> Dict:
+        """在唤醒等待者前验证请求、类型、数量和索引；非法输入可重试。"""
+        def receipt(status, message):
+            return {"request_id": request_id, "kind": "response", "status": status,
+                    "success": status == "accepted", "message": message}
+
+        if not isinstance(request_id, str):
+            return receipt("invalid", "缺少有效的请求 ID")
+        if self.game_aborted:
+            return receipt("game_ended", "对局已结束，该选择未生效")
         future = self._pending_requests.get(request_id)
-        if future is None or future.done():
-            return False
-        if isinstance(selection, list):
-            try:
-                value = [int(x) for x in selection]
-            except (TypeError, ValueError):
-                return False
+        if future is None:
+            outcome = self._request_outcomes.get(request_id)
+            if outcome == "accepted":
+                return receipt("duplicate", "该请求已经应答")
+            return receipt("stale", "请求已过期，请等待当前选择")
+        if future.done():
+            if self._request_outcomes.get(request_id) == "accepted":
+                return receipt("duplicate", "该请求已经应答")
+            return receipt("stale", "请求已过期，请等待当前选择")
+        request = self._pending_request_specs[request_id]
+        kind = request.get("kind", "respond")
+        is_multi = kind in ("choose_cards", "choose_players") and request.get("max_n", 1) > 1
+        if is_multi:
+            if not isinstance(selection, list):
+                return receipt("invalid", "此请求需要索引数组")
+            value = selection
+        elif isinstance(selection, int) and not isinstance(selection, bool):
+            value = selection
         else:
-            try:
-                value = int(selection)
-            except (TypeError, ValueError):
-                return False
+            return receipt("invalid", "此请求需要单个整数索引")
+        indices = value if is_multi else [value]
+        if (not all(isinstance(i, int) and not isinstance(i, bool) for i in indices)
+                or len(indices) != len(set(indices))
+                or any(i < 0 or i >= len(request.get("options") or []) for i in indices)):
+            return receipt("invalid", "选项索引无效或重复")
+        if is_multi:
+            min_n, max_n = self._choice_limits(request)
+            if not min_n <= len(indices) <= max_n:
+                return receipt("invalid", f"请选择 {min_n} 至 {max_n} 项")
         self._note_human_input()
         future.set_result(value)
-        return True
+        self._request_outcomes[request_id] = "accepted"
+        return receipt("accepted", "已接收选择")
 
     # ---------- 托管兜底与离席看门狗 ----------
 
@@ -1010,6 +1079,8 @@ class MainEngine:
 
     async def _abort_for_idle(self):
         """离席超时：停托管代打 + 结束当前对局。服务器进程不受影响。"""
+        if self.game_aborted:
+            return
         minutes = self.idle_abort_seconds / 60
         self._abort_reason = "idle_timeout"
         self._trustee_active = False
@@ -1021,7 +1092,8 @@ class MainEngine:
         await self.log_event(self.game_state.end_message, important=True, abort_reason="idle_timeout")
 
         # 唤醒所有挂起的响应请求，否则等待中的协程会永久挂住。
-        for future in list(self._pending_requests.values()):
+        for request_id, future in list(self._pending_requests.items()):
+            self._request_outcomes[request_id] = "game_ended"
             if not future.done():
                 future.set_result(None)
         # 解除出牌阶段的等待（不走 submit_action，避免被当成真人输入而清零计时）。
@@ -1044,6 +1116,8 @@ class MainEngine:
 
     def get_available_actions(self, player: Player) -> List[Dict]:
         actions: List[Dict] = []
+        if self.game_aborted:
+            return []
         if self.game_state.current_phase != Phase.PLAY or player != self.game_state.current_player or not player.alive:
             return [{"type": "end_phase"}]
 
@@ -1120,7 +1194,7 @@ class MainEngine:
     # ---------- 执行操作 ----------
 
     async def execute_action(self, player: Player, action: Dict, target_ids: List = None) -> bool:
-        if player != self.game_state.current_player or not player.alive:
+        if self.game_aborted or player != self.game_state.current_player or not player.alive:
             return False
         action_type = action.get("type")
         try:
@@ -1152,9 +1226,13 @@ class MainEngine:
                     reason="use",
                     discard_count=len(self.game_state.discard_pile) + 1,
                 )
+                if self.game_aborted:
+                    return False
                 player.hand.remove(card)
                 self.game_state.discard_pile.append(card)
                 success = await self.card_system.use_card(player, card, targets)
+                if self.game_aborted:
+                    return False
                 if not success:
                     if card in self.game_state.discard_pile:
                         self.game_state.discard_pile.remove(card)
@@ -1221,18 +1299,22 @@ class MainEngine:
         )
         return True
     async def request_end_game(self, reason: str = "玩家主动结束游戏"):
+        if self.game_aborted:
+            return False
         self.game_state.game_over = True
         self.game_state.winner = "aborted"
         self.game_state.end_message = reason
         # 与离席看门狗一致：挂起的交互请求不得在收摊后继续落地效果。
         self._abort_reason = self._abort_reason or "player_end_game"
-        for future in list(self._pending_requests.values()):
+        for request_id, future in list(self._pending_requests.items()):
+            self._request_outcomes[request_id] = "game_ended"
             if not future.done():
                 future.set_result(None)
         self._player_input = {"action": {"type": "end_phase"}, "target_ids": []}
         if self._player_event and not self._player_event.is_set():
             self._player_event.set()
         await self._emit_game_end_once()
+        return True
 
     def update_ai_config(self, player_id: int, config: Dict) -> Dict:
         player = next((p for p in self.game_state.players if p.id == player_id), None)
