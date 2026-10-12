@@ -25,11 +25,8 @@ class WuSkillHandler(FactionSkillHandler):
         actions = []
         others = alive_others(self.state, player)
 
-        if self.has(player, "制衡") and player.hand and not once_per_turn(player, "制衡"):
-            for index in range(len(player.hand)):
-                actions.append(self._action("制衡", "discard_draw", [index], text="弃置一张牌并摸一张牌"))
-            if len(player.hand) > 1:
-                actions.append(self._action("制衡", "discard_all", list(range(len(player.hand))), text="弃置所有手牌并多摸一张"))
+        if self.has(player, "制衡") and player.hand and self.manager.skill_available(player, "制衡"):
+            actions.append(self._action("制衡", "choose_discard", text="弃置任意张手牌并摸等量牌；全弃多摸一张"))
 
         if self.has(player, "奇袭"):
             valid = [p.id for p in others if p.hand or p.equipment]
@@ -68,15 +65,27 @@ class WuSkillHandler(FactionSkillHandler):
         indices = action.get("card_indices") or []
         target = targets[0] if targets else None
 
-        if name == "制衡" and variant in ("discard_draw", "discard_all"):
-            cards = [player.hand[i] for i in indices if 0 <= i < len(player.hand)]
-            if not cards:
+        if name == "制衡" and variant == "choose_discard":
+            hand_snapshot = list(player.hand)
+            choice = await self.manager.ask_choose_cards_result(
+                player, "制衡：请选择要弃置的手牌", hand_snapshot,
+                min_n=1, max_n=len(hand_snapshot), zone="hand",
+                skill_name="制衡", cancelable=True,
+            )
+            cards = choice.get("cards", [])
+            if choice.get("status") not in ("resolved", "timeout") or not cards:
                 return False
-            all_hand = len(cards) == len(player.hand)
-            mark_once_per_turn(player, "制衡")
+            if any(card not in player.hand for card in cards):
+                return False
+            all_hand = len(cards) == len(hand_snapshot)
+            if not self.manager.consume_skill_use(player, "制衡", phase=Phase.PLAY, charges=0):
+                return False
             await self.manager.announce(player, "制衡", f"{player.name}发动【制衡】弃置{len(cards)}张牌")
             for card in list(cards):
-                await self.manager.discard_card(player, card, "制衡")
+                if not await self.manager.discard_card(player, card, "制衡"):
+                    return False
+                if self.engine.game_aborted:
+                    return False
             await self.manager.draw_cards(player, len(cards) + (1 if all_hand else 0), "制衡")
             return True
 
@@ -159,11 +168,20 @@ class WuSkillHandler(FactionSkillHandler):
 
     async def before_phase(self, player, phase):
         if phase == Phase.JUDGE and self.has(player, "谦逊") and player.hand and player.judge_area:
-            stored = list(player.hand)
-            player.hand.clear()
-            ensure_flags(player)["qianxun_cards"] = ensure_flags(player).get("qianxun_cards", []) + stored
-            # 暂存不是失去：不走 on_cards_lost，避免虚增失牌统计与误触连营等监听。
-            await self.manager.announce(player, "谦逊", f"{player.name}因延时锦囊发动【谦逊】暂存所有手牌")
+            use = await self.manager.ask_confirm(
+                player, "是否发动【谦逊】暂存所有手牌？", skill_name="谦逊",
+                context={"delayed_tricks": [card.name for card in player.judge_area]},
+            )
+            if use and not self.engine.game_aborted:
+                for card in list(player.hand):
+                    move = await self.engine.move_card(
+                        card, "hand", "temporary", from_owner=player, to_owner=player,
+                        reason="谦逊", actor_id=player.id, visibility="owner",
+                    )
+                    if move is None:
+                        break
+                if player.temporary:
+                    await self.manager.announce(player, "谦逊", f"{player.name}发动【谦逊】暂存所有手牌")
         if phase == Phase.PREPARE and self.has(player, "勤学"):
             await self._try_qinxue(player)
 
@@ -193,16 +211,25 @@ class WuSkillHandler(FactionSkillHandler):
                 await self.manager.announce(player, "博图", f"{player.name}发动【博图】获得额外回合")
         # 谦逊暂存牌在当前回合结束时归还。
         for owner in self.state.players:
-            stored = ensure_flags(owner).pop("qianxun_cards", [])
+            stored = list(owner.temporary)
             if stored:
-                owner.hand.extend(stored)
+                moved = []
+                for card in stored:
+                    event = await self.engine.move_card(
+                        card, "temporary", "hand", from_owner=owner, to_owner=owner,
+                        reason="谦逊归还", actor_id=owner.id, visibility="owner",
+                    )
+                    if event is not None:
+                        moved.append(card)
+                stored = moved
                 await self.manager.on_card_gained(owner, stored, "谦逊")
                 await self.manager.announce(owner, "谦逊", f"{owner.name}收回因【谦逊】暂存的{len(stored)}张牌")
 
     async def _try_qinxue(self, player):
-        flags = ensure_flags(player)
-        if flags.get("qinxue_awakened") or len(player.hand) - player.hp <= 1:
+        if self.manager.skill_state_value(player, "勤学", "awakened", False) or len(player.hand) - player.hp <= 1:
             return
+        flags = ensure_flags(player)
+        self.manager.set_skill_state(player, "勤学", "awakened", True)
         flags["qinxue_awakened"] = True
         player.max_hp = max(1, player.max_hp - 1)
         player.hp = min(player.hp, player.max_hp)
@@ -236,13 +263,21 @@ class WuSkillHandler(FactionSkillHandler):
                 return new_target
         # 谦逊：成为其他角色普通锦囊唯一目标时暂存所有手牌。
         if card and card.card_type == "trick" and source is not target and self.has(target, "谦逊") and target.hand:
-            stored = list(target.hand)
-            target.hand.clear()
-            flags = ensure_flags(target)
-            flags["qianxun_cards"] = stored
-            flags["qianxun_cancelled_card"] = card.id
-            # 暂存不是失去：不走 on_cards_lost，避免虚增失牌统计与误触连营等监听。
-            await self.manager.announce(target, "谦逊", f"{target.name}发动【谦逊】暂存所有手牌")
+            use = await self.manager.ask_confirm(
+                target, "是否发动【谦逊】暂存所有手牌并抵消此牌？",
+                skill_name="谦逊", context={"source": source, "card_name": card.name},
+            )
+            if use and not self.engine.game_aborted:
+                for held in list(target.hand):
+                    move = await self.engine.move_card(
+                        held, "hand", "temporary", from_owner=target, to_owner=target,
+                        reason="谦逊", actor_id=target.id,
+                        visibility="owner",
+                    )
+                    if move is None:
+                        return None
+                ensure_flags(target)["qianxun_cancelled_card"] = card.id
+                await self.manager.announce(target, "谦逊", f"{target.name}发动【谦逊】暂存所有手牌")
         return target
 
     async def on_cards_lost(self, player, cards, reason="unknown"):

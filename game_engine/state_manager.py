@@ -3,7 +3,7 @@
 游戏引擎核心 - StateManager（状态管理器）
 """
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from pathlib import Path
@@ -52,6 +52,26 @@ class Card:
         }.get(self.suit, '?')
         return f"{suit_symbol}{self.rank} {self.name}"
 
+
+@dataclass(frozen=True)
+class CardMoveEvent:
+    """一次已提交的实体牌移动事实。"""
+
+    card_id: str
+    from_owner: Optional[int]
+    from_zone: str
+    to_owner: Optional[int]
+    to_zone: str
+    reason: str
+    actor_id: Optional[int]
+    effect_id: Optional[str]
+    visibility: str
+    sequence: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        """返回仅含 JSON 基本类型的事件表示。"""
+        return asdict(self)
+
 @dataclass
 class Player:
     """玩家"""
@@ -74,6 +94,8 @@ class Player:
     hand: List[Card] = field(default_factory=list)
     equipment: Dict[str, Card] = field(default_factory=dict)  # weapon/armor/plus_horse/minus_horse
     judge_area: List[Card] = field(default_factory=list)
+    shown: List[Card] = field(default_factory=list)
+    temporary: List[Card] = field(default_factory=list)
     
     # 统计
     sha_count: int = 0         # 本回合已出杀的次数
@@ -105,6 +127,8 @@ class GameState:
         # 牌堆
         self.deck: List[Card] = []
         self.discard_pile: List[Card] = []
+        self.card_move_events: List[CardMoveEvent] = []
+        self._card_move_sequence: int = 0
         self.deck_id: str = "standard"
         self.initial_deck_count: int = 0
         
@@ -232,6 +256,162 @@ class GameState:
         if card in player.hand:
             player.hand.remove(card)
             self.discard_pile.append(card)
+
+    def move_card(
+        self,
+        card: Card,
+        from_zone: str,
+        to_zone: str,
+        *,
+        from_owner: Optional[Player] = None,
+        to_owner: Optional[Player] = None,
+        reason: str,
+        actor_id: Optional[int] = None,
+        effect_id: Optional[str] = None,
+        visibility: str = "public",
+        from_slot: Optional[str] = None,
+        to_slot: Optional[str] = None,
+        to_index: Optional[int] = None,
+    ) -> Optional[CardMoveEvent]:
+        """校验并原子移动一张实体牌，失败时不改状态也不产生事件.
+
+        Player 牌区（hand/equipment/judge/shown/temporary）必须显式传 owner；
+        deck/discard 为全局牌区，owner 必须为 None。装备目标槽位由 to_slot 或
+        card.sub_type 指定。牌堆目标默认放到牌堆顶，其他列表目标默认追加。
+        """
+        player_zones = {"hand", "equipment", "judge", "shown", "temporary"}
+        global_zones = {"deck", "discard"}
+        valid_zones = player_zones | global_zones
+        if (
+            not isinstance(card, Card)
+            or not isinstance(card.id, str)
+            or not card.id
+            or not isinstance(from_zone, str)
+            or from_zone not in valid_zones
+            or not isinstance(to_zone, str)
+            or to_zone not in valid_zones
+            or from_zone == to_zone and from_owner is to_owner
+            or not isinstance(reason, str)
+            or not reason
+            or not isinstance(visibility, str)
+            or not visibility
+            or (from_slot is not None and (from_zone != "equipment" or not isinstance(from_slot, str)))
+            or (to_slot is not None and (to_zone != "equipment" or not isinstance(to_slot, str)))
+            or (to_index is not None and to_zone == "equipment")
+        ):
+            return None
+        if (from_zone in player_zones) != (from_owner is not None):
+            return None
+        if (to_zone in player_zones) != (to_owner is not None):
+            return None
+        if from_owner is not None and (
+            not isinstance(from_owner, Player)
+            or not any(player is from_owner for player in self.players)
+        ):
+            return None
+        if to_owner is not None and (
+            not isinstance(to_owner, Player)
+            or not any(player is to_owner for player in self.players)
+        ):
+            return None
+        if actor_id is not None and (not isinstance(actor_id, int) or isinstance(actor_id, bool)):
+            return None
+        if effect_id is not None and not isinstance(effect_id, str):
+            return None
+
+        def locate(zone: str, owner: Optional[Player], slot: Optional[str] = None):
+            if zone == "deck":
+                return self.deck
+            if zone == "discard":
+                return self.discard_pile
+            if zone == "hand":
+                return owner.hand
+            if zone == "judge":
+                return owner.judge_area
+            if zone == "shown":
+                return owner.shown
+            if zone == "temporary":
+                return owner.temporary
+            if zone == "equipment":
+                if slot is not None:
+                    return owner.equipment if owner.equipment.get(slot) is card else None
+                slots = [key for key, value in owner.equipment.items() if value is card]
+                return owner.equipment if len(slots) == 1 else None
+            return None
+
+        source_container = locate(from_zone, from_owner, from_slot)
+        if source_container is None:
+            return None
+        if from_zone == "equipment":
+            source_slots = [key for key, value in from_owner.equipment.items() if value is card]
+            if len(source_slots) != 1 or (from_slot is not None and source_slots[0] != from_slot):
+                return None
+            source_slot = source_slots[0]
+        else:
+            source_slot = None
+            if not isinstance(source_container, list) or sum(value is card for value in source_container) != 1:
+                return None
+
+        # 同一实体牌 ID 在全部受管牌区必须恰好出现一次，且必须就是传入对象。
+        stored_cards = []
+        for stored in (self.deck, self.discard_pile):
+            stored_cards.extend(stored)
+        for player in self.players:
+            for stored in (player.hand, player.judge_area, player.shown, player.temporary):
+                stored_cards.extend(stored)
+            stored_cards.extend(player.equipment.values())
+        if (
+            sum(stored.id == card.id for stored in stored_cards) != 1
+            or not any(stored is card for stored in stored_cards)
+        ):
+            return None
+
+        destination_container = locate(to_zone, to_owner, to_slot)
+        if to_zone == "equipment":
+            slot = to_slot or card.sub_type
+            if not isinstance(slot, str) or not slot or slot in to_owner.equipment:
+                return None
+            destination_container = to_owner.equipment
+            destination_slot = slot
+        else:
+            destination_slot = None
+            if destination_container is None or not isinstance(destination_container, list):
+                return None
+            if to_index is None:
+                destination_index = 0 if to_zone == "deck" else len(destination_container)
+            elif isinstance(to_index, int) and not isinstance(to_index, bool) and 0 <= to_index <= len(destination_container):
+                destination_index = to_index
+            else:
+                return None
+
+        if from_zone == "equipment":
+            del from_owner.equipment[source_slot]
+        else:
+            source_container.remove(card)
+        if to_zone == "equipment":
+            destination_container[destination_slot] = card
+        else:
+            destination_container.insert(destination_index, card)
+
+        self._card_move_sequence += 1
+        event = CardMoveEvent(
+            card_id=card.id,
+            from_owner=None if from_owner is None else from_owner.id,
+            from_zone=from_zone,
+            to_owner=None if to_owner is None else to_owner.id,
+            to_zone=to_zone,
+            reason=reason,
+            actor_id=actor_id,
+            effect_id=effect_id,
+            visibility=visibility,
+            sequence=self._card_move_sequence,
+        )
+        self.card_move_events.append(event)
+        return event
+
+    def card_move_event_dicts(self) -> List[Dict[str, Any]]:
+        """取得按提交顺序排列、可直接 JSON 序列化的移动事件快照。"""
+        return [event.to_dict() for event in self.card_move_events]
     
     def next_turn(self):
         """下一回合"""

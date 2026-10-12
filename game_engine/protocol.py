@@ -23,7 +23,7 @@ class INBOUND:
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，14 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，16 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -32,6 +32,8 @@ class OUTBOUND:
     YOUR_TURN = "your_turn"
     REQUIRE_RESPONSE = "require_response"
     ACTION_RESULT = "action_result"
+    SELECTION_RESULT = "selection_result"
+    CARD_MOVED = "card_moved"
     AI_ACTION = "ai_action"
     CHAT = "chat"
     EVENT_NOTIFICATION = "event_notification"
@@ -51,6 +53,8 @@ class ENGINE_EVENT:
     CHAT = "chat"
     EVENT_NOTIFICATION = "event_notification"
     REQUIRE_RESPONSE = "require_response"
+    SELECTION_RESULT = "selection_result"
+    CARD_MOVE = "card_move"
     GAME_END = "game_end"
     # 特化事件：卡牌动画，经专用 handler 转发（await_ui ACK 机制），不在 ENGINE_EVENTS 循环注册。
     CARD_ANIMATION = "card_animation"
@@ -60,6 +64,7 @@ class ENGINE_EVENT:
 ENGINE_EVENT_MAP = {
     ENGINE_EVENT.STATE_CHANGED: OUTBOUND.GAME_STATE,
     ENGINE_EVENT.EVENT_NOTIFICATION: OUTBOUND.EVENT_NOTIFICATION,
+    ENGINE_EVENT.CARD_MOVE: OUTBOUND.CARD_MOVED,
 }
 
 
@@ -72,6 +77,8 @@ ENGINE_EVENTS = (
     ENGINE_EVENT.CHAT,
     ENGINE_EVENT.EVENT_NOTIFICATION,
     ENGINE_EVENT.REQUIRE_RESPONSE,
+    ENGINE_EVENT.SELECTION_RESULT,
+    ENGINE_EVENT.CARD_MOVE,
     ENGINE_EVENT.GAME_END,
 )
 

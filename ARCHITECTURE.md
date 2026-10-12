@@ -1,6 +1,6 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前验证环境：Linux / Python 3.12；Windows、Termux 为目标平台
-> 当前阶段：B1 请求生命周期修复已通过自动验证；真人浏览器验收待完成
+> 当前阶段：B2 最小骨架已实现；真人浏览器验收待完成
 > 更新时间：2026-10-12
 > 路线图见 [ROADMAP.md](ROADMAP.md)，现状事实基线见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)
 ## 1. 架构铁律
@@ -86,7 +86,7 @@ GameServer 转成 WebSocket 出站消息
 | `update_ai_config` | 局内更新指定 AI 配置 |
 | `ping` | 连接心跳 |
 | `server_info` | 请求服务器能力信息 |
-### 4.2 出站：服务器 → 前端（14 种）
+### 4.2 出站：服务器 → 前端（16 种）
 | 类型 | 用途 |
 |---|---|
 | `pong` | 心跳响应 |
@@ -96,6 +96,8 @@ GameServer 转成 WebSocket 出站消息
 | `your_turn` | 真人出牌阶段及合法候选 |
 | `require_response` | 回合外响应与交互原语的请求及合法候选（`selection` 含 mode/min/max/zone/cancelable；多选用 `option_indices` 应答） |
 | `action_result` | 真人出牌执行结果；响应提交回执另含 `kind=response`、`request_id`、`status`、`message`。`accepted` 只表示输入已进入当前等待器，最终效果仍由引擎复核 |
+| `selection_result` | 询问最终状态：`resolved/cancelled/timeout/stale/invalid/game_ended` |
+| `card_moved` | 已提交的实体牌移动事实，带区域、原因、来源、可见性和序号 |
 | `ai_action` | AI 回合或出牌展示 |
 | `chat` | 真人或 AI 聊天消息 |
 | `event_notification` | 游戏事件与动画通知 |
@@ -159,7 +161,7 @@ PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 | 托管 | CHRONICLE 13.5.3 四种来源只实现第 4 种（规则脚本兜底） |
 | 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
 ### 7.3 下一阶段
-**B2 请求、牌移动、事件与技能状态最小骨架 → B3 公共规则 → B4 装备/木牛 → B5 技能真人化 → B6 托管/模型 → B7 持久化**；新版 UI 在 B7 发布门槛后接入。当前请求 ID 含对局 ID；已关闭请求不能命中下一次询问，结束后自动唤醒挂起等待器。B2 的完整结果状态及统一效果入口仍待实现。
+**B2 请求、牌移动、事件与技能状态最小骨架 → B3 公共规则 → B4 装备/木牛 → B5 技能真人化 → B6 托管/模型 → B7 持久化**；新版 UI 在 B7 发布门槛后接入。B2 已加入服务端候选版本与最终选择状态、牌移动事件及弃牌/谦逊/普通用牌消费者、技能实例状态，以及普通牌与一个技能牌共用的效果上下文。其余旧牌区写入点和决斗/群体锦囊效果上下文仍待后续阶段迁移，详见 [B2 实施记录](logs/handover/20261012_1333_B2最小骨架实施.md)。
 
 6A 交互原语层与选牌消费者补全已完成（2026-09-13 / 2026-10-03），详见
 [Stage 6A](logs/handover/20260913_0000_Stage6A交互原语层.md) 与

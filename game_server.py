@@ -164,6 +164,13 @@ class GameServer:
         async def handler(**data):
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
+            if event == ENGINE_EVENT.CARD_MOVE and isinstance(data.get("move"), dict):
+                move = dict(data["move"])
+                owner_id = move.get("to_owner") if move.get("to_owner") is not None else move.get("from_owner")
+                # 本版本真人座位为 0；owner 可见的私密移动不能暴露 AI 手牌的实体 ID。
+                if move.get("visibility") != "public" and owner_id != 0:
+                    move["card_id"] = None
+                data["move"] = move
             await self.send(ws, {"type": ENGINE_EVENT_MAP.get(event, event), **data})
         return handler
     def _animation_handler(self, ws, gid):

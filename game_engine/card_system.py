@@ -76,7 +76,7 @@ class CardSystem:
             message=message or f"{actor.name}{'打出' if reason == 'respond' else '弃置'}【{card.name}】",
         )
 
-    async def use_card(self, player, card: Card, targets: List = None):
+    async def use_card(self, player, card: Card, targets: List = None, *, effect_context=None):
         """使用卡牌（统一入口）。分发由 CARD_TABLE 的 resolver/usage 驱动。"""
         if self.engine is not None and self.engine.game_aborted:
             return False
@@ -98,6 +98,9 @@ class CardSystem:
         resolver_name = spec.resolver if spec else None
         if resolver_name:
             method = getattr(self, resolver_name)
+            if resolver_name == "use_sha":
+                return await method(player, card, targets[0] if targets else None,
+                                    effect_context=effect_context)
             if resolver_name in ("use_tiesuo", "use_jiedao"):
                 return await method(player, card, targets if targets else [])
             # 无显式目标的牌（桃/酒/无中生有等，NO_EXTERNAL_TARGET）不传 target 参数；其余单目标。
@@ -108,7 +111,7 @@ class CardSystem:
         logger.info(f"未实现的卡牌: {card.name}")
         return False
     
-    async def use_sha(self, player, card: Card, target):
+    async def use_sha(self, player, card: Card, target, *, effect_context=None):
         """使用杀（完整流程）"""
         if not target:
             logger.info("杀需要指定目标")
@@ -132,6 +135,11 @@ class CardSystem:
         target = await self.trigger_manager.before_card_target(player, target, card)
         if not target:
             return False
+        if effect_context is None and self.engine is not None:
+            effect_context = self.engine._new_effect_context(player, card, target=target)
+        if effect_context is not None:
+            effect_context.current_target_id = target.id
+            effect_context.damage_nature = card.nature or card.effect
         event = {
             'name': 'useCard',
             'card': card,
@@ -139,7 +147,8 @@ class CardSystem:
             'target': target,
             'baseDamage': 1,
             'shanRequired': 1,
-            'nature': card.effect if hasattr(card, 'nature') else None
+            'nature': card.nature or card.effect,
+            'effect_context': effect_context,
         }
         
         # 5. 技能修正目标、响应数和伤害后执行杀的效果
@@ -218,6 +227,12 @@ class CardSystem:
         else:
             # 造成伤害
         #     logger.info(f"  ✗ 造成 {base_damage} 点伤害")
+            effect_context = event.get("effect_context")
+            if effect_context is not None:
+                effect_context.current_target_id = target.id
+                effect_context.next_sequence()
+                event["sequence"] = effect_context.sequence
+                event["effect"] = effect_context.to_dict()
             await self.damage(player, target, base_damage, card=event['card'], context=event)
             return True
     

@@ -169,6 +169,7 @@ gameClient.onRequireResponse = function (data) {
     var options = document.getElementById('responseOptions');
     var multiSelect = document.getElementById('responseMultiSelect');
     var multiOptions = document.getElementById('responseMultiOptions');
+    var cancelButton = document.getElementById('responseCancel');
     options.innerHTML = '';
     multiOptions.innerHTML = '';
     var titleMap = {
@@ -184,6 +185,7 @@ gameClient.onRequireResponse = function (data) {
     document.getElementById('responseContext').textContent = data.requested_name ? '需要：' + data.requested_name : '';
 
     var sel = data.selection || {};
+    cancelButton.style.display = sel.cancelable && data.kind !== 'respond' ? '' : 'none';
     var isMulti = sel.mode === 'multi';
 
     if (isMulti) {
@@ -284,6 +286,17 @@ function submitMultiResponse() {
     gameClient.playerAction({type: 'response', request_id: request.request_id, option_indices: indices}, []);
 }
 
+function cancelResponse() {
+    if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
+    var request = GameUI.activeResponseRequest;
+    GameUI.submittedResponseRequest = request;
+    GameUI.activeResponseRequest = null;
+    GameUI.multiSelected = [];
+    clearInterval(GameUI.responseTimer);
+    document.getElementById('responseModal').classList.remove('show');
+    gameClient.playerAction({type: 'response', request_id: request.request_id, cancel: true}, []);
+}
+
 gameClient.onStateUpdate = function (s) {
     GameUI.latestState = s;
     document.getElementById('rn').textContent = s.round;
@@ -369,6 +382,16 @@ gameClient.onActionResult = function (data) {
         renderHand();
         updateButtons();
     }
+};
+
+gameClient.onSelectionResult = function (data) {
+    if (data.status === 'cancelled') L('已取消当前选择');
+    else if (data.status === 'timeout') L('选择超时，已由托管代选');
+    else if (data.status === 'stale') L('候选状态已变化，请重新选择');
+};
+
+gameClient.onCardMoved = function (move) {
+    GameUI.latestCardMove = move || null;
 };
 
 gameClient.onChat = function (data) {
