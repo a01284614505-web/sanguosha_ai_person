@@ -654,7 +654,7 @@ class MainEngine:
                 if card is not None and card not in owner.hand:
                     status = "stale"
         elif input_status == "timeout" and not self.game_aborted:
-            index = self.ai_decision.simple_response_decision(player, request)
+            index = await self._trustee_choose(player, request)
             result = resolver(player, request, index)
             status = "timeout"
         elif input_status == "cancelled":

@@ -466,6 +466,13 @@ def card_to_dict(card: "Card", include_id: bool = True, name: Optional[str] = No
         "rank": card.rank,
         "card_type": card.card_type,
     }
+    # 牌图名称只从卡牌真相源派生；无对应资源时前端保留文字牌面。
+    from .card_table import CARD_TABLE
+    spec = CARD_TABLE.get(d["name"])
+    if spec and spec.image and (
+        Path(__file__).resolve().parents[1] / "frontend" / "assets" / "cards" / f"{spec.image}.png"
+    ).is_file():
+        d["image"] = spec.image
     if include_id:
         d["id"] = card.id
     return d

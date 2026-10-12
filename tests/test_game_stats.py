@@ -256,10 +256,13 @@ class SkillStatsEdgeTest(unittest.TestCase):
         target.judge_area.append(trick)
         target.hand.append(stored)
         wu.has = lambda p, name: name == "谦逊" and p is target
+        async def accept_qianxun(*args, **kwargs):
+            return True
+        self.engine.skill_manager.ask_confirm = accept_qianxun
         deck_before = len(self.engine.game_state.deck)
         asyncio.run(wu.before_phase(target, Phase.JUDGE))
         self.assertEqual(target.hand, [])
-        self.assertEqual(target.flags.get("qianxun_cards"), [stored])
+        self.assertEqual(target.temporary, [stored])
         self.assertEqual(stats_of(self.engine, target)["cards_lost"], 0, "暂存不得计失牌")
         self.assertEqual(len(self.engine.game_state.deck), deck_before,
                          "连营等失去牌监听不得因暂存触发")

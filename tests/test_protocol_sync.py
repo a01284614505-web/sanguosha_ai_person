@@ -44,16 +44,16 @@ class ProtocolSyncTest(unittest.TestCase):
             },
         )
 
-    def test_outbound_types_are_fourteen(self):
+    def test_outbound_types_are_sixteen(self):
         self.assertEqual(
-            len(protocol.ALL_OUTBOUND), 14,
-            f"出站消息类型应为 14 种，当前 {len(protocol.ALL_OUTBOUND)} 种: {protocol.ALL_OUTBOUND}",
+            len(protocol.ALL_OUTBOUND), 16,
+            f"出站消息类型应为 16 种，当前 {len(protocol.ALL_OUTBOUND)} 种: {protocol.ALL_OUTBOUND}",
         )
         self.assertEqual(
             set(protocol.ALL_OUTBOUND),
             {
                 "pong", "server_info", "game_created", "game_state", "your_turn",
-                "require_response", "action_result", "ai_action", "chat",
+                "require_response", "action_result", "selection_result", "card_moved", "ai_action", "chat",
                 "event_notification", "ai_config_updated", "end_game_accepted",
                 "game_end", "error",
             },

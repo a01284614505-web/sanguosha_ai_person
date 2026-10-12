@@ -63,9 +63,9 @@ function getCardSourcePosition(data) {
     var actor = document.getElementById('opp_' + data.actor_id);
     if (actor) {
         var actorRect = actor.getBoundingClientRect();
-        return {x: actorRect.left + actorRect.width / 2 - 30, y: actorRect.top + actorRect.height / 2 - 42};
+        return {x: actorRect.left + actorRect.width / 2 - 52, y: actorRect.top + actorRect.height / 2 - 68};
     }
-    return {x: window.innerWidth / 2 - 30, y: window.innerHeight / 2 - 42};
+    return {x: window.innerWidth / 2 - 52, y: window.innerHeight / 2 - 68};
 }
 
 function enqueueCardAnimation(data) {
@@ -84,20 +84,38 @@ function animateCardToDiscard(data) {
         fly.className = 'flyingCard';
         var suitSym = {spade: '♠', heart: '♥', club: '♣', diamond: '♦'}[card.suit] || '?';
         var col = ['heart', 'diamond'].includes(card.suit) ? 'r' : 'b';
-        fly.innerHTML = '<div class="cs ' + col + '">' + suitSym + (card.rank || '') + '</div><div class="cn">' + (card.name || data.card_name || '?') + '</div>';
+        var art = document.createElement('img');
+        art.className = 'cardArt';
+        art.alt = '';
+        if (typeof card.image === 'string' && /^[a-z0-9_]+$/.test(card.image)) {
+            art.src = 'assets/cards/' + card.image + '.png';
+            art.onerror = function () { fly.classList.remove('hasArt'); };
+            fly.classList.add('hasArt');
+            fly.appendChild(art);
+        }
+        var suit = document.createElement('div');
+        suit.className = 'cs ' + col;
+        suit.textContent = suitSym + (card.rank == null ? '' : card.rank);
+        fly.appendChild(suit);
+        var title = document.createElement('div');
+        title.className = 'cn';
+        title.textContent = card.name || data.card_name || '?';
+        fly.appendChild(title);
         fly.style.left = start.x + 'px';
         fly.style.top = start.y + 'px';
         document.body.appendChild(fly);
 
-        var animationMs = (window.getGlobalSettings ? getGlobalSettings().animation_ms : 1100);
-        var centerPause = Math.round(animationMs * .59);
-        var centerMove = Math.max(260, Math.round(animationMs * .35));
-        var discardMove = Math.max(280, animationMs - centerPause);
-        var centerX = window.innerWidth / 2 - 30;
-        var centerY = Math.max(38, window.innerHeight * .29 - 42);
+        var configuredMs = Number(window.getGlobalSettings ? getGlobalSettings().animation_ms : 1100) || 1100;
+        var centerMove = Math.max(260, Math.round(configuredMs * .3));
+        var centerHold = 500;
+        var discardMove = Math.max(280, configuredMs - centerMove - centerHold);
+        var animationMs = centerMove + centerHold + discardMove;
+        var centerPause = centerMove + centerHold;
+        var centerX = window.innerWidth / 2 - fly.offsetWidth / 2;
+        var centerY = Math.max(38, window.innerHeight * .29 - fly.offsetHeight / 2);
         var pileRect = document.getElementById('discardPile').getBoundingClientRect();
-        var pileX = pileRect.left + pileRect.width / 2 - 30;
-        var pileY = pileRect.top + pileRect.height / 2 - 42;
+        var pileX = pileRect.left + pileRect.width / 2 - fly.offsetWidth / 2;
+        var pileY = pileRect.top + pileRect.height / 2 - fly.offsetHeight / 2;
 
         requestAnimationFrame(function () {
             fly.style.transition = 'all ' + centerMove + 'ms cubic-bezier(.2,.8,.2,1)';
