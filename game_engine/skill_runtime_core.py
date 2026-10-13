@@ -121,7 +121,8 @@ class FactionSkillHandler:
         self.state = manager.engine.game_state if manager.engine else None
 
     def has(self, player, name: str) -> bool:
-        return self.manager.has_skill(player, name)
+        # 闪电等无伤害来源的事件仍会广播给技能钩子。
+        return player is not None and self.manager.has_skill(player, name)
 
     def get_actions(self, player) -> List[Dict]:
         return []

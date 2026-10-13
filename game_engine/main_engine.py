@@ -335,6 +335,10 @@ class MainEngine:
                     break
 
                 if getattr(player, "flags", {}).pop("extra_turn", False):
+                    # 额外回合未调用 next_turn，也必须开启新的酒/出杀次数作用域。
+                    player.sha_count = 0
+                    player.jiu_used_this_turn = False
+                    player.jiu_buff = False
                     self.game_state.current_player = player
                     self.game_state.current_player_index = self.game_state.players.index(player)
                     self.game_state.current_phase = Phase.PREPARE
@@ -1502,7 +1506,9 @@ class MainEngine:
                     )
                 if success:
                     await self.skill_manager.on_card_move(card, move)
-                    await self.skill_manager.on_card_discarded(player, card, "use_card")
+                    # 延时锦囊与装备已离开弃牌区，不触发“被弃置”技能。
+                    if card in self.game_state.discard_pile:
+                        await self.skill_manager.on_card_discarded(player, card, "use_card")
                 await self.skill_manager.after_card_used(player, card, targets, success)
                 return success
 

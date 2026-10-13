@@ -85,9 +85,10 @@ class CardSystem:
             return False
         spec = CARD_TABLE.get(card.name)
 
-        # 锦囊结算前统一走无懈链；无懈本身只作为响应牌进入 ask_wuxie。
+        # 延时锦囊先进入判定区，判定阶段生效前才询问无懈。
         group_trick = bool(spec and spec.target_rule.get("type") in ("all", "all_others"))
-        if spec and spec.wuxie_targetable and not group_trick:
+        delayed_trick = bool(spec and spec.resolver in ("use_bingliang", "use_lebu", "use_shandian"))
+        if spec and spec.wuxie_targetable and not group_trick and not delayed_trick:
             wuxie_targets = targets or []
             if await self.ask_wuxie(card, player, wuxie_targets):
                 logger.info(f"  → 【{card.name}】被无懈可击抵消")
@@ -199,28 +200,12 @@ class CardSystem:
             if self.engine is not None and self.engine.game_aborted:
                 return False
             
-            if result and result.get('bool'):
-                response_card = result.get('card')
-                logger.info(f"  → {target.name} 打出 {response_card}")
-                
-                # 从实际提供者手牌移除（护驾等技能可由队友提供）。
-                owner = result.get('owner') or target
-                if response_card in owner.hand:
-                    response_index = owner.hand.index(response_card)
-                    owner.hand.remove(response_card)
-                    self.game_state.discard_pile.append(response_card)
-                    await self.notify_card_to_discard(
-                        owner, response_card, reason="respond", card_index=response_index,
-                        message=f"{owner.name}打出【{result.get('as_name', response_card.name)}】响应"
-                    )
-                    await self.trigger_manager.on_cards_lost(owner, [response_card], "respond")
-                    self._record_played(owner)
-                    await self.trigger_manager.on_card_discarded(owner, response_card, "respond")
-                    await self.trigger_manager.on_card_responded(
-                        target, response_card, result.get('as_name', response_card.name),
-                        {'source': player, 'target': target, 'card': event['card'], 'owner': owner}
-                    )
-                
+            # 杀/决斗/群体锦囊共用实体响应消费，失效候选不能算成功闪避。
+            if await self._consume_response(
+                target, result, "杀",
+                {"source": player, "target": target, "card": event["card"],
+                 "effect_context": event.get("effect_context")},
+            ):
                 shaned = True
             else:
                 logger.info(f"  → {target.name} 没有闪")
@@ -521,20 +506,14 @@ class CardSystem:
                 response_card = result.get("card")
                 if response_card is None or response_card not in owner.hand:
                     raise AssertionError("无懈响应已确认，但响应牌未在提供者手牌中")
-                response_index = owner.hand.index(response_card)
-                owner.hand.remove(response_card)
-                self.game_state.discard_pile.append(response_card)
-                await self.notify_card_to_discard(
-                    owner, response_card, reason="respond", card_index=response_index,
-                    message=f"{owner.name}使用【无懈可击】响应第{layer}层"
+                # 无懈链每层也只提交一条响应牌移动事实。
+                consumed = await self._consume_response(
+                    responder, result, "wuxie",
+                    {"source": current_source, "targets": targets or [],
+                     "card": card, "wuxie_layer": layer},
                 )
-                await self.trigger_manager.on_cards_lost(owner, [response_card], "wuxie")
-                self._record_played(owner)
-                await self.trigger_manager.on_card_discarded(owner, response_card, "wuxie")
-                await self.trigger_manager.on_card_responded(
-                    responder, response_card, result.get("as_name", response_card.name),
-                    {"source": current_source, "targets": targets or [], "card": card, "owner": owner, "wuxie_layer": layer}
-                )
+                if not consumed:
+                    return canceled
                 if response_card in owner.hand:
                     raise AssertionError("无懈响应消费后仍留在手牌")
                 responded = True
@@ -547,6 +526,12 @@ class CardSystem:
     async def damage(self, source, target, amount: int, card=None, context=None):
         """造成伤害"""
         if (self.engine is not None and self.engine.game_aborted) or not target.alive:
+            return
+        context = context or {}
+        nature = context.get("nature") or getattr(card, "nature", None)
+        # 同一次属性伤害共享已访问集合；每名横置角色最多承受一次传导。
+        chain_visited = context.setdefault("_chain_visited", set()) if nature in ("fire", "thunder") else None
+        if chain_visited is not None and target.id in chain_visited:
             return
         damage_info = {
             'source': source,
@@ -562,6 +547,14 @@ class CardSystem:
         damage_info['amount'] = amount
         # 造成伤害
         if not damage_info['prevented'] and amount > 0:
+            if chain_visited is not None:
+                chain_visited.add(target.id)
+            # 先记录待传导座次再重置当前横置状态，防止伤害钩子重入形成环。
+            propagate = bool(chain_visited is not None and target.chained)
+            chain_targets = [p for p in self.game_state.players
+                             if p is not target and p.alive and p.chained] if propagate else []
+            if propagate:
+                target.chained = False
             target.hp -= amount
             # 统计按修正后的最终伤害值计；自伤（如闪电）只记受到伤害，不记造成伤害。
             record_stat(self.engine, target, "damage_taken", amount)
@@ -577,6 +570,16 @@ class CardSystem:
             # 检查濒死
             if target.hp <= 0:
                 await self.enter_dying(target)
+            # 传导的是已结算的伤害值；每个后续目标仍各自经过减伤/增伤钩子。
+            for chained_target in chain_targets:
+                if self.engine is not None and self.engine.game_aborted:
+                    return
+                if chained_target.alive and chained_target.chained:
+                    await self.damage(
+                        source, chained_target, amount, card=card,
+                        context={**context, "nature": nature, "_chain_visited": chain_visited,
+                                 "chain_transfer": True},
+                    )
     
     async def enter_dying(self, player):
         """濒死求桃：按座次逐个询问存活角色，每人都可以拒绝。"""
@@ -587,7 +590,11 @@ class CardSystem:
             if self.engine is not None and self.engine.game_aborted:
                 return
             rescued = False
-            rescuers = [player] + [p for p in self.game_state.players if p.alive and p is not player]
+            # 从濒死者起按座次轮询，不能固定从玩家列表的 0 号位开始。
+            seats = self.game_state.players
+            start = seats.index(player)
+            rescuers = [p for offset in range(len(seats))
+                        if (p := seats[(start + offset) % len(seats)]).alive]
             for rescuer in rescuers:
                 prompt = (
                     "你已濒死，是否使用【桃】自救？" if rescuer is player
@@ -608,15 +615,12 @@ class CardSystem:
                 owner = result.get('owner') or rescuer
                 if not card or card not in owner.hand:
                     continue
-                index = owner.hand.index(card)
-                owner.hand.remove(card)
-                self.game_state.discard_pile.append(card)
-                as_name = result.get('as_name') or card.name
-                await self.notify_card_to_discard(owner, card, 'respond', index, f"{owner.name}使用【{as_name}】救援{player.name}")
-                await self.trigger_manager.on_cards_lost(owner, [card], 'dying_rescue')
-                self._record_played(owner)
-                await self.trigger_manager.on_card_discarded(owner, card, 'dying_rescue')
-                await self.trigger_manager.on_card_responded(rescuer, card, as_name, {'target': player, 'owner': owner})
+                if not await self._consume_response(
+                    rescuer, result, "dying_rescue", {"target": player, "owner": owner},
+                ):
+                    continue
+                if self.engine is not None and self.engine.game_aborted:
+                    return
                 player.hp += 1
                 record_stat(self.engine, owner, "healing", 1)
                 # 治疗归属与统计一致：记给实际提供桃的角色（owner），不是被询问者。
@@ -636,6 +640,73 @@ class CardSystem:
             if killer is not None:
                 record_stat(self.engine, killer, "kills")
             logger.info(f"  💀 {player.name} 阵亡，身份揭示为 {player.identity}")
+            await self._discard_player_zones(player, "death")
+            if self.engine is not None and self.engine.game_aborted:
+                return
+            await self._settle_identity_death(player, killer)
+
+    async def _discard_player_zones(self, player, reason, *, include_judge=True):
+        """死亡/主公误杀惩罚共用清牌；每张实体只从其真实牌区移动一次。"""
+        zones = [("hand", list(player.hand)), ("equipment", list(player.equipment.values()))]
+        if include_judge:
+            zones.extend((("judge", list(player.judge_area)),
+                          ("shown", list(player.shown)), ("temporary", list(player.temporary))))
+        for zone, cards in zones:
+            for card in cards:
+                if self.engine is not None:
+                    moved = await self.engine.move_card(
+                        card, zone, "discard", from_owner=player,
+                        reason=reason, actor_id=player.id,
+                    )
+                    if moved is None:
+                        continue
+                else:
+                    container = player.equipment if zone == "equipment" else (
+                        player.judge_area if zone == "judge" else getattr(player, zone)
+                    )
+                    if zone == "equipment":
+                        slot = next((key for key, value in container.items() if value is card), None)
+                        if slot is None:
+                            continue
+                        del container[slot]
+                    else:
+                        container.remove(card)
+                    self.game_state.discard_pile.append(card)
+                    if zone in ("hand", "equipment"):
+                        await self.trigger_manager.on_cards_lost(player, [card], reason)
+
+    async def _settle_identity_death(self, victim, killer):
+        """身份奖惩在阵亡清牌之后结算，胜负紧接着检查。"""
+        if killer is not None and killer.alive and victim.identity == "rebel":
+            drawn = []
+            for _ in range(3):
+                if not self.game_state.deck:
+                    break
+                card = self.game_state.deck[0]
+                if self.engine is not None:
+                    moved = await self.engine.move_card(
+                        card, "deck", "hand", to_owner=killer,
+                        reason="kill_rebel_reward", actor_id=killer.id,
+                        visibility="owner",
+                    )
+                    if moved is None:
+                        break
+                else:
+                    killer.hand.append(self.game_state.deck.pop(0))
+                drawn.append(card)
+            if drawn:
+                await self.trigger_manager.on_card_gained(killer, drawn, "kill_rebel_reward")
+        elif killer is not None and killer.alive and killer.identity == "lord" and victim.identity == "loyalist":
+            await self._discard_player_zones(killer, "lord_killed_loyalist", include_judge=False)
+
+        from .identity_system import IdentitySystem
+        victory = IdentitySystem.check_victory(self.game_state.players)
+        if victory.get("game_over"):
+            self.game_state.game_over = True
+            self.game_state.winner = victory["winner"]
+            self.game_state.end_message = victory["message"]
+            if self.engine is not None:
+                await self.engine.log_event(victory["message"], important=True)
 
     async def use_jiu(self, player, card: Card):
         """使用酒"""
@@ -678,7 +749,16 @@ class CardSystem:
         if not hasattr(target, 'judge_area'):
             target.judge_area = []
 
-        target.judge_area.append(card)
+        # 实体牌在 execute_action 中先移到弃牌区，再原子移入判定区。
+        if self.engine is not None and card in self.game_state.discard_pile:
+            move = await self.engine.move_card(
+                card, "discard", "judge", to_owner=target,
+                reason="place_delayed_trick", actor_id=player.id,
+            )
+            if move is None:
+                return False
+        else:
+            target.judge_area.append(card)
         logger.info(f"  → {target.name} 判定区增加【{card.name}】")
 
         return True
@@ -961,7 +1041,15 @@ class CardSystem:
         if any(c.name == "闪电" for c in player.judge_area):
             logger.info("判定区已有闪电")
             return False
-        player.judge_area.append(card)
+        if self.engine is not None and card in self.game_state.discard_pile:
+            move = await self.engine.move_card(
+                card, "discard", "judge", to_owner=player,
+                reason="place_lightning", actor_id=player.id,
+            )
+            if move is None:
+                return False
+        else:
+            player.judge_area.append(card)
         logger.info(f"  → {player.name} 判定区增加【闪电】")
         return True
 

@@ -85,6 +85,8 @@ class Player:
     hp: int = 4
     max_hp: int = 4
     status: PlayerStatus = PlayerStatus.NORMAL
+    # 横置与翻面是两个独立状态，不能用一个互斥枚举同时表示。
+    chained: bool = False
     alive: bool = True
     is_ai: bool = False
     ai_config: Dict[str, Any] = field(default_factory=dict)
@@ -417,6 +419,8 @@ class GameState:
         """下一回合"""
         # 重置当前玩家状态
         self.current_player.sha_count = 0
+        self.current_player.jiu_used_this_turn = False
+        self.current_player.jiu_buff = False
         
         # 下一个玩家
         self.current_player_index = (self.current_player_index + 1) % len(self.players)

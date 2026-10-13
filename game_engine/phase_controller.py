@@ -61,9 +61,52 @@ class PhaseController:
         player = self.game_state.current_player
         logger.info(f"[判定阶段] {player.name}")
         for delayed_card in list(player.judge_area):
+            if not player.alive or (getattr(self.engine, "game_state", None) is self.game_state
+                                    and getattr(self.engine, "game_aborted", False)):
+                break
             await self.execute_judge(player, delayed_card)
 
+    async def _move_delayed_card(self, owner, card, target=None, reason="judge_resolved"):
+        """判定区实体移动；没有正式引擎时供规则单测使用。"""
+        to_zone = "judge" if target is not None else "discard"
+        if self.engine is not None and getattr(self.engine, "game_state", None) is self.game_state:
+            return await self.engine.move_card(
+                card, "judge", to_zone, from_owner=owner, to_owner=target,
+                reason=reason, actor_id=owner.id,
+            ) is not None
+        if card not in owner.judge_area:
+            return False
+        owner.judge_area.remove(card)
+        (target.judge_area if target is not None else self.game_state.discard_pile).append(card)
+        return True
+
+    def _next_lightning_target(self, owner):
+        """闪电跳过死亡角色和已有闪电的判定区。"""
+        players = self.game_state.players
+        if owner not in players:
+            return None
+        start = players.index(owner)
+        return next((candidate for offset in range(1, len(players))
+                     if (candidate := players[(start + offset) % len(players)]).alive
+                     and all(card.name != "闪电" for card in candidate.judge_area)), None)
+
     async def execute_judge(self, player: "Player", delayed_card):
+        if delayed_card not in player.judge_area or not player.alive:
+            return
+
+        # 延时锦囊在此时询问无懈，成功抵消后不翻判定牌；闪电继续传递。
+        card_system = getattr(self.engine, "card_system", None)
+        if card_system is not None and await card_system.ask_wuxie(delayed_card, player, [player]):
+            if delayed_card.name == "闪电":
+                next_player = self._next_lightning_target(player)
+                if next_player is not None:
+                    await self._move_delayed_card(player, delayed_card, next_player, "lightning_countered")
+                    return
+            await self._move_delayed_card(player, delayed_card, reason="delayed_countered")
+            return
+        if (getattr(self.engine, "game_state", None) is self.game_state
+                and getattr(self.engine, "game_aborted", False)):
+            return
 
         if not self.game_state.deck:
             self.game_state.draw_card(player, 0)
@@ -89,31 +132,22 @@ class PhaseController:
             if hit:
                 if self.engine and getattr(self.engine, "card_system", None):
                     await self.engine.card_system.damage(
-                        player, player, 3, card=delayed_card, context={"reason": "闪电"}
+                        None, player, 3, card=delayed_card,
+                        context={"reason": "闪电", "nature": "thunder"},
                     )
                 else:
                     player.hp -= 3
                 logger.info(f"  {player.name}的【闪电】命中，受到3点雷电伤害，体力：{player.hp}/{player.max_hp}")
             else:
-                players = self.game_state.players
-                if player in players:
-                    start = players.index(player)
-                    next_player = next(
-                        (players[(start + offset) % len(players)]
-                         for offset in range(1, len(players) + 1)
-                         if players[(start + offset) % len(players)].alive),
-                        None,
-                    )
-                    if next_player and not any(c.name == "闪电" for c in next_player.judge_area):
-                        next_player.judge_area.append(delayed_card)
-                        logger.info(f"  【闪电】判定未命中，传给{next_player.name}")
-                        if delayed_card in player.judge_area:
-                            player.judge_area.remove(delayed_card)
-                        return
+                next_player = self._next_lightning_target(player)
+                if next_player and await self._move_delayed_card(
+                    player, delayed_card, next_player, "lightning_passed",
+                ):
+                    logger.info(f"  【闪电】判定未命中，传给{next_player.name}")
+                    return
 
         if delayed_card in player.judge_area:
-            player.judge_area.remove(delayed_card)
-            self.game_state.discard_pile.append(delayed_card)
+            await self._move_delayed_card(player, delayed_card)
 
     async def draw_phase(self):
 
@@ -190,6 +224,8 @@ class PhaseController:
         logger.info(f"  自动弃置 {len(discarded)} 张牌")
 
     async def end_phase(self):
+        # 酒的“下一张杀”仅限本回合，跳过出牌阶段也不能留到下回合。
+        self.game_state.current_player.jiu_buff = False
         logger.info(f"[结束阶段] {self.game_state.current_player.name}")
 
 

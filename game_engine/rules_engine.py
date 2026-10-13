@@ -91,6 +91,12 @@ class RulesEngine:
         if player.hp >= player.max_hp:
             return False, "体力已满"
         return True, "OK"
+
+    def can_play_jiu(self, player, card) -> Tuple[bool, str]:
+        """出牌阶段的酒限一次，避免先弃实体牌后结算失败。"""
+        if getattr(player, "jiu_used_this_turn", False):
+            return False, "本回合已经使用过酒"
+        return True, "OK"
     
     def can_play_guohe(self, player, card, targets: List) -> Tuple[bool, str]:
         """检查是否可以用过河拆桥"""
