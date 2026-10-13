@@ -491,7 +491,7 @@ function renderHand() {
         d.className = 'card' + (GameUI.sel === i ? ' sel' : '');
         var suit = {spade: '♠', heart: '♥', club: '♣', diamond: '♦'}[c.suit] || '?';
         var col = ['heart', 'diamond'].includes(c.suit) ? 'r' : 'b';
-        d.innerHTML = '<div class="cs ' + col + '">' + suit + c.rank + '</div><div class="cn">' + c.name + '</div>';
+        d.innerHTML = '<div class="cs ' + col + '">' + suit + c.rank + '</div><div class="cn">' + c.name + (c.zone === 'treasure' ? '〔木牛〕' : '') + '</div>';
         d.onclick = (function (idx) {
             return function () {
                 GameUI.sel = GameUI.sel === idx ? null : idx;
@@ -519,7 +519,9 @@ function checkNeedTarget(idx) {
     GameUI.needTarget = !!GameUI.selectedLegalAction.requires_target;
     GameUI.targetSelection = [];
     if (GameUI.needTarget) {
-        document.getElementById('actionHint').textContent = GameUI.selectedLegalAction.target_count === 2
+        document.getElementById('actionHint').textContent = GameUI.selectedLegalAction.valid_target_groups
+            ? '👆 可选1至3名目标，选好后点击出牌'
+            : GameUI.selectedLegalAction.target_count === 2
             ? '👆 先选择持有武器的角色，再选择攻击目标'
             : '👆 点击绿色目标';
         highlightTargets(true, GameUI.selectedLegalAction.valid_targets || []);
@@ -547,6 +549,27 @@ function selectTarget(tid) {
     tid = parseInt(tid);
     if (!GameUI.selectedLegalAction || !(GameUI.selectedLegalAction.valid_targets || []).includes(tid)) {
         L('❌ 非法目标');
+        return;
+    }
+
+    if (GameUI.selectedLegalAction.valid_target_groups) {
+        // 方天画戟只允许提交引擎已公布的目标组；连续点击同一人可取消选择。
+        var current = GameUI.targetSelection || [];
+        var next = current.includes(tid) ? current.filter(function (id) { return id !== tid; }) : current.concat([tid]);
+        var groups = GameUI.selectedLegalAction.valid_target_groups;
+        var prefixOk = groups.some(function (group) {
+            return next.every(function (id, index) { return group[index] === id; });
+        });
+        if (!prefixOk) { L('❌ 目标组合不合法'); return; }
+        GameUI.targetSelection = next;
+        GameUI.pendingAction = next.length ? {type: 'play_card', card_index: GameUI.sel,
+            target_ids: next.slice()} : null;
+        var extend = groups.filter(function (group) {
+            return group.length > next.length && next.every(function (id, index) { return group[index] === id; });
+        }).map(function (group) { return group[next.length]; });
+        highlightTargets(true, Array.from(new Set(extend.concat(next))));
+        document.getElementById('actionHint').textContent = next.length + '名目标已选，可继续选人或点击出牌';
+        updateButtons();
         return;
     }
 
@@ -637,7 +660,7 @@ function openPlayerInfo(playerId) {
     var identity = p.identity ? ({lord: '主公', loyalist: '忠臣', rebel: '反贼', spy: '内奸'}[p.identity] || p.identity) : '未公开';
     document.getElementById('playerInfoBody').innerHTML =
         '<p>势力：' + ((p.hero || {}).faction || '未知') + '　体力：' + p.hp + '/' + p.max_hp + '　身份：' + identity + '</p>' +
-        '<p style="margin-top:8px;color:#aaa">手牌：' + p.hand_count + '张　装备：' + Object.values(p.equipment || {}).join('、') + '</p>' +
+        '<p style="margin-top:8px;color:#aaa">手牌：' + p.hand_count + '张　木牛扣置：' + (p.treasure_count || 0) + '张　装备：' + Object.values(p.equipment || {}).join('、') + '</p>' +
         '<h4 style="margin-top:14px;color:var(--gold)">武将技能</h4>' + skillHTML((p.hero || {}).skills) +
         (p.is_ai ? '<div class="modal-actions"><button onclick="closeModal(&quot;playerInfoModal&quot;);openAISettings(' + p.id + ')">⚙ 调整该AI模型</button></div>' : '');
     document.getElementById('playerInfoModal').classList.add('show');

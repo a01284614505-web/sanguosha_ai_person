@@ -143,3 +143,19 @@ def test_victory_is_set_at_death_before_turn_end():
     run(engine.card_system.damage(spy, lord, 1))
     assert engine.game_state.game_over is True
     assert engine.game_state.winner == "spy"
+
+
+def test_lethal_play_reports_success_and_counts_used_card():
+    engine = game()
+    lord, _, rebel = engine.game_state.players[:3]
+    engine.game_state.current_player = rebel
+    engine.game_state.current_player_index = 2
+    engine.game_state.current_phase = Phase.PLAY
+    rebel.equipment["weapon"] = Card("b3_lethal_weapon", "青釭剑", "spade", 6, "equipment")
+    sha = Card("b3_lethal_sha", "杀", "heart", 7, "basic")
+    rebel.hand.append(sha)
+    lord.hp = 1
+    assert run(engine.execute_action(rebel, {"type": "play_card", "card_index": 0}, [lord.id]))
+    assert engine.game_state.winner == "rebel"
+    assert engine.stats.row(rebel)["cards_played"] == 1
+    assert sha in engine.game_state.discard_pile

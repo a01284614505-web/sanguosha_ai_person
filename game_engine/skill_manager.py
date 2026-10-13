@@ -414,9 +414,10 @@ class SkillManager:
         """Record an already committed move before any awaited event publication."""
         player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
         if event.reason == "use_card":
-            record_stat(self.engine, player, "cards_played")
+            # 终结对局的杀仍是已提交用牌；投影不能被 game_over 拦掉。
+            self.engine.stats.add(player, "cards_played")
         if self._is_counted_loss(event):
-            record_stat(self.engine, player, "cards_lost")
+            self.engine.stats.add(player, "cards_lost")
 
     async def on_card_move(self, card, event, *, stats_recorded=False):
         """Project statistics and skill hooks from one committed movement fact."""

@@ -56,6 +56,106 @@ class CardSystem:
         # 场外响应决策器，由引擎注入。为 None 时一律视为「不响应」，老调用点不会崩。
         self.responder = responder
         self.engine = engine
+
+    async def on_equipment_left(self, owner, card, move):
+        """装备离区后结算白银狮子；死亡清牌不再恢复已死亡角色。"""
+        if card.name == "木牛流马":
+            # 只有宝物从装备区直接进入另一人的装备区，扣置牌才随之移动。
+            recipient = next((p for p in self.game_state.players
+                              if p.id == move.to_owner), None) if move.to_zone == "equipment" else None
+            for stored in list(owner.treasure_cards):
+                await self.engine.move_card(
+                    stored, "treasure", "treasure" if recipient else "discard",
+                    from_owner=owner, to_owner=recipient,
+                    reason="muniu_transfer" if recipient else "muniu_lost",
+                    actor_id=owner.id, visibility="owner" if recipient else "public",
+                )
+        if card.name == "白银狮子" and owner.alive and owner.hp < owner.max_hp:
+            owner.hp += 1
+            record_stat(self.engine, owner, "healing", 1)
+            await self.trigger_manager.on_recover(owner, 1, owner, "白银狮子")
+
+    async def _weapon_confirm(self, player, prompt):
+        """可选武器效果由真人决定；AI 在条件成立时使用。"""
+        if self.engine is None:
+            return False
+        return player.is_ai or await self.engine.ask_confirm(player, prompt, default=False)
+
+    async def _weapon_discard_one(self, chooser, owner, reason, *, hand_only=False):
+        """从手牌/装备区选择并弃置一张实体牌，供武器代价与寒冰剑共用。"""
+        places = [(owner, "hand", card) for card in owner.hand]
+        if not hand_only:
+            places.extend((owner, "equipment", card) for card in owner.equipment.values())
+        if not places:
+            return False
+        chosen_card = places[0][2]
+        if self.engine is not None:
+            chosen = await self.engine.ask_choose_cards(
+                chooser, f"【{reason}】：选择{owner.name}的一张牌弃置",
+                [entry[2] for entry in places], min_n=1, max_n=1,
+                zone="mixed", cancelable=False,
+                hidden_indices=[i for i, entry in enumerate(places) if entry[1] == "hand" and chooser is not owner],
+                places=[(entry[0], entry[1]) for entry in places],
+            )
+            if self.engine.game_aborted:
+                return False
+            if chosen and chosen[0] in [entry[2] for entry in places]:
+                chosen_card = chosen[0]
+        zone = next(entry[1] for entry in places if entry[2] is chosen_card)
+        if self.engine is not None:
+            return await self.engine.move_card(
+                chosen_card, zone, "discard", from_owner=owner,
+                reason=reason, actor_id=chooser.id,
+            ) is not None
+        if zone == "hand":
+            owner.hand.remove(chosen_card)
+        else:
+            owner.equipment.pop(next(k for k, v in owner.equipment.items() if v is chosen_card))
+        self.game_state.discard_pile.append(chosen_card)
+        return True
+
+    async def _cixiong_effect(self, source, target):
+        """雌雄双股剑在指定异性目标时令其弃手牌或让使用者摸牌。"""
+        from .skills_qun import is_male
+        if is_male(source) == is_male(target) or not await self._weapon_confirm(
+            source, "是否发动【雌雄双股剑】？",
+        ):
+            return
+        discard = bool(target.hand) and (target.is_ai or await self.engine.ask_confirm(
+            target, "是否弃一张手牌响应【雌雄双股剑】？否则使用者摸一张牌", default=False,
+        ))
+        if discard and await self._weapon_discard_one(target, target, "雌雄双股剑", hand_only=True):
+            return
+        if self.engine is not None and not self.engine.game_aborted:
+            await self.trigger_manager.draw_cards(source, 1, "雌雄双股剑")
+
+    async def _follow_up_weapon_on_dodge(self, event):
+        """杀被闪抵消后处理贯石斧强制命中与青龙刀追杀。"""
+        source, target = event["player"], event["target"]
+        if not source.alive or not target.alive or (self.engine and self.engine.game_aborted):
+            return
+        weapon = getattr(source.equipment.get("weapon"), "name", None)
+        if weapon == "贯石斧" and len(source.hand) + len(source.equipment) >= 2:
+            if not await self._weapon_confirm(source, "是否弃两张牌发动【贯石斧】？"):
+                return
+            if (await self._weapon_discard_one(source, source, "贯石斧")
+                    and await self._weapon_discard_one(source, source, "贯石斧")):
+                await self.damage(source, target, event.get("resolved_base_damage", 1),
+                                  card=event["card"], context=event)
+        elif weapon == "青龙偃月刀" and await self._weapon_confirm(
+            source, "是否发动【青龙偃月刀】再对同一目标使用一张杀？",
+        ):
+            result = await self.choose_to_respond(
+                source, "【青龙偃月刀】：请选择追加的【杀】",
+                card_filter=lambda c: c.name == "杀", requested_name="杀",
+                context={"source": source, "target": target, "card": event["card"]},
+            )
+            if await self._consume_response(source, result, "青龙偃月刀", {"target": target}):
+                follow = {**event, "card": result["card"], "baseDamage": 1,
+                          "nature": getattr(result["card"], "nature", None)}
+                await self.trigger_manager.before_sha(source, target, result["card"], follow)
+                await self._sha_effect(follow)
+                source.sha_count += 1
     
     async def notify_card_to_discard(self, actor, card, reason="use", card_index=None, message=None):
         if not self.ui_notifier:
@@ -104,7 +204,7 @@ class CardSystem:
         if resolver_name:
             method = getattr(self, resolver_name)
             if resolver_name == "use_sha":
-                return await method(player, card, targets[0] if targets else None,
+                return await method(player, card, targets or [],
                                     effect_context=effect_context)
             if resolver_name in ("use_juedou", "use_nanman", "use_wanjian", "use_taoyuan", "use_wugu"):
                 if group_trick:
@@ -121,8 +221,31 @@ class CardSystem:
         logger.info(f"未实现的卡牌: {card.name}")
         return False
     
-    async def use_sha(self, player, card: Card, target, *, effect_context=None):
+    async def use_sha(self, player, card: Card, target, *, effect_context=None,
+                      _multi_part=False, _wine_bonus=False):
         """使用杀（完整流程）"""
+        if isinstance(target, list):
+            if len(target) == 1:
+                target = target[0]
+            elif (not 2 <= len(target) <= 3
+                  or getattr(player.equipment.get("weapon"), "name", None) != "方天画戟"
+                  or not getattr(effect_context, "last_hand_card", False)
+                  or len({p.id for p in target}) != len(target)):
+                return False
+            else:
+                # 同一张杀按目标顺序结算；酒增伤覆盖所有目标，次数只计一次。
+                wine_bonus = bool(getattr(player, "jiu_buff", False))
+                player.jiu_buff = False
+                for victim in target:
+                    # 第一名目标可能触发即时胜负；对局结束后不可继续结算后续目标。
+                    if self.game_state.game_over:
+                        break
+                    if self.engine is not None and self.engine.game_aborted:
+                        return False
+                    await self.use_sha(player, card, victim, effect_context=effect_context,
+                                       _multi_part=True, _wine_bonus=wine_bonus)
+                player.sha_count += 1
+                return True
         if not target:
             logger.info("杀需要指定目标")
             return False
@@ -137,7 +260,8 @@ class CardSystem:
             return False
         
         # 2. 检查出杀次数
-        if player.sha_count >= player.max_sha:
+        unlimited = getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
+        if not _multi_part and not unlimited and player.sha_count >= player.max_sha:
             logger.info(f"本回合已使用{player.sha_count}次杀")
             return False
         
@@ -145,11 +269,16 @@ class CardSystem:
         target = await self.trigger_manager.before_card_target(player, target, card)
         if not target:
             return False
+        weapon_name = getattr(player.equipment.get("weapon"), "name", None)
+        if weapon_name == "雌雄双股剑":
+            await self._cixiong_effect(player, target)
+            if self.engine is not None and self.engine.game_aborted:
+                return False
         if effect_context is None and self.engine is not None:
             effect_context = self.engine._new_effect_context(player, card, target=target)
         if effect_context is not None:
             effect_context.current_target_id = target.id
-            effect_context.damage_nature = card.nature or card.effect
+            effect_context.damage_nature = card.nature
         event = {
             'name': 'useCard',
             'card': card,
@@ -157,16 +286,21 @@ class CardSystem:
             'target': target,
             'baseDamage': 1,
             'shanRequired': 1,
-            'nature': card.nature or card.effect,
+            'nature': card.nature,
             'effect_context': effect_context,
+            'wine_bonus': _wine_bonus,
         }
+        # 青釭剑只在本次杀的目标结算中忽略防具；朱雀羽扇转化普通杀的属性。
+        event["ignore_armor"] = weapon_name == "青釭剑"
+        if weapon_name == "朱雀羽扇" and not event["nature"]:
+            event["nature"] = "fire"
         
         # 5. 技能修正目标、响应数和伤害后执行杀的效果
         await self.trigger_manager.before_sha(player, target, card, event)
         success = await self._sha_effect(event)
         
         # 6. 增加出杀计数
-        if success:
+        if success and not _multi_part:
             player.sha_count += 1
         
         return success
@@ -177,11 +311,17 @@ class CardSystem:
         target = event['target']
         base_damage = event['baseDamage']
         # 酒杀：伤害+1
-        if hasattr(player, 'jiu_buff') and player.jiu_buff:
+        if event.get("wine_bonus") or (hasattr(player, 'jiu_buff') and player.jiu_buff):
             base_damage += 1
             player.jiu_buff = False
             logger.info(f"  → 酒杀！伤害+1，总计{base_damage}点")
+        event["resolved_base_damage"] = base_damage
         shan_required = event['shanRequired']
+        armor = None if event.get("ignore_armor") else getattr(target.equipment.get("armor"), "name", None)
+        if armor == "仁王盾" and event["card"].suit in ("spade", "club"):
+            return True
+        if armor == "藤甲" and not event.get("nature"):
+            return True
         
     #     logger.info(f"  → 目标: {target.name}")
         
@@ -195,7 +335,8 @@ class CardSystem:
                 f"请使用第{i+1}张闪响应杀",
                 card_filter=lambda c: c.name == '闪',
                 requested_name='闪',
-                context={'source': player, 'target': target, 'card': event['card']}
+                context={'source': player, 'target': target, 'card': event['card'],
+                         'ignore_armor': event.get('ignore_armor', False)}
             )
             if self.engine is not None and self.engine.game_aborted:
                 return False
@@ -217,6 +358,7 @@ class CardSystem:
             # 闪避成功
         #     logger.info(f"  ✓ 闪避成功")
             await self.trigger_manager.on_sha_dodged(player, target, event['card'], event)
+            await self._follow_up_weapon_on_dodge(event)
             return True
         else:
             # 造成伤害
@@ -227,6 +369,9 @@ class CardSystem:
                 effect_context.next_sequence()
                 event["sequence"] = effect_context.sequence
                 event["effect"] = effect_context.to_dict()
+            # 古锭刀在目标没有手牌的伤害结算点增加伤害。
+            if getattr(player.equipment.get("weapon"), "name", None) == "古锭刀" and not target.hand:
+                base_damage += 1
             await self.damage(player, target, base_damage, card=event['card'], context=event)
             return True
     
@@ -247,7 +392,7 @@ class CardSystem:
 
     # ---------- 区域选牌（过河拆桥 / 顺手牵羊共用） ----------
 
-    REGION_SLOTS = ("weapon", "armor", "plus_horse", "minus_horse")
+    REGION_SLOTS = ("weapon", "armor", "plus_horse", "minus_horse", "treasure")
 
     def _region_card_entries(self, target, exclude_protected=False) -> List:
         """目标区域的候选清单：(牌, 区域, 是否对选择者隐藏)。
@@ -358,18 +503,26 @@ class CardSystem:
         if zone == "equipment" and self.trigger_manager.protect_card(target, discarded, "other_discard_equipment"):
             logger.info(f"  → {target.name}的装备受技能保护，不能被弃置")
             return True
-        removed, discarded_index = self._region_remove(target, discarded, zone)
+        discarded_index = target.hand.index(discarded) if zone == "hand" and discarded in target.hand else None
+        if self.engine is not None:
+            removed = await self.engine.move_card(
+                discarded, zone, "discard", from_owner=target,
+                reason="过河拆桥", actor_id=player.id,
+            ) is not None
+        else:
+            removed, _ = self._region_remove(target, discarded, zone)
+            if removed:
+                self.game_state.discard_pile.append(discarded)
         if not removed:
             logger.info(f"  ❌ 过河拆桥复核失败：【{discarded.name}】已不在{target.name}的区域")
             return False
-        self.game_state.discard_pile.append(discarded)
         logger.info(f"  → {target.name} 弃置 {discarded}（{zone}）")
         await self.notify_card_to_discard(
             target, discarded, reason="discard", card_index=discarded_index,
             message=f"{target.name}因【过河拆桥】弃置【{discarded.name}】"
         )
         # 判定区牌不是目标自己的资源：只走弃牌展示，不计失去牌。
-        if zone != "judge":
+        if zone != "judge" and self.engine is None:
             await self.trigger_manager.on_cards_lost(target, [discarded], "过河拆桥")
         await self.trigger_manager.on_card_discarded(target, discarded, "过河拆桥")
         return True
@@ -394,14 +547,21 @@ class CardSystem:
         if chosen is None:
             return False
         gained, zone = chosen
-        removed, _index = self._region_remove(target, gained, zone)
+        if self.engine is not None:
+            removed = await self.engine.move_card(
+                gained, zone, "hand", from_owner=target, to_owner=player,
+                reason="顺手牵羊", actor_id=player.id, visibility="owner",
+            ) is not None
+        else:
+            removed, _index = self._region_remove(target, gained, zone)
+            if removed:
+                player.hand.append(gained)
         if not removed:
             logger.info(f"  ❌ 顺手牵羊复核失败：【{gained.name}】已不在{target.name}的区域")
             return False
-        player.hand.append(gained)
         logger.info(f"  → {player.name} 获得 {target.name} 的{gained}（{zone}）")
         # 判定区牌不是目标自己的资源：不计失去牌。
-        if zone != "judge":
+        if zone != "judge" and self.engine is None:
             await self.trigger_manager.on_cards_lost(target, [gained], "顺手牵羊")
         await self.trigger_manager.on_card_gained(player, [gained], "顺手牵羊")
         # 真人参与时明牌告知获得的牌；纯 AI 之间保持隐藏信息不落地到日志。
@@ -427,6 +587,14 @@ class CardSystem:
                     "card": card, "card_index": index, "owner": player,
                     "as_name": card.name, "skill_name": None,
                 })
+        if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+            for index, card in enumerate(player.treasure_cards):
+                if card_filter(card):
+                    options.append({
+                        "card": card, "card_index": len(player.hand) + index,
+                        "owner": player, "source_zone": "treasure",
+                        "as_name": card.name, "skill_name": None,
+                    })
 
         skill_options = self.trigger_manager.response_options(player, requested_name) if requested_name else []
         for option in skill_options:
@@ -457,6 +625,20 @@ class CardSystem:
     async def choose_to_respond(self, player, prompt: str, card_filter: Callable,
                                 requested_name=None, context=None, kind="respond"):
         """选择响应（核心方法）：引擎算候选 → 真人或AI从候选里挑 → 引擎复核后返回。"""
+        if (requested_name == "闪" and self.engine is not None
+                and not (context or {}).get("ignore_armor")
+                and getattr(player.equipment.get("armor"), "name", None) == "八卦阵"
+                and self.game_state.deck):
+            # 八卦阵先判定；失败后仍可使用手牌中的闪。
+            activate = player.is_ai or await self.engine.ask_confirm(
+                player, "是否发动【八卦阵】判定？", default=False,
+            )
+            if activate:
+                judged = await self.trigger_manager.judge(player, "八卦阵")
+                if judged is not None and judged.suit in ("heart", "diamond"):
+                    return {"bool": True, "virtual": True,
+                            "card": Card(f"bagua:{judged.id}", "闪", judged.suit, judged.rank, "basic"),
+                            "as_name": "闪", "owner": player}
         options = self.build_response_options(player, card_filter, requested_name)
         if not options:
             logger.info(f"  → {player.name} 没有符合条件的牌")
@@ -529,6 +711,21 @@ class CardSystem:
             return
         context = context or {}
         nature = context.get("nature") or getattr(card, "nature", None)
+        armor = None if context.get("ignore_armor") else getattr(target.equipment.get("armor"), "name", None)
+        # 防具在伤害修正前结算，后续技能仍可对修正值继续处理。
+        if armor == "藤甲" and nature == "fire":
+            amount += 1
+        if armor == "白银狮子":
+            amount = min(amount, 1)
+        if (source is not None and source is not target and card is not None
+                and card.name == "杀" and not context.get("chain_transfer")
+                and getattr(source.equipment.get("weapon"), "name", None) == "寒冰剑"
+                and (target.hand or target.equipment)
+                and await self._weapon_confirm(source, "是否发动【寒冰剑】防止伤害并弃置目标两张牌？")):
+            for _ in range(2):
+                if not await self._weapon_discard_one(source, target, "寒冰剑"):
+                    break
+            return
         # 同一次属性伤害共享已访问集合；每名横置角色最多承受一次传导。
         chain_visited = context.setdefault("_chain_visited", set()) if nature in ("fire", "thunder") else None
         if chain_visited is not None and target.id in chain_visited:
@@ -566,6 +763,19 @@ class CardSystem:
             await self.trigger_manager.after_damage(source, target, amount, card, context)
             if self.engine is not None and self.engine.game_aborted:
                 return
+            if (source is not None and source is not target and card is not None
+                    and card.name == "杀" and not context.get("chain_transfer")
+                    and getattr(source.equipment.get("weapon"), "name", None) == "麒麟弓"):
+                mounts = [target.equipment.get(slot) for slot in ("plus_horse", "minus_horse")
+                          if target.equipment.get(slot) is not None]
+                if mounts and await self._weapon_confirm(source, "是否发动【麒麟弓】弃置目标坐骑？"):
+                    chosen = mounts[0]
+                    if self.engine is not None:
+                        await self.engine.move_card(chosen, "equipment", "discard",
+                                                    from_owner=target, reason="麒麟弓", actor_id=source.id)
+                    else:
+                        target.equipment.pop(next(k for k, v in target.equipment.items() if v is chosen))
+                        self.game_state.discard_pile.append(chosen)
             
             # 检查濒死
             if target.hp <= 0:
@@ -613,7 +823,9 @@ class CardSystem:
                     continue
                 card = result.get('card')
                 owner = result.get('owner') or rescuer
-                if not card or card not in owner.hand:
+                source_zone = result.get("source_zone", "hand")
+                source_cards = owner.treasure_cards if source_zone == "treasure" else owner.hand
+                if not card or card not in source_cards:
                     continue
                 if not await self._consume_response(
                     rescuer, result, "dying_rescue", {"target": player, "owner": owner},
@@ -650,7 +862,8 @@ class CardSystem:
         zones = [("hand", list(player.hand)), ("equipment", list(player.equipment.values()))]
         if include_judge:
             zones.extend((("judge", list(player.judge_area)),
-                          ("shown", list(player.shown)), ("temporary", list(player.temporary))))
+                          ("shown", list(player.shown)), ("temporary", list(player.temporary)),
+                          ("treasure", list(player.treasure_cards))))
         for zone, cards in zones:
             for card in cards:
                 if self.engine is not None:
@@ -662,7 +875,8 @@ class CardSystem:
                         continue
                 else:
                     container = player.equipment if zone == "equipment" else (
-                        player.judge_area if zone == "judge" else getattr(player, zone)
+                        player.judge_area if zone == "judge" else (
+                            player.treasure_cards if zone == "treasure" else getattr(player, zone))
                     )
                     if zone == "equipment":
                         slot = next((key for key, value in container.items() if value is card), None)
@@ -791,21 +1005,30 @@ class CardSystem:
         """Move one validated response card exactly once and notify its hooks."""
         if not result or not result.get("bool") or (self.engine and self.engine.game_aborted):
             return False
+        if result.get("virtual"):
+            # 八卦阵视为打出闪，判定牌本身已经处理，不再消费手牌实体。
+            await self.trigger_manager.on_card_responded(
+                responder, result["card"], result.get("as_name") or "闪",
+                {**context, "owner": responder},
+            )
+            return True
         card = result.get("card")
         owner = result.get("owner") or responder
-        if card is None or card not in owner.hand:
+        source_zone = result.get("source_zone", "hand")
+        source_cards = owner.treasure_cards if source_zone == "treasure" else owner.hand
+        if card is None or card not in source_cards:
             return False
-        index = owner.hand.index(card)
+        index = source_cards.index(card)
         if self.engine is not None:
             move = await self.engine.move_card(
-                card, "hand", "discard", from_owner=owner,
+                card, source_zone, "discard", from_owner=owner,
                 reason="respond", actor_id=owner.id,
                 effect_id=getattr(context.get("effect_context"), "effect_id", None),
             )
             if move is None:
                 return False
         else:
-            owner.hand.remove(card)
+            source_cards.remove(card)
             self.game_state.discard_pile.append(card)
             await self.trigger_manager.on_cards_lost(owner, [card], reason)
         await self.notify_card_to_discard(owner, card, "respond", index,
@@ -878,6 +1101,9 @@ class CardSystem:
             if self.engine is not None and self.engine.game_aborted:
                 return False
             if not victim.alive:
+                continue
+            # 藤甲令南蛮与万箭对该目标无效，无需索取响应牌。
+            if getattr(victim.equipment.get("armor"), "name", None) == "藤甲":
                 continue
             if effect_context is not None:
                 effect_context.current_target_id = victim.id
@@ -1027,9 +1253,17 @@ class CardSystem:
             await self._sha_effect(event)
             return True
 
-        weapon_owner.equipment.pop("weapon")
-        player.hand.append(weapon)
-        await self.trigger_manager.on_cards_lost(weapon_owner, [weapon], "借刀杀人")
+        if self.engine is not None:
+            if await self.engine.move_card(
+                weapon, "equipment", "hand", from_owner=weapon_owner,
+                to_owner=player, reason="借刀杀人", actor_id=player.id,
+                visibility="owner",
+            ) is None:
+                return False
+        else:
+            weapon_owner.equipment.pop("weapon")
+            player.hand.append(weapon)
+            await self.trigger_manager.on_cards_lost(weapon_owner, [weapon], "借刀杀人")
         await self.trigger_manager.on_card_gained(player, [weapon], "借刀杀人")
         return True
 
@@ -1101,12 +1335,89 @@ class CardSystem:
             return False
         old = player.equipment.get(slot)
         if old:
-            player.equipment.pop(slot)
-            self.game_state.discard_pile.append(old)
+            if self.engine is not None:
+                moved = await self.engine.move_card(
+                    old, "equipment", "discard", from_owner=player,
+                    reason="equipment_replaced", actor_id=player.id,
+                )
+                if moved is None:
+                    return False
+            else:
+                player.equipment.pop(slot)
+                self.game_state.discard_pile.append(old)
+                await self.trigger_manager.on_cards_lost(player, [old], "装备替换")
             await self.notify_card_to_discard(player, old, "discard",
                                                message=f"{player.name}弃置旧装备【{old.name}】")
-            await self.trigger_manager.on_cards_lost(player, [old], "装备替换")
             await self.trigger_manager.on_card_discarded(player, old, "装备替换")
-        player.equipment[slot] = card
+        # execute_action 先把所用实体牌送入弃牌区；装备成功后必须再次原子移动。
+        if self.engine is not None and card in self.game_state.discard_pile:
+            moved = await self.engine.move_card(
+                card, "discard", "equipment", to_owner=player, to_slot=slot,
+                reason="equip", actor_id=player.id,
+            )
+            if moved is None:
+                return False
+        else:
+            player.equipment[slot] = card
         logger.info(f"  → {player.name} 装备【{card.name}】（{slot}槽）")
         return True
+
+    async def store_muniu(self, player, card_index: int):
+        """出牌阶段限一次扣置一张手牌，并可把宝物连同扣置牌交给别人。"""
+        if (self.engine is None or self.engine.game_aborted
+                or getattr(player.equipment.get("treasure"), "name", None) != "木牛流马"
+                or player.flags.get("muniu_stored_this_turn")
+                or not isinstance(card_index, int) or not 0 <= card_index < len(player.hand)):
+            return False
+        stored = player.hand[card_index]
+        move = await self.engine.move_card(
+            stored, "hand", "treasure", from_owner=player, to_owner=player,
+            reason="muniu_store", actor_id=player.id, visibility="owner",
+        )
+        if move is None:
+            return False
+        player.flags["muniu_stored_this_turn"] = True
+        recipients = [p for p in self.game_state.players if p.alive and p is not player
+                      and "treasure" not in p.equipment]
+        if not recipients or self.engine.game_aborted:
+            return True
+        chosen = await self.engine.ask_choose_players(
+            player, "是否将【木牛流马】移动给另一名角色？", recipients,
+            min_n=0, max_n=1, cancelable=True,
+        )
+        if self.engine.game_aborted:
+            return True
+        recipient = chosen[0] if chosen and chosen[0] in recipients else None
+        if recipient is not None:
+            await self.engine.move_card(
+                player.equipment["treasure"], "equipment", "equipment",
+                from_owner=player, to_owner=recipient, to_slot="treasure",
+                reason="muniu_give", actor_id=player.id,
+            )
+        return True
+
+    async def use_zhangba(self, player, indices, target):
+        """丈八蛇矛将两张真实手牌作为一次虚拟杀的代价。"""
+        if (self.engine is None or self.engine.game_aborted or target is None
+                or getattr(player.equipment.get("weapon"), "name", None) != "丈八蛇矛"
+                or len(indices) != 2 or indices[0] == indices[1]
+                or any(not isinstance(i, int) or not 0 <= i < len(player.hand) for i in indices)):
+            return False
+        costs = [player.hand[i] for i in indices]
+        colors = {"red" if card.suit in ("heart", "diamond") else "black" for card in costs}
+        suit = costs[0].suit if len(colors) == 1 else "none"
+        virtual = Card(f"zhangba:{costs[0].id}:{costs[1].id}", "杀", suit, 1, "basic")
+        if not self.engine.rules.can_play_sha(player, virtual, [target])[0]:
+            return False
+        context = self.engine._new_effect_context(
+            player, virtual, skill_source="丈八蛇矛",
+            card_cost_ids=[cost.id for cost in costs], target=target,
+        )
+        for cost in costs:
+            if await self.engine.move_card(cost, "hand", "discard", from_owner=player,
+                                           reason="use_card", actor_id=player.id,
+                                           effect_id=context.effect_id) is None:
+                return False
+        if self.engine.game_aborted:
+            return False
+        return await self.use_sha(player, virtual, target, effect_context=context)

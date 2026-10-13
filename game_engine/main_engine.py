@@ -2,6 +2,7 @@
 """主游戏引擎 v2：引擎生成合法操作，玩家或AI只能从中选择。"""
 
 import asyncio
+from itertools import combinations, permutations
 import logging
 import random
 import time
@@ -165,6 +166,9 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.CARD_MOVE, move=event_data)
         if project:
             await self.skill_manager.on_card_move(card, event, stats_recorded=True)
+        if from_zone == "equipment" and from_owner is not None:
+            # 防具/宝物失去装备区的效果观察同一条已提交移动事实。
+            await self.card_system.on_equipment_left(from_owner, card, event)
         return event
 
     async def _notify_card_ui(self, **data):
@@ -227,6 +231,7 @@ class MainEngine:
                     "hp": p.hp,
                     "max_hp": p.max_hp,
                     "hand_count": len(p.hand),
+                    "treasure_count": len(p.treasure_cards),
                     "alive": p.alive,
                     "hero_name": self._hero_name(p),
                     "hero": {
@@ -270,10 +275,13 @@ class MainEngine:
         }
 
     def get_player_hand(self, player: Player) -> List[Dict]:
-        return [
-            {**card_to_dict(c), "index": i, "target_rule": c.target_rule or {}}
-            for i, c in enumerate(player.hand)
-        ]
+        # 扣置牌仅向当前宝物拥有者开放，按独立牌区标记，不增加手牌数。
+        cards = [(card, "hand") for card in player.hand]
+        if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+            cards.extend((card, "treasure") for card in player.treasure_cards)
+        return [{**card_to_dict(card), "index": index, "zone": zone,
+                 "target_rule": card.target_rule or {}}
+                for index, (card, zone) in enumerate(cards)]
 
     # ---------- 主流程 ----------
 
@@ -637,8 +645,11 @@ class MainEngine:
         if not getattr(owner, "alive", True):
             logger.info(f"  ❌ 响应复核失败：{getattr(owner, 'name', '?')} 已阵亡")
             return {"bool": False}
-        if card not in owner.hand:
-            logger.info(f"  ❌ 响应复核失败：【{card.name}】已不在 {owner.name} 手上")
+        source_zone = option.get("source_zone", "hand")
+        source_cards = owner.treasure_cards if source_zone == "treasure" else owner.hand
+        if card not in source_cards or (source_zone == "treasure" and getattr(
+                owner.equipment.get("treasure"), "name", None) != "木牛流马"):
+            logger.info(f"  ❌ 响应复核失败：【{card.name}】已不在 {owner.name} 的合法牌区")
             return {"bool": False}
         as_name = option.get("as_name") or card.name
         requested = request.get("requested_name")
@@ -651,6 +662,7 @@ class MainEngine:
             "owner": owner,
             "as_name": as_name,
             "skill_name": option.get("skill_name"),
+            "source_zone": source_zone,
         }
 
     @staticmethod
@@ -661,7 +673,8 @@ class MainEngine:
         chosen = options[index] if isinstance(index, int) and 0 <= index < len(options) else None
         card = (chosen or {}).get("card")
         owner = (chosen or {}).get("owner") or player
-        return "stale" if card is not None and card not in owner.hand else "resolved"
+        source_cards = owner.treasure_cards if (chosen or {}).get("source_zone") == "treasure" else owner.hand
+        return "stale" if card is not None and card not in source_cards else "resolved"
 
     async def _ask_index(self, player: Player, request: Dict, resolver) -> Any:
         """共用询问机制：人/AI分派 + 超时托管 + 回灌。resolver 决定如何验证原始索引。"""
@@ -744,6 +757,9 @@ class MainEngine:
             return False
         if zone == "hand":
             return card in owner.hand
+        if zone == "treasure":
+            return card in owner.treasure_cards and getattr(
+                owner.equipment.get("treasure"), "name", None) == "木牛流马"
         if zone == "equipment":
             return card in owner.equipment.values()
         if zone == "judge":
@@ -1374,7 +1390,10 @@ class MainEngine:
         if self.game_state.current_phase != Phase.PLAY or player != self.game_state.current_player or not player.alive:
             return [{"type": "end_phase"}]
 
-        for i, card in enumerate(player.hand):
+        playable_cards = list(player.hand)
+        if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+            playable_cards.extend(player.treasure_cards)
+        for i, card in enumerate(playable_cards):
             spec = CARD_TABLE.get(card.name)
             # 只能响应/未实现的牌不作为合法操作暴露（闪、无懈、未实现锦囊、装备）。
             if spec and spec.usage in ("response", "unimplemented"):
@@ -1416,6 +1435,18 @@ class MainEngine:
                     if can_play:
                         valid.append(target.id)
                 if valid:
+                    if (card.name == "杀" and i < len(player.hand)
+                            and len(player.hand) == 1
+                            and getattr(player.equipment.get("weapon"), "name", None) == "方天画戟"):
+                        groups = [list(group) for count in range(1, min(3, len(valid)) + 1)
+                                  for group in permutations(valid, count)]
+                        actions.append({"type": "play_card", "card_index": i,
+                                        "card": card_to_dict(card, include_id=False),
+                                        "requires_target": True, "target_count": 3,
+                                        "min_target_count": 1,
+                                        "valid_target_groups": groups,
+                                        "valid_targets": valid})
+                        continue
                     actions.append(
                         {
                             "type": "play_card",
@@ -1439,6 +1470,28 @@ class MainEngine:
                     }
                 )
 
+        # 木牛流马存牌是装备主动操作，输入索引始终指向真正手牌。
+        if (getattr(player.equipment.get("treasure"), "name", None) == "木牛流马"
+                and not player.flags.get("muniu_stored_this_turn")):
+            for i in range(len(player.hand)):
+                actions.append({"type": "use_skill", "skill_name": "木牛流马",
+                                "variant": "store", "card_indices": [i],
+                                "requires_target": False, "valid_targets": [],
+                                "text": "将一张手牌扣置于木牛流马"})
+        if (getattr(player.equipment.get("weapon"), "name", None) == "丈八蛇矛"
+                and player.sha_count < player.max_sha):
+            # 每组双牌代价都用同一合法杀目标校验，避免技能按钮绕过射程。
+            for first, second in combinations(range(len(player.hand)), 2):
+                virtual = Card(f"zhangba:{player.hand[first].id}:{player.hand[second].id}",
+                               "杀", "none", 1, "basic")
+                valid = [target.id for target in self.game_state.players
+                         if target.alive and target is not player
+                         and self.rules.can_play_sha(player, virtual, [target])[0]]
+                if valid:
+                    actions.append({"type": "use_skill", "skill_name": "丈八蛇矛",
+                                    "variant": "as_sha", "card_indices": [first, second],
+                                    "requires_target": True, "valid_targets": valid,
+                                    "text": "将两张手牌当【杀】使用"})
         # 只有运行状态为active且满足当前条件的技能才作为合法操作暴露。
         actions.extend(self.skill_manager.get_actions(player))
         actions.append({"type": "end_phase"})
@@ -1453,9 +1506,14 @@ class MainEngine:
         try:
             if action_type == "play_card":
                 card_index = action.get("card_index")
-                if not isinstance(card_index, int) or not 0 <= card_index < len(player.hand):
+                playable_cards = list(player.hand)
+                if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+                    playable_cards.extend(player.treasure_cards)
+                if not isinstance(card_index, int) or not 0 <= card_index < len(playable_cards):
                     return False
-                card = player.hand[card_index]
+                card = playable_cards[card_index]
+                source_zone = "hand" if card_index < len(player.hand) else "treasure"
+                source_index = card_index if source_zone == "hand" else card_index - len(player.hand)
                 target_ids = target_ids or []
                 players_by_id = {p.id: p for p in self.game_state.players}
                 targets = [players_by_id[pid] for pid in target_ids if pid in players_by_id]
@@ -1468,6 +1526,7 @@ class MainEngine:
                 effect_context = self._new_effect_context(
                     player, card, target=targets[0] if targets else None,
                 )
+                effect_context.last_hand_card = source_zone == "hand" and len(player.hand) == 1
                 await self._notify_card_ui(
                     message=f"{player.name}使用【{card.name}】"
                     + (f"，目标：{'、'.join(t.name for t in targets)}" if targets else ""),
@@ -1486,7 +1545,7 @@ class MainEngine:
                 if self.game_aborted:
                     return False
                 move = await self.move_card(
-                    card, "hand", "discard", from_owner=player,
+                    card, source_zone, "discard", from_owner=player,
                     reason="use_card", actor_id=player.id,
                     effect_id=effect_context.effect_id, project=False,
                 )
@@ -1495,21 +1554,23 @@ class MainEngine:
                 success = await self.card_system.use_card(
                     player, card, targets, effect_context=effect_context,
                 )
-                if self.game_aborted:
+                # 正常击杀可在此处结束对局；已提交的用牌仍应计入统计并回报成功。
+                if self._abort_reason:
                     return False
                 if not success:
                     await self.move_card(
-                        card, "discard", "hand", to_owner=player,
+                        card, "discard", source_zone, to_owner=player,
                         reason="use_card_failed", actor_id=player.id,
                         effect_id=effect_context.effect_id, project=False,
-                        to_index=card_index,
+                        to_index=source_index,
                     )
                 if success:
                     await self.skill_manager.on_card_move(card, move)
                     # 延时锦囊与装备已离开弃牌区，不触发“被弃置”技能。
-                    if card in self.game_state.discard_pile:
+                    if not self.game_state.game_over and card in self.game_state.discard_pile:
                         await self.skill_manager.on_card_discarded(player, card, "use_card")
-                await self.skill_manager.after_card_used(player, card, targets, success)
+                if not self.game_state.game_over:
+                    await self.skill_manager.after_card_used(player, card, targets, success)
                 return success
 
             if action_type == "use_skill":
@@ -1531,6 +1592,11 @@ class MainEngine:
                 else:
                     target_ids = []
                 targets = [p for p in self.game_state.players if p.id in target_ids]
+                if legal.get("skill_name") == "木牛流马" and legal.get("variant") == "store":
+                    return await self.card_system.store_muniu(player, legal["card_indices"][0])
+                if legal.get("skill_name") == "丈八蛇矛" and legal.get("variant") == "as_sha":
+                    return await self.card_system.use_zhangba(player, legal["card_indices"],
+                                                              targets[0] if targets else None)
                 return await self.skill_manager.execute(player, legal, targets)
 
             if action_type == "end_phase":

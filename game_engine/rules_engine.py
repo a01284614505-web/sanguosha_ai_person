@@ -30,10 +30,13 @@ class RulesEngine:
         if player != self.game_state.current_player:
             return False, "不是你的回合"
         
-        # 3. 检查卡牌是否在手牌中
-        if card not in player.hand:
-            return False, "卡牌不在手中"
-        if getattr(player, "flags", {}).get("cannot_use_hand"):
+        # 宝物扣置牌可如手牌使用，但仍保留独立牌区，不计手牌数。
+        in_hand = card in player.hand
+        in_treasure = (card in player.treasure_cards and
+                       getattr(player.equipment.get("treasure"), "name", None) == "木牛流马")
+        if not in_hand and not in_treasure:
+            return False, "卡牌不在可用牌区"
+        if in_hand and getattr(player, "flags", {}).get("cannot_use_hand"):
             return False, "受技能影响，本回合不能使用或打出手牌"
         
         # 4. 根据卡牌类型检查（单一来源：CARD_TABLE 的 card_type/usage/resolver）
@@ -52,7 +55,9 @@ class RulesEngine:
     def can_play_sha(self, player, card, targets: List) -> Tuple[bool, str]:
         """检查是否可以出杀"""
         # 1. 检查出杀次数
-        if player.sha_count >= player.max_sha:
+        # 连弩仅放宽当前装备者的出杀次数；卸下后立即回到原限额。
+        unlimited = getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
+        if not unlimited and player.sha_count >= player.max_sha:
             return False, f"本回合已使用{player.sha_count}次杀"
         
         # 2. 检查目标
@@ -60,7 +65,16 @@ class RulesEngine:
             return False, "杀需要指定目标"
         
         if len(targets) > 1:
-            return False, "杀只能指定1个目标"
+            # 方天画戟只在使用最后一张手牌时扩至三人；逐目标仍过常规合法性。
+            fangtian = getattr(player.equipment.get("weapon"), "name", None) == "方天画戟"
+            if (not fangtian or len(targets) > 3 or len(player.hand) != 1
+                    or player.hand[0] is not card or len({p.id for p in targets}) != len(targets)):
+                return False, "方天画戟需要最后一张手牌且至多三名不同目标"
+            for target in targets:
+                legal, reason = self.can_play_sha(player, card, [target])
+                if not legal:
+                    return False, reason
+            return True, "OK"
         
         target = targets[0]
         

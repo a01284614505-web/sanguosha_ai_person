@@ -442,6 +442,12 @@ class AIDecision:
     def _normalize_targets(self, action: Dict, requested: Any, player) -> List[int]:
         if not action.get("requires_target"):
             return []
+        if action.get("valid_target_groups"):
+            # 方天画戟的整个有序目标组必须来自引擎候选，不接受自行拼接。
+            groups = [list(group) for group in action["valid_target_groups"]]
+            if isinstance(requested, list) and requested in groups:
+                return requested
+            return groups[0]
         if action.get("target_count") == 2:
             pairs = [list(pair) for pair in action.get("valid_target_pairs", [])]
             if isinstance(requested, list):

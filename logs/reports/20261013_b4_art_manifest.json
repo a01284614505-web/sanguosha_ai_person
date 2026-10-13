@@ -1,0 +1,210 @@
+[
+  {
+    "name": "诸葛连弩",
+    "image": "zhuge",
+    "generated_file": "exec-98f96053-71fc-4c34-9272-c6cb199fc094.png",
+    "generated_sha256": "a127f21fa80b567f5e336cc4d54af20776d552980f21d9e388d988c53bea7d3f",
+    "project_sha256": "bab6cd8bc0fe323bbeea1b5a98229bc1bff1552df442e6246201246d5076fd01",
+    "size": 147669
+  },
+  {
+    "name": "雌雄双股剑",
+    "image": "cixiong",
+    "generated_file": "exec-27fb675a-316d-4be8-a83d-625b010ac74e.png",
+    "generated_sha256": "756683fed13b85fd20a704d7d81759b92736520be8a5180444409dc18f3e05e4",
+    "project_sha256": "28d1ef70cacdefe730d22d525f765613f3da90b357fe6e7f0afea67b2b38c059",
+    "size": 147956
+  },
+  {
+    "name": "青釭剑",
+    "image": "qinggang",
+    "generated_file": "exec-08e3fa1d-b417-4467-83d8-2efb75f1ba04.png",
+    "generated_sha256": "8c7e632ac0de4ff17d8cb1387d65db48765ef78f8ad0ac859ec11f8f177605ea",
+    "project_sha256": "ff9309b0544e15da2119a1048d25acf5c0547bca33eb571dc08baf74bd176627",
+    "size": 145904
+  },
+  {
+    "name": "寒冰剑",
+    "image": "hanbing",
+    "generated_file": "exec-5dd208fb-dda5-4866-9ca2-be31925bad2b.png",
+    "generated_sha256": "5b49719db17d2087be44bf4026f68dc6c8dabce01655f278243b0f9d9d8b79ea",
+    "project_sha256": "3c17cad78f3969081a807e0936aaf1a1d1b694043707ba429efaa5fad033b37a",
+    "size": 156652
+  },
+  {
+    "name": "青龙偃月刀",
+    "image": "qinglong",
+    "generated_file": "exec-50c901b6-ee13-44b1-bba2-96383ad356fe.png",
+    "generated_sha256": "5bdfe8bda52725f32d00a717770b5f31e435f2138f242ca8686dde58d13a8c8e",
+    "project_sha256": "eeb868bba9cca2f5fe6377058f3448ed5960203d55b8cea78ed6001dec574e3d",
+    "size": 125289
+  },
+  {
+    "name": "丈八蛇矛",
+    "image": "zhangba",
+    "generated_file": "exec-a2c5d9d6-8636-4ba6-8ce8-be2723ec8ab6.png",
+    "generated_sha256": "c7335361759aec740581c7b027f2a40ff0ee92dbbc008955709cb95d28765d08",
+    "project_sha256": "953ff62d1d4d9349b12133332602301a709bacd1173c978cb78506cb36cf2d41",
+    "size": 146043
+  },
+  {
+    "name": "贯石斧",
+    "image": "guanshi",
+    "generated_file": "exec-2e0c88f9-096a-481a-ae62-150b29e46a77.png",
+    "generated_sha256": "7f35db9f1753f5ae1379071c06fb92f0fb12928ad8654fec9e5038dd9af623ba",
+    "project_sha256": "c0beaba6e8d0e0b9fd9d6e3b68d63601423c26eb9093b36af829f103ae8f0f93",
+    "size": 156528
+  },
+  {
+    "name": "方天画戟",
+    "image": "fangtian",
+    "generated_file": "exec-c9df762c-8a64-4989-93d0-2072b0ff51d2.png",
+    "generated_sha256": "d79b35a2388e76cd36fc246047d80bcd6a34dd96f17617449b4d1505e411836b",
+    "project_sha256": "2e76ba3191cf3172e51acc224ea78422cf3eb386d3ec927e1ec626fac746298c",
+    "size": 139560
+  },
+  {
+    "name": "麒麟弓",
+    "image": "qilin",
+    "generated_file": "exec-154d1a08-3ada-4ffe-9606-88f2da3c5201.png",
+    "generated_sha256": "63e59644481b37686f88349a1ceea0ccfcd8af728207aaf46c8c6392db5883f9",
+    "project_sha256": "46105a877086c3670f20526007c5aff250d87e0c1cf9407ce5d98877d3b7c334",
+    "size": 129446
+  },
+  {
+    "name": "古锭刀",
+    "image": "guding",
+    "generated_file": "exec-96342128-118a-4dbe-96c1-9fc7a7cf03be.png",
+    "generated_sha256": "5882f01e8e0e972eb29bd1e5b00c63657b3cf48103c82290e7bc11cc02297338",
+    "project_sha256": "7751a021645cc4e741b22f261423cd5fb6c40ff34e6d57208b6c8abadca86611",
+    "size": 148318
+  },
+  {
+    "name": "朱雀羽扇",
+    "image": "zhuque",
+    "generated_file": "exec-922f8201-b8a4-4531-817b-c9c56f4b6369.png",
+    "generated_sha256": "8e8177b0ea650c1e9494d2ac72d6a71638a992341b822ad93bb0224c4f56838e",
+    "project_sha256": "295e64ef13527ceaaded9c4cdfe89eb384aedf4665e9a27e432cc5e1bfe7aabf",
+    "size": 147301
+  },
+  {
+    "name": "八卦阵",
+    "image": "bagua",
+    "generated_file": "exec-9f2b07a0-706c-4bb4-81d3-ffbefa1e65b7.png",
+    "generated_sha256": "c837e691cdc2fee77f26e644d71d71c068a6bd4fb27a8bde85b733c1ca2aa10e",
+    "project_sha256": "3ca976bacd5c0027cb545ed7fcdfa196882f03a9dbcd37fe7dad5a11ddf1c463",
+    "size": 160341
+  },
+  {
+    "name": "仁王盾",
+    "image": "renwang",
+    "generated_file": "exec-fe3455b8-f5ed-4951-bfc8-405c44d3cfd8.png",
+    "generated_sha256": "ca10c131a818bbb09c2cdc86b29f1aae294d9132605bc3391fbf9670f1348775",
+    "project_sha256": "cc6f003a0128dbe2115c91b6bc8ce13fbd5f076a980a3d7b81ae99741d8582c9",
+    "size": 151465
+  },
+  {
+    "name": "白银狮子",
+    "image": "baiyin",
+    "generated_file": "exec-ded52e0a-ba98-4a2a-b6d4-76eec4e481bd.png",
+    "generated_sha256": "a87327f0a466f582cca2770ea6f8f3536ff4304000dcfb4ecc3aede1c8d9f010",
+    "project_sha256": "60e103310cfa018f5e368f9693386fa9cb55280c1188e27160579a823a0a1b44",
+    "size": 158213
+  },
+  {
+    "name": "藤甲",
+    "image": "tengjia",
+    "generated_file": "exec-def13541-e437-49fd-bd79-d352d63f0c03.png",
+    "generated_sha256": "77f42ce5ec4240522dfdadc3da2cb59ac5d1bbe9e6082cdb96d58c21443af9b8",
+    "project_sha256": "5f62dc4caee5ec52c6a557b2fd20025a0012ea00bc092670438cde0e90d65980",
+    "size": 154096
+  },
+  {
+    "name": "木牛流马",
+    "image": "muniu",
+    "generated_file": "exec-35e18758-31ee-46ec-9c29-a03de2821615.png",
+    "generated_sha256": "e2f5825322c12bccf5a4a84b8f88b68628e6c2db3c78874683406476c4dfa37a",
+    "project_sha256": "258d79b4ed1a1d7b7ea96984cde990e66ddb943d9561e74b09597b161ee48fd6",
+    "size": 166783
+  },
+  {
+    "name": "绝影",
+    "image": "jueying",
+    "generated_file": "exec-ca28776e-71ca-45f0-a534-5fa862bea064.png",
+    "generated_sha256": "d9a34af20d2a1d105142806b6c3d02dadf24f381d38df695986f756fba9a2c27",
+    "project_sha256": "bbc6c2a45c4dc46620d520b6a89cb3dbb4e64c43b36ab0c425344f2fb5ff2955",
+    "size": 160842
+  },
+  {
+    "name": "的卢",
+    "image": "dilu",
+    "generated_file": "exec-9bd87703-fa7c-46e6-924e-e04bd5c0ad5b.png",
+    "generated_sha256": "06b7db7ac79d87389be92709c66cc84b54750425a1d08e759b1b1a5c5c6df137",
+    "project_sha256": "65f4ebe6bc741e17ba0f0e7eca287017257fe2b32f63fa1a8bb09f471c035474",
+    "size": 173696
+  },
+  {
+    "name": "爪黄飞电",
+    "image": "zhuahuang",
+    "generated_file": "exec-6ebf7bc8-7d9e-42ae-9dc1-9816d1d0e8be.png",
+    "generated_sha256": "a283a830ca33d81f48ccb2fe65c2a9b6c23718b7e93b9d20abf1dc8cad4aef64",
+    "project_sha256": "a96055c9f1d2a4e18fc3b069ce30c52034e0df1814d1c2e43beb06fb6cf994e9",
+    "size": 165737
+  },
+  {
+    "name": "赤兔",
+    "image": "chitu",
+    "generated_file": "exec-0e83a3b8-da39-4c53-a37e-77ff035df4ad.png",
+    "generated_sha256": "4d7d4d2647ba410eb3a01f60745c8ff354374b6f8922e2fbbad99de0386b8220",
+    "project_sha256": "a51d1b96b3519170d4bad75208df771be5742b389d6160e8d206b74a4bc709dc",
+    "size": 151342
+  },
+  {
+    "name": "大宛",
+    "image": "dawan",
+    "generated_file": "exec-292b4410-7796-4de8-af94-d9d0f420fdc4.png",
+    "generated_sha256": "8e3893b58a717e54e2605c9ef7d4ffe1978ef6be20af2f093f9867212ab75e1f",
+    "project_sha256": "a82627c4226538ed9218dcddd6896bf3b51f31461ee29649d8697d16c75669aa",
+    "size": 151792
+  },
+  {
+    "name": "紫骍",
+    "image": "zixin",
+    "generated_file": "exec-b84cd45e-73ea-4da6-8f93-887cbd02c302.png",
+    "generated_sha256": "243ed048e7e0bf311f21e484705d04273c136377206c2118febc5c93dfaa078b",
+    "project_sha256": "abe56d2b430302e65de2800e95e9b5cbb42e8db0649c87b544fe16980b27e95b",
+    "size": 151735
+  },
+  {
+    "name": "骅骝",
+    "image": "hualiu",
+    "generated_file": "exec-1ebfade3-95f4-4e28-b405-8ffbc3335cbb.png",
+    "generated_sha256": "ba8e195db6472ff69dc759dfe99ac84a0efc257d2e521b57bf4411a8e65ebeea",
+    "project_sha256": "aa227bca8dbb2678a46bce66ad70e2e643a9bc0e8f9e120deff9f16520b31f06",
+    "size": 164730
+  },
+  {
+    "name": "无中生有",
+    "image": "wuzhongshengyou",
+    "generated_file": "exec-e2191946-9446-4a93-8962-39356c854d03.png",
+    "generated_sha256": "e0cd095befd13b02e26509aab5a11412dd272564c4982805c3014fbe13e9cc28",
+    "project_sha256": "99e19be6141c9899bd4513fae0cf1a743f87ab9ef74f37bf7446ff65cd3a0d9c",
+    "size": 148941
+  },
+  {
+    "name": "乐不思蜀",
+    "image": "lebu",
+    "generated_file": "exec-42c8ec21-620d-4e82-90fa-dda116648792.png",
+    "generated_sha256": "8245ac43c042b2a4ed258203a808c1c4ecfaf06648daa3bb5f3ae91ab6f34edf",
+    "project_sha256": "39762accb077cbf5debec38eb0116ea1d3b4fe9a652cc27612745c107dded385",
+    "size": 157973
+  },
+  {
+    "name": "闪电",
+    "image": "shandian",
+    "generated_file": "exec-2bc74c8f-0516-4435-880e-1a72efdb34b0.png",
+    "generated_sha256": "047ba8650c735eb23d45d4d965cc8a44fa6afb3395312bdf0c2580cec161d87b",
+    "project_sha256": "bcd483c16a56cef65ad2039e7f4e3070d34482dcb535e4b9cfbeb8a528fc91af",
+    "size": 162619
+  }
+]
