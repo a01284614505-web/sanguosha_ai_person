@@ -614,6 +614,8 @@ class CardSystem:
             options.append({
                 "card": card, "card_index": card_index, "owner": owner,
                 "as_name": as_name, "skill_name": option.get("skill_name"),
+                # 转化选项必须保留原牌区，消费时才能移动正确的实体牌。
+                "source_zone": option.get("source_zone", "hand"),
                 "hidden": owner is not player,
             })
 

@@ -398,3 +398,54 @@ def test_muniu_stored_tao_can_rescue_dying_player():
     assert dying.alive and dying.hp == 1
     assert peach in engine.game_state.discard_pile
     assert not rescuer.treasure_cards
+
+
+def test_muniu_stored_card_can_be_converted_for_response():
+    engine = game()
+    owner = engine.game_state.players[1]
+    owner.equipment["treasure"] = card("b4_conversion_muniu", "木牛流马")
+    stored = card("b4_conversion_sha", "杀", "spade", "basic")
+    owner.treasure_cards.append(stored)
+    engine.skill_manager.has_skill = lambda player, name, active_only=True: (
+        player is owner and name == "龙胆")
+    options = engine.card_system.build_response_options(
+        owner, lambda candidate: candidate.name == "闪", "闪")
+    converted = next(option for option in options if option.get("skill_name") == "龙胆")
+    assert converted["source_zone"] == "treasure"
+    response = engine._resolve_option(owner, {"options": options, "requested_name": "闪"},
+                                      options.index(converted))
+    assert response["bool"] and response["source_zone"] == "treasure"
+    assert run(engine.card_system._consume_response(owner, response, "杀", {})) is True
+    assert stored not in owner.treasure_cards and stored in engine.game_state.discard_pile
+
+
+def test_muniu_stored_red_card_can_supply_urgent_peach():
+    engine = game()
+    owner = engine.game_state.players[1]
+    owner.equipment["treasure"] = card("b4_urgent_muniu", "木牛流马")
+    stored = card("b4_urgent_red", "杀", "heart", "basic")
+    owner.treasure_cards.append(stored)
+    engine.skill_manager.has_skill = lambda player, name, active_only=True: (
+        player is owner and name == "急救")
+    options = engine.card_system.build_response_options(
+        owner, lambda candidate: candidate.name == "桃", "桃")
+    assert any(option.get("skill_name") == "急救" and
+               option.get("source_zone") == "treasure" for option in options)
+
+
+def test_muniu_stored_red_card_can_be_played_through_wusheng():
+    engine = game()
+    owner, target = engine.game_state.players[:2]
+    owner.equipment["treasure"] = card("b4_wusheng_muniu", "木牛流马")
+    stored = card("b4_wusheng_red", "桃", "heart", "basic")
+    owner.treasure_cards.append(stored)
+    engine.skill_manager.has_skill = lambda player, name, active_only=True: (
+        player is owner and name == "武圣")
+    action = next(action for action in engine.get_available_actions(owner)
+                  if action.get("skill_name") == "武圣")
+    assert action["card_indices"] == [0] and target.id in action["valid_targets"]
+    assert run(engine.execute_action(owner, action, [target.id])) is True
+    assert stored in engine.game_state.discard_pile and not owner.treasure_cards
+    assert target.hp == target.max_hp - 1
+    assert [(event.from_zone, event.to_zone) for event in engine.game_state.card_move_events
+            if event.card_id == stored.id] == [("treasure", "discard")]

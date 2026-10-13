@@ -45,14 +45,15 @@ class ShuSkillHandler(FactionSkillHandler):
 
         # 激将：主公向其他蜀势力角色征用一张杀。
         if self.has(player, "激将") and player.identity == "lord":
-            donors = [p for p in alive_others(self.state, player) if hero_faction(p) == "shu" and any(c.name == "杀" for c in p.hand)]
+            donors = [p for p in alive_others(self.state, player) if hero_faction(p) == "shu"
+                      and any(card.name == "杀" for card, _index, _zone in self.response_card_entries(p))]
             targets = self._sha_targets(player)
             if donors and targets and player.sha_count < player.max_sha:
                 actions.append(self._action("激将", "borrow_sha", [], targets, True, "令蜀势力角色打出【杀】"))
 
         # 武圣：红色牌当杀；方片无距离限制。
         if self.has(player, "武圣") and player.sha_count < player.max_sha:
-            for index, card in enumerate(player.hand):
+            for card, index, _zone in self.response_card_entries(player):
                 if card_color(card) == "red" and card.name != "杀":
                     targets = self._sha_targets(player, ignore_distance=card.suit == "diamond")
                     if targets:
@@ -67,7 +68,7 @@ class ShuSkillHandler(FactionSkillHandler):
 
         # 龙胆：闪当杀（酒/桃互换在当前牌堆出现酒后自动由同一分支扩展）。
         if self.has(player, "龙胆") and player.sha_count < player.max_sha:
-            for index, card in enumerate(player.hand):
+            for card, index, _zone in self.response_card_entries(player):
                 if card.name == "闪":
                     targets = self._sha_targets(player)
                     if targets:
@@ -119,16 +120,19 @@ class ShuSkillHandler(FactionSkillHandler):
             return await self.engine.card_system.use_sha(player, virtual, target)
 
         if name == "激将" and variant == "borrow_sha":
-            donor = next((p for p in alive_others(self.state, player) if hero_faction(p) == "shu" and any(c.name == "杀" for c in p.hand)), None)
-            if not donor or not target:
+            donor_entry = next(((p, card, zone) for p in alive_others(self.state, player)
+                                if hero_faction(p) == "shu"
+                                for card, _index, zone in self.response_card_entries(p)
+                                if card.name == "杀"), None)
+            if not donor_entry or not target:
                 return False
-            card = next(c for c in donor.hand if c.name == "杀")
+            donor, card, source_zone = donor_entry
             virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic")
             context = self.engine._new_effect_context(
                 player, virtual, skill_source="激将", card_cost_ids=[card.id], target=target,
             )
             move = await self.engine.move_card(
-                card, "hand", "discard", from_owner=donor,
+                card, source_zone, "discard", from_owner=donor,
                 reason="激将", actor_id=player.id, effect_id=context.effect_id,
             )
             if move is None:
@@ -139,10 +143,15 @@ class ShuSkillHandler(FactionSkillHandler):
             return await self.engine.card_system.use_sha(player, virtual, target, effect_context=context)
 
         if name in ("武圣", "龙胆") and variant in ("as_sha", "shan_as_sha"):
-            if not indices or not target or not 0 <= indices[0] < len(player.hand):
+            if not indices or not target:
                 return False
-            source = player.hand[indices[0]]
-            expected = name == "武圣" and card_color(source) == "red" or name == "龙胆" and source.name == "闪"
+            candidate = next(((card, zone) for card, index, zone in self.response_card_entries(player)
+                              if index == indices[0]), None)
+            if candidate is None:
+                return False
+            source, _source_zone = candidate
+            expected = (name == "武圣" and card_color(source) == "red" and source.name != "杀"
+                        or name == "龙胆" and source.name == "闪")
             if not expected:
                 return False
             virtual = Card(f"skill_{name}_{source.id}", "杀", source.suit, source.rank, "basic")
@@ -187,7 +196,12 @@ class ShuSkillHandler(FactionSkillHandler):
         )
 
     async def _consume_conversion(self, player, card, skill_name, as_name, *, effect_id=None):
-        index = player.hand.index(card)
+        # 木牛扣置牌使用与手牌相同的技能入口，但移动必须来自真实 treasure 牌区。
+        entry = next(((index, zone) for candidate, index, zone in self.response_card_entries(player)
+                      if candidate is card), None)
+        if entry is None:
+            return False
+        index, source_zone = entry
         await self.manager.announce(player, skill_name, f"{player.name}发动【{skill_name}】，将【{card.name}】当【{as_name}】")
         await self.engine._notify_card_ui(
             message=f"{player.name}以【{skill_name}】将【{card.name}】当【{as_name}】",
@@ -198,7 +212,7 @@ class ShuSkillHandler(FactionSkillHandler):
             reason="skill_conversion", discard_count=len(self.state.discard_pile) + 1,
         )
         move = await self.engine.move_card(
-            card, "hand", "discard", from_owner=player,
+            card, source_zone, "discard", from_owner=player,
             reason=skill_name, actor_id=player.id, effect_id=effect_id,
         )
         if move is None:
@@ -308,35 +322,38 @@ class ShuSkillHandler(FactionSkillHandler):
                         await self.engine.card_system.notify_card_to_discard(player, card_drawn, "discard", message=f"{player.name}因【集智】弃置摸到的基本牌")
 
     def response_options(self, player, requested_name):
-        if ensure_flags(player).get("cannot_use_hand"):
-            return []
         options = []
         if requested_name == "闪" and self.has(player, "龙胆"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card.name == "杀":
-                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "龙胆", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         if requested_name == "杀":
             if self.has(player, "武圣"):
-                for index, card in enumerate(player.hand):
+                for card, index, zone in self.response_card_entries(player):
                     if card.name != "杀" and card_color(card) == "red":
-                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "武圣", "owner": player})
+                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "武圣", "owner": player, "source_zone": zone})
             if self.has(player, "龙胆"):
-                for index, card in enumerate(player.hand):
+                for card, index, zone in self.response_card_entries(player):
                     if card.name == "闪":
-                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "龙胆", "owner": player})
+                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "龙胆", "owner": player, "source_zone": zone})
             if self.has(player, "激将") and player.identity == "lord":
-                donor = next((p for p in alive_others(self.state, player) if hero_faction(p) == "shu" and any(c.name == "杀" for c in p.hand)), None)
-                if donor:
-                    card = next(c for c in donor.hand if c.name == "杀")
-                    options.append({"card": card, "card_index": donor.hand.index(card), "as_name": "杀", "skill_name": "激将", "owner": donor})
+                for donor in alive_others(self.state, player):
+                    if hero_faction(donor) != "shu":
+                        continue
+                    candidate = next(((card, index, zone) for card, index, zone in self.response_card_entries(donor)
+                                      if card.name == "杀"), None)
+                    if candidate:
+                        card, index, zone = candidate
+                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "激将", "owner": donor, "source_zone": zone})
+                        break
         if requested_name == "桃" and self.has(player, "龙胆"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card.name == "酒":
-                    options.append({"card": card, "card_index": index, "as_name": "桃", "skill_name": "龙胆", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "桃", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         if requested_name == "酒" and self.has(player, "龙胆"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card.name == "桃":
-                    options.append({"card": card, "card_index": index, "as_name": "酒", "skill_name": "龙胆", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "酒", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         return options
 
     async def on_card_responded(self, player, card, as_name, context=None):

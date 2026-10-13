@@ -162,14 +162,19 @@ class WeiSkillHandler(FactionSkillHandler):
     def response_options(self, player, requested_name):
         options = []
         if requested_name == "闪" and self.has(player, "倾国"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card_color(card) == "black":
-                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "倾国", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "倾国", "owner": player, "source_zone": zone})
         if requested_name == "闪" and self.has(player, "护驾") and player.identity == "lord" :
-            donor = next((p for p in self.state.players if p.alive and p is not player and hero_faction(p) == "wei" and any(c.name == "闪" for c in p.hand)), None)
-            if donor:
-                card = next(c for c in donor.hand if c.name == "闪")
-                options.append({"card": card, "card_index": donor.hand.index(card), "as_name": "闪", "skill_name": "护驾", "owner": donor})
+            for donor in self.state.players:
+                if not donor.alive or donor is player or hero_faction(donor) != "wei":
+                    continue
+                candidate = next(((card, index, zone) for card, index, zone in self.response_card_entries(donor)
+                                  if card.name == "闪"), None)
+                if candidate:
+                    card, index, zone = candidate
+                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "护驾", "owner": donor, "source_zone": zone})
+                    break
         return options
 
     async def on_card_responded(self, player, card, as_name, context=None):

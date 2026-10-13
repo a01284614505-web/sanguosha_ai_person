@@ -224,9 +224,9 @@ class QunSkillHandler(FactionSkillHandler):
 
     def response_options(self, player, requested_name):
         if requested_name == "桃" and self.has(player, "急救") and self.state.current_player is not player:
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card_color(card) == "red":
-                    return [{"card": card, "card_index": index, "as_name": "桃", "skill_name": "急救", "owner": player}]
+                    return [{"card": card, "card_index": index, "as_name": "桃", "skill_name": "急救", "owner": player, "source_zone": zone}]
         return []
 
 
