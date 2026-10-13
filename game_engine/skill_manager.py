@@ -275,26 +275,14 @@ class SkillManager:
     async def duel(self, source, target, reason="决斗"):
         if self.target_error(source, target, "决斗"):
             return False
-        current, other = target, source
-        while source.alive and target.alive:
-            required = 2 if self.has_skill(other, "无双") else 1
-            responded = True
-            for _ in range(required):
-                direct = next((c for c in current.hand if c.name == "杀"), None)
-                option = None if direct else next(iter(self.response_options(current, "杀")), None)
-                response = direct or (option or {}).get("card")
-                owner = (option or {}).get("owner") or current
-                if not response or response not in owner.hand:
-                    responded = False
-                    break
-                await self.discard_card(owner, response, f"响应{reason}")
-                record_stat(self.engine, owner, "cards_played")
-                await self.on_card_responded(current, response, (option or {}).get("as_name", "杀"), {"source": other, "owner": owner})
-            if not responded:
-                await self.engine.card_system.damage(other, current, 1, card=None, context={"reason": reason})
-                return True
-            current, other = other, current
-        return True
+        from .state_manager import Card
+        card = Card(f"virtual_duel:{source.id}:{target.id}:{reason}", "决斗", "spade", 1, "trick")
+        context = self.engine._new_effect_context(
+            source, card, skill_source=reason, card_cost_ids=[], target=target,
+        )
+        return await self.engine.card_system.resolve_duel(
+            source, target, card, effect_context=context, reason=reason,
+        )
 
     async def announce(self, player, skill_name, message=None):
         self.record(player, skill_name, "activate")

@@ -117,27 +117,15 @@ class QunSkillHandler(FactionSkillHandler):
             for card in sorted(cards, key=lambda c: player.hand.index(c), reverse=True):
                 await self.manager.discard_card(player, card, "乱击")
             record_stat(self.engine, player, "cards_played", 2)
-            targets_all = await self.manager.before_multi_target_trick(player, Card("luanji", "万箭齐发", cards[0].suit, cards[0].rank, "trick"), alive_others(self.state, player))
-            for victim in list(targets_all):
-                result = await self.engine.card_system.choose_to_respond(
-                    victim, "请使用【闪】响应万箭齐发", lambda c: c.name == "闪",
-                    requested_name="闪", context={"source": player, "target": victim}
-                )
-                if result.get("bool"):
-                    owner = result.get("owner") or victim
-                    response = result["card"]
-                    if response in owner.hand:
-                        index = owner.hand.index(response)
-                        owner.hand.remove(response)
-                        self.state.discard_pile.append(response)
-                        await self.engine.card_system.notify_card_to_discard(owner, response, "respond", index, f"{owner.name}打出【闪】响应【万箭齐发】")
-                        await self.manager.on_cards_lost(owner, [response], "万箭齐发")
-                        record_stat(self.engine, owner, "cards_played")
-                        await self.manager.on_card_discarded(owner, response, "万箭齐发")
-                        await self.manager.on_card_responded(victim, response, result.get("as_name", response.name), {"source": player, "owner": owner})
-                else:
-                    await self.engine.card_system.damage(player, victim, 1, card=Card("luanji", "万箭齐发", cards[0].suit, cards[0].rank, "trick"), context={"reason": "乱击"})
-            return True
+            virtual = Card(f"luanji:{cards[0].id}:{cards[1].id}", "万箭齐发",
+                           cards[0].suit, cards[0].rank, "trick")
+            context = self.engine._new_effect_context(
+                player, virtual, skill_source="乱击",
+                card_cost_ids=[card.id for card in cards],
+            )
+            return await self.engine.card_system.use_wanjian(
+                player, virtual, effect_context=context,
+            )
 
         if name == "黄天" and variant == "tribute" and indices:
             fixed = action.get("fixed_target_ids") or []

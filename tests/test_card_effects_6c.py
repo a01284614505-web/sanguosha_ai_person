@@ -35,6 +35,8 @@ def make_cs(players, engine=None):
     gs.discard_pile = []
     tm = MagicMock()
     tm.before_card_target = AsyncMock(side_effect=lambda a, b, c: b)
+    tm.before_multi_target_trick = AsyncMock(side_effect=lambda a, b, targets: targets)
+    tm.has_skill = MagicMock(return_value=False)
     tm.before_sha = AsyncMock()
     tm.modify_damage = AsyncMock(side_effect=lambda *a, **k: a[2])
     tm.after_damage = AsyncMock()
@@ -139,6 +141,27 @@ def test_juedou_attacker_no_sha_takes_damage():
     assert attacker.hp == 3
 
 
+def test_juedou_wushuang_requires_two_distinct_sha():
+    attacker = make_player(0)
+    defender = make_player(1)
+    first_sha = make_card("杀", "heart", 5)
+    defender.hand = [first_sha]
+    cs = make_cs([attacker, defender])
+    cs.trigger_manager.has_skill = MagicMock(side_effect=lambda p, name: p is attacker and name == "无双")
+
+    async def responder(player, request):
+        if player is defender and first_sha in player.hand:
+            return {"bool": True, "card": first_sha, "owner": defender, "as_name": "杀"}
+        return {"bool": False}
+
+    cs.responder = responder
+    assert run(cs.use_juedou(attacker, make_card("决斗"), defender)) is True
+    assert defender.hp == 3
+    assert defender.hand == []
+    assert cs.game_state.discard_pile.count(first_sha) == 1
+    assert cs.trigger_manager.on_card_responded.await_count == 1
+
+
 # ── 南蛮入侵 ──────────────────────────────────────────────
 
 def test_nanman_all_no_sha_all_damaged():
@@ -233,6 +256,16 @@ def test_taoyuan_full_hp_no_overflow():
     assert src.hp == 4
 
 
+def test_taoyuan_unified_entry_counters_only_one_target():
+    src, p1, p2 = [make_player(i, hp=2) for i in range(3)]
+    cs = make_cs([src, p1, p2])
+    cs.ask_wuxie = AsyncMock(side_effect=lambda card, source, targets: targets == [p1])
+    assert run(cs.use_card(src, make_card("桃园结义"))) is True
+    assert [p.hp for p in (src, p1, p2)] == [3, 2, 3]
+    assert cs.ask_wuxie.await_count == 3
+    cs.trigger_manager.before_multi_target_trick.assert_awaited_once()
+
+
 # ── 五谷丰登 ──────────────────────────────────────────────
 
 def test_wugu_ai_each_gets_one_card():
@@ -256,6 +289,17 @@ def test_wugu_empty_deck_no_crash():
     wg = make_card("五谷丰登")
     result = run(cs.use_wugu(src, wg))
     assert result is True
+
+
+def test_wugu_unified_entry_countered_target_leaves_card_in_pool():
+    src, p1, p2 = [make_player(i) for i in range(3)]
+    cs = make_cs([src, p1, p2])
+    cs.game_state.deck = [make_card("桃"), make_card("闪"), make_card("杀")]
+    cs.ask_wuxie = AsyncMock(side_effect=lambda card, source, targets: targets == [p1])
+    assert run(cs.use_card(src, make_card("五谷丰登"))) is True
+    assert [len(p.hand) for p in (src, p1, p2)] == [1, 0, 1]
+    assert len(cs.game_state.discard_pile) == 1
+    assert cs.ask_wuxie.await_count == 3
 
 
 # ── 闪电 ──────────────────────────────────────────────────

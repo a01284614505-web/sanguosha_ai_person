@@ -86,7 +86,8 @@ class CardSystem:
         spec = CARD_TABLE.get(card.name)
 
         # 锦囊结算前统一走无懈链；无懈本身只作为响应牌进入 ask_wuxie。
-        if spec and spec.wuxie_targetable:
+        group_trick = bool(spec and spec.target_rule.get("type") in ("all", "all_others"))
+        if spec and spec.wuxie_targetable and not group_trick:
             wuxie_targets = targets or []
             if await self.ask_wuxie(card, player, wuxie_targets):
                 logger.info(f"  → 【{card.name}】被无懈可击抵消")
@@ -102,6 +103,11 @@ class CardSystem:
         if resolver_name:
             method = getattr(self, resolver_name)
             if resolver_name == "use_sha":
+                return await method(player, card, targets[0] if targets else None,
+                                    effect_context=effect_context)
+            if resolver_name in ("use_juedou", "use_nanman", "use_wanjian", "use_taoyuan", "use_wugu"):
+                if group_trick:
+                    return await method(player, card, effect_context=effect_context)
                 return await method(player, card, targets[0] if targets else None,
                                     effect_context=effect_context)
             if resolver_name in ("use_tiesuo", "use_jiedao"):
@@ -701,103 +707,147 @@ class CardSystem:
 
         return True
 
-    async def use_juedou(self, player, card: Card, target):
-        """决斗：轮流出杀，先不出者受1点伤害。"""
-        if not target:
+    async def _consume_response(self, responder, result, reason, context):
+        """Move one validated response card exactly once and notify its hooks."""
+        if not result or not result.get("bool") or (self.engine and self.engine.game_aborted):
             return False
-        target = await self.trigger_manager.before_card_target(player, target, card)
-        if not target:
+        card = result.get("card")
+        owner = result.get("owner") or responder
+        if card is None or card not in owner.hand:
             return False
-        current, other = target, player
-        while True:
-            result = await self.choose_to_respond(
-                current,
-                f"【决斗】：请出一张【杀】",
-                card_filter=lambda c: c.name == "杀",
-                requested_name="杀",
-                context={"source": other, "target": current, "card": card},
+        index = owner.hand.index(card)
+        if self.engine is not None:
+            move = await self.engine.move_card(
+                card, "hand", "discard", from_owner=owner,
+                reason="respond", actor_id=owner.id,
+                effect_id=getattr(context.get("effect_context"), "effect_id", None),
             )
-            if self.engine is not None and self.engine.game_aborted:
+            if move is None:
                 return False
-            if not (result and result.get("bool")):
-                await self.damage(other, current, 1, card=card, context={"reason": "决斗"})
-                return True
-            response = result.get("card")
-            owner = result.get("owner") or current
-            if response and response in owner.hand:
-                idx = owner.hand.index(response)
-                owner.hand.remove(response)
-                self.game_state.discard_pile.append(response)
-                await self.notify_card_to_discard(owner, response, "respond", idx,
-                                                   f"{owner.name}打出【杀】响应决斗")
-                await self.trigger_manager.on_cards_lost(owner, [response], "决斗")
-                self._record_played(owner)
-                await self.trigger_manager.on_card_discarded(owner, response, "决斗")
+        else:
+            owner.hand.remove(card)
+            self.game_state.discard_pile.append(card)
+            await self.trigger_manager.on_cards_lost(owner, [card], reason)
+        await self.notify_card_to_discard(owner, card, "respond", index,
+                                          f"{owner.name}打出【{result.get('as_name') or card.name}】响应{reason}")
+        self._record_played(owner)
+        await self.trigger_manager.on_card_discarded(owner, card, reason)
+        await self.trigger_manager.on_card_responded(
+            responder, card, result.get("as_name") or card.name,
+            {**context, "owner": owner},
+        )
+        return True
+
+    def _effect_context(self, source, card, target=None, existing=None):
+        if existing is not None:
+            return existing
+        if self.engine is not None:
+            return self.engine._new_effect_context(source, card, target=target)
+        return None
+
+    async def use_juedou(self, player, card: Card, target, *, effect_context=None):
+        return await self.resolve_duel(player, target, card, effect_context=effect_context)
+
+    async def resolve_duel(self, source, target, card: Card, *, effect_context=None, reason="决斗"):
+        """One duel resolver for physical and skill-created duels."""
+        if not target or not source.alive or not target.alive:
+            return False
+        target = await self.trigger_manager.before_card_target(source, target, card)
+        if not target or not target.alive:
+            return False
+        effect_context = self._effect_context(source, card, target, effect_context)
+        current, other = target, source
+        while current.alive and other.alive:
+            required = 2 if self.trigger_manager.has_skill(other, "无双") else 1
+            for response_number in range(required):
+                result = await self.choose_to_respond(
+                    current, f"【决斗】：请打出第{response_number + 1}张【杀】",
+                    card_filter=lambda c: c.name == "杀", requested_name="杀",
+                    context={"source": other, "target": current, "card": card},
+                )
+                if self.engine is not None and self.engine.game_aborted:
+                    return False
+                context = {"source": other, "target": current, "card": card,
+                           "effect_context": effect_context}
+                if not await self._consume_response(current, result, reason, context):
+                    if effect_context is not None:
+                        effect_context.current_target_id = current.id
+                        effect_context.next_sequence()
+                    await self.damage(other, current, 1, card=card,
+                                      context={"reason": reason, "effect_context": effect_context})
+                    return True
+                if effect_context is not None:
+                    effect_context.next_sequence()
             current, other = other, current
-
-    async def use_nanman(self, player, card: Card):
-        """南蛮入侵：其他角色各出一张杀，否则受1点伤害。"""
-        others = [p for p in self.game_state.players if p.alive and p is not player]
-        for victim in list(others):
-            result = await self.choose_to_respond(
-                victim,
-                "【南蛮入侵】：请出一张【杀】",
-                card_filter=lambda c: c.name == "杀",
-                requested_name="杀",
-                context={"source": player, "target": victim, "card": card},
-            )
-            if self.engine is not None and self.engine.game_aborted:
-                return False
-            if result and result.get("bool"):
-                response = result.get("card")
-                owner = result.get("owner") or victim
-                if response and response in owner.hand:
-                    idx = owner.hand.index(response)
-                    owner.hand.remove(response)
-                    self.game_state.discard_pile.append(response)
-                    await self.notify_card_to_discard(owner, response, "respond", idx,
-                                                       f"{owner.name}打出【杀】响应南蛮入侵")
-                    await self.trigger_manager.on_cards_lost(owner, [response], "南蛮入侵")
-                    self._record_played(owner)
-                    await self.trigger_manager.on_card_discarded(owner, response, "南蛮入侵")
-            else:
-                await self.damage(player, victim, 1, card=card, context={"reason": "南蛮入侵"})
         return True
 
-    async def use_wanjian(self, player, card: Card):
-        """万箭齐发：其他角色各出一张闪，否则受1点伤害。"""
-        others = [p for p in self.game_state.players if p.alive and p is not player]
-        for victim in list(others):
-            result = await self.choose_to_respond(
-                victim,
-                "【万箭齐发】：请出一张【闪】",
-                card_filter=lambda c: c.name == "闪",
-                requested_name="闪",
-                context={"source": player, "target": victim, "card": card},
-            )
+    def _ordered_group_targets(self, source, include_source=False):
+        players = list(self.game_state.players)
+        if source not in players:
+            return []
+        start = players.index(source) + (0 if include_source else 1)
+        return [p for offset in range(len(players))
+                if (p := players[(start + offset) % len(players)]).alive
+                and (include_source or p is not source)]
+
+    async def _resolve_group_attack(self, source, card, requested_name, *, effect_context=None):
+        targets = self._ordered_group_targets(source)
+        targets = await self.trigger_manager.before_multi_target_trick(source, card, targets)
+        effect_context = self._effect_context(source, card, existing=effect_context)
+        for victim in list(targets):
             if self.engine is not None and self.engine.game_aborted:
                 return False
-            if result and result.get("bool"):
-                response = result.get("card")
-                owner = result.get("owner") or victim
-                if response and response in owner.hand:
-                    idx = owner.hand.index(response)
-                    owner.hand.remove(response)
-                    self.game_state.discard_pile.append(response)
-                    await self.notify_card_to_discard(owner, response, "respond", idx,
-                                                       f"{owner.name}打出【闪】响应万箭齐发")
-                    await self.trigger_manager.on_cards_lost(owner, [response], "万箭齐发")
-                    self._record_played(owner)
-                    await self.trigger_manager.on_card_discarded(owner, response, "万箭齐发")
-            else:
-                await self.damage(player, victim, 1, card=card, context={"reason": "万箭齐发"})
-        return True
-
-    async def use_taoyuan(self, player, card: Card):
-        """桃园结义：所有角色各回复1点体力。"""
-        for p in self.game_state.players:
-            if not p.alive:
+            if not victim.alive:
                 continue
+            if effect_context is not None:
+                effect_context.current_target_id = victim.id
+                effect_context.next_sequence()
+            if await self.ask_wuxie(card, source, [victim]):
+                if effect_context is not None:
+                    effect_context.cancel_target(victim.id)
+                continue
+            if self.engine is not None and self.engine.game_aborted:
+                return False
+            result = await self.choose_to_respond(
+                victim, f"【{card.name}】：请打出一张【{requested_name}】",
+                card_filter=lambda c: c.name == requested_name,
+                requested_name=requested_name,
+                context={"source": source, "target": victim, "card": card},
+            )
+            if self.engine is not None and self.engine.game_aborted:
+                return False
+            context = {"source": source, "target": victim, "card": card,
+                       "effect_context": effect_context}
+            if await self._consume_response(victim, result, card.name, context):
+                continue
+            await self.damage(source, victim, 1, card=card,
+                              context={"reason": card.name, "effect_context": effect_context})
+        return True
+
+    async def use_nanman(self, player, card: Card, *, effect_context=None):
+        return await self._resolve_group_attack(player, card, "杀", effect_context=effect_context)
+
+    async def use_wanjian(self, player, card: Card, *, effect_context=None):
+        return await self._resolve_group_attack(player, card, "闪", effect_context=effect_context)
+
+    async def use_taoyuan(self, player, card: Card, *, effect_context=None):
+        """桃园结义：所有角色各回复1点体力。"""
+        targets = await self.trigger_manager.before_multi_target_trick(
+            player, card, self._ordered_group_targets(player, include_source=True),
+        )
+        effect_context = self._effect_context(player, card, existing=effect_context)
+        for p in targets:
+            if not p.alive or (self.engine is not None and self.engine.game_aborted):
+                continue
+            if effect_context is not None:
+                effect_context.current_target_id = p.id
+                effect_context.next_sequence()
+            if await self.ask_wuxie(card, player, [p]):
+                if effect_context is not None:
+                    effect_context.cancel_target(p.id)
+                continue
+            if self.engine is not None and self.engine.game_aborted:
+                return False
             if p.hp < p.max_hp:
                 p.hp += 1
                 record_stat(self.engine, player, "healing", 1)
@@ -805,9 +855,12 @@ class CardSystem:
                 logger.info(f"  → {p.name} 回复1点体力，当前{p.hp}/{p.max_hp}")
         return True
 
-    async def use_wugu(self, player, card: Card):
+    async def use_wugu(self, player, card: Card, *, effect_context=None):
         """五谷丰登：翻开顶牌，各角色从中取一张。"""
-        alive = [p for p in self.game_state.players if p.alive]
+        alive = await self.trigger_manager.before_multi_target_trick(
+            player, card, self._ordered_group_targets(player, include_source=True),
+        )
+        effect_context = self._effect_context(player, card, existing=effect_context)
         revealed = []
         for _ in alive:
             if self.game_state.deck:
@@ -818,6 +871,15 @@ class CardSystem:
         for p in alive:
             if not remaining:
                 break
+            if not p.alive or (self.engine is not None and self.engine.game_aborted):
+                continue
+            if effect_context is not None:
+                effect_context.current_target_id = p.id
+                effect_context.next_sequence()
+            if await self.ask_wuxie(card, player, [p]):
+                if effect_context is not None:
+                    effect_context.cancel_target(p.id)
+                continue
             chosen = None
             if self.engine and not p.is_ai:
                 chosen_list = await self.engine.ask_choose_cards(
