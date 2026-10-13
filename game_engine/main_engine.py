@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
-from .state_manager import GameState, Player, Phase, card_to_dict
+from .state_manager import Card, GameState, Player, Phase, card_to_dict
 from .phase_controller import PhaseController
 from .skill_manager import SkillManager
 from .card_system import CardSystem, make_pass_option, option_label
@@ -149,6 +149,8 @@ class MainEngine:
         from_slot=None, to_slot=None, to_index=None, project=True,
     ):
         """Commit a validated physical card move, then publish the same fact."""
+        if self.game_aborted:
+            return None
         event = self.game_state.move_card(
             card, from_zone, to_zone, from_owner=from_owner, to_owner=to_owner,
             reason=reason, actor_id=actor_id, effect_id=effect_id,
@@ -158,9 +160,11 @@ class MainEngine:
         if event is None:
             return None
         event_data = event.to_dict()
+        if project:
+            self.skill_manager.record_card_move_stats(event)
         await self.emit(ENGINE_EVENT.CARD_MOVE, move=event_data)
         if project:
-            await self.skill_manager.on_card_move(card, event)
+            await self.skill_manager.on_card_move(card, event, stats_recorded=True)
         return event
 
     async def _notify_card_ui(self, **data):
@@ -516,17 +520,32 @@ class MainEngine:
     def _serialize_option(self, option: Dict, index: int) -> Dict:
         card = option.get("card")
         owner = option.get("owner")
+        hidden = bool(option.get("hidden"))
         return {
             "index": index,
             "label": self._option_label(option),
-            "card": None if card is None else card_to_dict(card),
-            "card_index": option.get("card_index"),
+            "card": None if card is None or hidden else card_to_dict(card),
+            "card_index": None if hidden else option.get("card_index"),
             "owner_id": getattr(owner, "id", None),
             "owner_name": getattr(owner, "name", None),
             "as_name": option.get("as_name"),
             "skill_name": option.get("skill_name"),
             "is_pass": card is None,
+            "hidden": hidden,
         }
+
+    @staticmethod
+    def _response_decision_view(request: Dict) -> Dict:
+        masked = dict(request)
+        masked["context"] = MainEngine._public_decision_value(request.get("context") or {})
+        masked["options"] = [
+            {key: value for key, value in option.items() if key not in ("owner", "card", "card_index")}
+            | {"card": None if option.get("hidden") else option.get("card"),
+               "available": option.get("card") is not None,
+               "label": option_label(option)}
+            for option in request.get("options") or []
+        ]
+        return masked
 
     @staticmethod
     def _serialize_response_context(context: Dict) -> Dict:
@@ -630,6 +649,16 @@ class MainEngine:
             "skill_name": option.get("skill_name"),
         }
 
+    @staticmethod
+    def _response_resolution_status(player: Player, request: Dict, index, result: Dict) -> str:
+        if index is None or result.get("bool"):
+            return "resolved"
+        options = request.get("options") or []
+        chosen = options[index] if isinstance(index, int) and 0 <= index < len(options) else None
+        card = (chosen or {}).get("card")
+        owner = (chosen or {}).get("owner") or player
+        return "stale" if card is not None and card not in owner.hand else "resolved"
+
     async def _ask_index(self, player: Player, request: Dict, resolver) -> Any:
         """共用询问机制：人/AI分派 + 超时托管 + 回灌。resolver 决定如何验证原始索引。"""
         if self.game_aborted:
@@ -638,25 +667,26 @@ class MainEngine:
         request = self._prepare_request(player, request, request_id)
         if player.is_ai:
             index = await self._ai_choose_option(player, request)
+            if self.game_aborted:
+                await self._emit_selection_result(player, request, "game_ended")
+                return {"bool": False}
             result = resolver(player, request, index)
             self._record_response_outcome(player, request, result)
-            await self._emit_selection_result(player, request, "resolved")
+            await self._emit_selection_result(
+                player, request, self._response_resolution_status(player, request, index, result)
+            )
             return result
         index, input_status = await self._human_choose_option(player, request, request_id)
         if input_status == "accepted":
             result = resolver(player, request, index)
-            status = "resolved"
-            if index is not None and not result.get("bool"):
-                options = request.get("options") or []
-                chosen = options[index] if isinstance(index, int) and 0 <= index < len(options) else None
-                card = (chosen or {}).get("card")
-                owner = (chosen or {}).get("owner") or player
-                if card is not None and card not in owner.hand:
-                    status = "stale"
+            status = self._response_resolution_status(player, request, index, result)
         elif input_status == "timeout" and not self.game_aborted:
             index = await self._trustee_choose(player, request)
-            result = resolver(player, request, index)
-            status = "timeout"
+            if self.game_aborted:
+                result, status = {"bool": False}, "game_ended"
+            else:
+                result = resolver(player, request, index)
+                status = "timeout"
         elif input_status == "cancelled":
             result, status = {"bool": False}, "cancelled"
         else:
@@ -824,7 +854,9 @@ class MainEngine:
         logger.warning(f"  ⚠️ {kind}复核失败（有效候选 {len(selected)}），使用兜底")
         if allow_rule_fallback:
             try:
-                fallback_raw = self.ai_decision.simple_choice_decision(player, request)
+                fallback_raw = self.ai_decision.simple_choice_decision(
+                    player, self._mask_hidden_candidates(request)
+                )
             except Exception as exc:
                 logger.info(f"  ⚠️ 兜底决策失败: {type(exc).__name__}: {exc}")
                 fallback_raw = []
@@ -863,19 +895,41 @@ class MainEngine:
         }
 
     @staticmethod
-    def _mask_hidden_candidates(request: Dict) -> Dict:
-        """决策脱敏视图：隐藏候选（他人手牌）不把真实牌面交给 AI/托管。
+    def _public_decision_value(value):
+        """Remove live player and card objects from advisory decision context."""
+        if isinstance(value, Player):
+            return {"id": value.id, "name": value.name, "hp": value.hp,
+                    "alive": value.alive, "is_ai": value.is_ai}
+        if isinstance(value, Card):
+            return None
+        if isinstance(value, dict):
+            return {key: MainEngine._public_decision_value(item)
+                    for key, item in value.items() if not isinstance(item, Card)}
+        if isinstance(value, (list, tuple)):
+            return [MainEngine._public_decision_value(item) for item in value
+                    if not isinstance(item, Card)]
+        return value if isinstance(value, (str, int, float, bool, type(None))) else None
 
-        引擎复核仍使用原 request；只有决策函数拿到脱敏副本。
-        """
+    @staticmethod
+    def _mask_hidden_candidates(request: Dict) -> Dict:
+        """Give AI only public candidate data; keep live objects in the validator snapshot."""
         hidden = set(request.get("hidden_indices") or [])
-        if not hidden or not request.get("candidate_cards"):
-            return request
         masked = dict(request)
-        cards = list(request.get("candidate_cards") or [])
-        masked["candidate_cards"] = [
-            None if index in hidden else card for index, card in enumerate(cards)
+        if request.get("candidate_cards") is not None:
+            masked["candidate_cards"] = [
+                None if index in hidden else card
+                for index, card in enumerate(request.get("candidate_cards") or [])
+            ]
+        masked["options"] = [
+            {key: value for key, value in option.items() if key not in ("owner", "card")}
+            | {"card": None if index in hidden else option.get("card")}
+            for index, option in enumerate(request.get("options") or [])
         ]
+        masked.pop("candidate_places", None)
+        masked.pop("card_owner", None)
+        masked["context"] = MainEngine._public_decision_value(request.get("context") or {})
+        if "choices" in masked:
+            masked["choices"] = MainEngine._public_decision_value(masked["choices"])
         return masked
 
     async def _ai_choose_choice(self, player: Player, request: Dict):
@@ -991,8 +1045,11 @@ class MainEngine:
                 result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
             else:
                 raw = await self._trustee_choose_choice(player, request)
-                result = self._resolve_choice(player, request, raw)
-                status = "timeout"
+                if self.game_aborted:
+                    result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
+                else:
+                    result = self._resolve_choice(player, request, raw)
+                    status = "timeout"
         elif self._choice_has_stale_candidates(request, raw):
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "stale"
         else:
@@ -1119,13 +1176,14 @@ class MainEngine:
     # ---------- 旧响应通道（原有，下面保持不变） ----------
 
     async def _ai_choose_option(self, player: Player, request: Dict):
+        decision_request = self._response_decision_view(request)
         handler = getattr(self.ai_decision, "make_response_decision", None)
         if handler is not None:
             try:
-                return await handler(player, request)
+                return await handler(player, decision_request)
             except Exception as exc:
                 logger.info(f"  ⚠️ 响应AI失败，切换规则AI: {type(exc).__name__}: {exc}")
-        return self.ai_decision.simple_response_decision(player, request)
+        return self.ai_decision.simple_response_decision(player, decision_request)
 
     async def _human_choose_option(self, player: Player, request: Dict, request_id: str):
         loop = asyncio.get_running_loop()
@@ -1245,7 +1303,8 @@ class MainEngine:
             return None
         self._trustee_active = True
         try:
-            index = self.ai_decision.simple_response_decision(player, request)
+            decision_request = self._response_decision_view(request)
+            index = self.ai_decision.simple_response_decision(player, decision_request)
         except Exception as exc:
             logger.info(f"  ⚠️ 托管决策失败: {type(exc).__name__}: {exc}")
             index = None

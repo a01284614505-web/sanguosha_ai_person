@@ -110,18 +110,25 @@ class SkillManager:
 
     def skill_available(self, player, name, *, phase=None, limit=1):
         instance = self._skill_instance(player, name)
-        if instance is None or not instance.enabled:
+        if instance is None:
             return False
         state = self.engine.game_state
         current = state.current_player
-        key = instance.scope_key(
-            phase=getattr(phase, "value", phase),
-            current_player_id=getattr(current, "id", None),
-            turn_id=getattr(self.engine, "completed_turns", None),
-            round_number=state.round_number,
-            turn_policy="owner",
-        )
-        return instance.usage_counts.get(key, 0) < limit and (instance.charges is None or instance.charges > 0)
+        for source in self.skill_state.find(player.id, instance.skill_id):
+            if source.version_id != instance.version_id or not source.enabled:
+                continue
+            if (source.usage_scope == "current_turn" and current is not player):
+                continue
+            key = source.scope_key(
+                phase=getattr(phase, "value", phase),
+                current_player_id=getattr(current, "id", None),
+                turn_id=getattr(self.engine, "completed_turns", None),
+                round_number=state.round_number,
+                turn_policy="owner",
+            )
+            if source.usage_counts.get(key, 0) < limit and (source.charges is None or source.charges > 0):
+                return True
+        return False
 
     def consume_skill_use(self, player, name, *, phase=None, charges=0, limit=1):
         instance = self._skill_instance(player, name)
@@ -203,12 +210,16 @@ class SkillManager:
         return True
 
     async def transfer_card(self, source, target, card, reason="skill"):
-        if card not in source.hand:
+        if self.engine is None or self.engine.game_aborted or card not in source.hand:
             return False
-        source.hand.remove(card)
-        target.hand.append(card)
-        await self.on_cards_lost(source, [card], reason)
-        await self.on_card_gained(target, [card], reason)
+        move = await self.engine.move_card(
+            card, "hand", "hand", from_owner=source, to_owner=target,
+            reason=reason, actor_id=source.id, visibility="owner",
+        )
+        if move is None:
+            return False
+        if not self.engine.game_aborted:
+            await self.on_card_gained(target, [card], reason)
         return True
 
     async def ask_confirm(self, player, prompt, **kwargs):
@@ -402,34 +413,45 @@ class SkillManager:
         for handler in self.handlers:
             await handler.on_card_gained(player, cards, reason)
 
-    async def on_card_move(self, card, event):
-        """Project statistics and skill loss hooks from one committed movement fact."""
-        if self.engine is not None and self.engine.game_aborted:
-            return
-        is_loss = (
+    @staticmethod
+    def _is_counted_loss(event):
+        return (
             event.from_owner is not None
             and event.from_zone in ("hand", "equipment")
             and event.to_zone != "temporary"
             and (event.from_owner != event.to_owner or event.from_zone != event.to_zone)
         )
+
+    def record_card_move_stats(self, event):
+        """Record an already committed move before any awaited event publication."""
+        player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
         if event.reason == "use_card":
-            owner = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
-            record_stat(self.engine, owner, "cards_played")
-        if not is_loss:
+            record_stat(self.engine, player, "cards_played")
+        if self._is_counted_loss(event):
+            record_stat(self.engine, player, "cards_lost")
+
+    async def on_card_move(self, card, event, *, stats_recorded=False):
+        """Project statistics and skill hooks from one committed movement fact."""
+        if not stats_recorded:
+            self.record_card_move_stats(event)
+        if self.engine is not None and self.engine.game_aborted:
+            return
+        for handler in self.handlers:
+            await handler.on_card_move(card, event)
+        if not self._is_counted_loss(event):
             return
         player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
         if player is None:
             return
-        record_stat(self.engine, player, "cards_lost")
-        await self.on_cards_lost(player, [card], event.reason, record=False)
+        await self.on_cards_lost(player, [card], event.reason, record=False, event=event)
 
-    async def on_cards_lost(self, player, cards, reason="unknown", *, record=True):
+    async def on_cards_lost(self, player, cards, reason="unknown", *, record=True, event=None):
         if not cards or (self.engine is not None and self.engine.game_aborted):
             return
         if record:
             record_stat(self.engine, player, "cards_lost", len(cards))
         for handler in self.handlers:
-            await handler.on_cards_lost(player, cards, reason)
+            await handler.on_cards_lost(player, cards, reason, event=event)
 
     async def on_card_discarded(self, player, card, reason="unknown"):
         if self.engine is not None and self.engine.game_aborted:

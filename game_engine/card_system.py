@@ -33,6 +33,9 @@ def option_label(option: dict) -> str:
     """候选项的可读文案（唯一定义处）：前端面板、AI提示词、托管日志共用。"""
     if option.get("label"):
         return option["label"]
+    if option.get("hidden"):
+        owner = option.get("owner")
+        return f"{getattr(owner, 'name', '其他角色')}可提供【{option.get('as_name') or '响应牌'}】"
     card = option.get("card")
     if card is None:
         return "不响应"
@@ -452,6 +455,7 @@ class CardSystem:
             options.append({
                 "card": card, "card_index": card_index, "owner": owner,
                 "as_name": as_name, "skill_name": option.get("skill_name"),
+                "hidden": owner is not player,
             })
 
         if not options:

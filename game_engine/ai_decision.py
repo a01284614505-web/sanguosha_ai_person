@@ -564,9 +564,9 @@ class AIDecision:
         target = (context or {}).get("target")
         card = (context or {}).get("card")
         if source is not None:
-            parts.append(f"来源：{getattr(source, 'name', source)}")
+            parts.append(f"来源：{source.get('name', source) if isinstance(source, dict) else getattr(source, 'name', source)}")
         if target is not None:
-            parts.append(f"目标：{getattr(target, 'name', target)}")
+            parts.append(f"目标：{target.get('name', target) if isinstance(target, dict) else getattr(target, 'name', target)}")
         if card is not None:
             parts.append(f"触发牌：{getattr(card, 'name', card)}")
         return "；".join(parts)
@@ -638,7 +638,8 @@ class AIDecision:
     def _playable_options(request: Dict) -> List[int]:
         """返回真正带牌的候选索引；技能转化项排在普通牌之后，避免无谓地发动技能。"""
         options = request.get("options") or []
-        indices = [i for i, option in enumerate(options) if option.get("card") is not None]
+        indices = [i for i, option in enumerate(options)
+                   if option.get("card") is not None or option.get("available")]
         indices.sort(key=lambda i: (options[i].get("skill_name") is not None, i))
         return indices
 
@@ -656,14 +657,16 @@ class AIDecision:
         if kind == "dying":
             # 自己濒死一定救；替别人花桃则保守放弃，不擅自替玩家做人情。
             dying = (request.get("context") or {}).get("target")
-            if dying is None or dying is player:
+            dying_id = dying.get("id") if isinstance(dying, dict) else getattr(dying, "id", None)
+            if dying is None or dying_id == player.id:
                 return indices[0]
             return None
 
         if kind == "wuxie":
             # 无懈保守：只在锦囊直接指向自己时才拦。
             targets = (request.get("context") or {}).get("targets") or []
-            if any(t is player for t in targets):
+            if any((t.get("id") if isinstance(t, dict) else getattr(t, "id", None)) == player.id
+                   for t in targets):
                 return indices[0]
             return None
 
@@ -685,17 +688,21 @@ class AIDecision:
         if kind == "choose_players":
             cand_ids = request.get("candidate_ids") or []
             all_players = (request.get("context") or {}).get("all_players") or []
-            players_map = {p.id: p for p in all_players}
+            def public_field(candidate, key):
+                return candidate[key] if isinstance(candidate, dict) else getattr(candidate, key)
+
+            players_map = {public_field(p, "id"): p for p in all_players}
             min_n = request.get("min_n", 1)
             max_n = request.get("max_n", 1)
             enemies = [i for i, pid in enumerate(cand_ids)
-                       if pid in players_map and players_map[pid].alive
-                       and getattr(players_map[pid], "is_ai", True) != getattr(player, "is_ai", False)]
-            enemies.sort(key=lambda i: players_map[cand_ids[i]].hp)
+                       if pid in players_map and public_field(players_map[pid], "alive")
+                       and public_field(players_map[pid], "is_ai") != getattr(player, "is_ai", False)]
+            enemies.sort(key=lambda i: public_field(players_map[cand_ids[i]], "hp"))
             selected = enemies[:max_n]
             if len(selected) < min_n:
                 extras = [i for i in range(len(cand_ids)) if i not in selected
-                          and cand_ids[i] in players_map and players_map[cand_ids[i]].alive]
+                          and cand_ids[i] in players_map
+                          and public_field(players_map[cand_ids[i]], "alive")]
                 selected += extras[:min_n - len(selected)]
             return selected[:max_n]
 
@@ -719,7 +726,48 @@ class AIDecision:
         return []
 
     async def make_choice_decision(self, player, request: Dict) -> List[int]:
-        return self.simple_choice_decision(player, request)
+        """Choose only server-issued indices; MainEngine validates the live snapshot."""
+        api_key = player.ai_config.get("api_key", "")
+        if not api_key or api_key == "test_key":
+            return self.simple_choice_decision(player, request)
+        if not (self.engine.game_config.get("global_settings") or {}).get("choice_ai_enabled", True):
+            return self.simple_choice_decision(player, request)
+
+        options = request.get("options") or []
+        visible = [{"index": i, "label": str(option.get("label", i))}
+                   for i, option in enumerate(options)]
+        prompt = (
+            "请选择三国杀引擎给出的合法候选索引。不要推测隐藏手牌，不要新增候选。\n"
+            f"请求类型：{request.get('kind', 'choose_option')}\n"
+            f"提示：{request.get('prompt', '')}\n"
+            f"最少/最多选择：{request.get('min_n', 1)}/{request.get('max_n', 1)}；"
+            f"可取消：{bool(request.get('cancelable', True))}\n"
+            f"公开上下文：{json.dumps(request.get('context') or {}, ensure_ascii=False)}\n"
+            f"候选：{json.dumps(visible, ensure_ascii=False)}\n"
+            '只返回 JSON：{"option_indices":[0]}。允许取消时返回空数组。'
+        )
+        try:
+            response = await self._call_with_session(player, "choice", prompt)
+            match = re.search(r"\{.*\}", response, re.DOTALL)
+            payload = json.loads(match.group(0) if match else response)
+            indices = payload.get("option_indices", payload.get("option_index"))
+            if isinstance(indices, int) and not isinstance(indices, bool):
+                indices = [indices]
+            if not isinstance(indices, list):
+                raise ValueError("missing option indices")
+            if (any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < len(options)
+                    for i in indices) or len(set(indices)) != len(indices)):
+                raise ValueError("invalid option indices")
+            if not indices and request.get("cancelable", True):
+                return []
+            minimum = max(0, int(request.get("min_n", 1)))
+            maximum = max(minimum, int(request.get("max_n", 1)))
+            if not minimum <= len(indices) <= maximum:
+                raise ValueError("invalid option count")
+            return indices
+        except Exception as exc:
+            logger.warning(f"  ⚠️ 选择模型失败，切换规则AI: {type(exc).__name__}: {exc}")
+            return self.simple_choice_decision(player, request)
 
 
 class AIGateway:

@@ -280,13 +280,24 @@ class WuSkillHandler(FactionSkillHandler):
                 await self.manager.announce(target, "谦逊", f"{target.name}发动【谦逊】暂存所有手牌")
         return target
 
-    async def on_cards_lost(self, player, cards, reason="unknown"):
+    async def on_cards_lost(self, player, cards, reason="unknown", *, event=None):
+        # Committed moves are handled with their source zone below. Legacy
+        # direct writes still use this callback until their B3/B5 migration.
+        if event is not None:
+            return
         if self.has(player, "连营") and not player.hand and cards:
             recipients = [player] + [p for p in self.state.players if p.alive and p is not player]
             count = min(len(cards), len(recipients))
             for target in recipients[:count]:
                 await self.manager.draw_cards(target, 1, "连营")
             await self.manager.announce(player, "连营", f"{player.name}发动【连营】，令{count}名角色各摸一张牌")
+
+    async def on_card_move(self, card, event):
+        if event.from_zone != "hand" or event.to_zone == "temporary":
+            return
+        player = next((p for p in self.state.players if p.id == event.from_owner), None)
+        if player is not None:
+            await self.on_cards_lost(player, [card], event.reason)
 
     async def on_hp_lost(self, player, amount, reason="unknown", source=None):
         if not self.has(player, "诈降"):

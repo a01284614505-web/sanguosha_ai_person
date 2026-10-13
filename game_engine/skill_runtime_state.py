@@ -242,29 +242,37 @@ class SkillStateStore:
         ``limit=None`` 表示该作用域没有次数上限。``charges`` 是本次效果
         确认后消耗的限定次数，设为 0 可只记录 usage_count。
         """
-        candidates = ([self.get(owner_id, skill_id, version_id=version_id, source=source)]
-                      if source is not None or version_id is not None
-                      else self.find(owner_id, skill_id))
-        instance = next((item for item in candidates if item is not None and item.enabled), None)
-        if instance is None or charges < 0:
+        candidates = self.find(owner_id, skill_id)
+        if source is not None:
+            candidates = [item for item in candidates if item.source == source]
+        if version_id is not None:
+            candidates = [item for item in candidates if item.version_id == version_id]
+        if charges < 0:
             return False
-        key = instance.scope_key(
-            phase=phase,
-            current_player_id=current_player_id,
-            turn_id=turn_id,
-            round_number=round_number,
-            turn_policy=turn_policy,
-        )
-        used = instance.usage_counts.get(key, 0)
-        if limit is not None and used >= limit:
-            return False
-        if instance.charges is not None and instance.charges < charges:
-            return False
-        instance.usage_counts[key] = used + 1
-        instance.usage_count += 1
-        if instance.charges is not None:
-            instance.charges -= charges
-        return True
+        for instance in candidates:
+            if not instance.enabled:
+                continue
+            if (instance.usage_scope == "current_turn" and turn_policy == "owner"
+                    and current_player_id != owner_id):
+                continue
+            key = instance.scope_key(
+                phase=phase,
+                current_player_id=current_player_id,
+                turn_id=turn_id,
+                round_number=round_number,
+                turn_policy=turn_policy,
+            )
+            used = instance.usage_counts.get(key, 0)
+            if limit is not None and used >= limit:
+                continue
+            if instance.charges is not None and instance.charges < charges:
+                continue
+            instance.usage_counts[key] = used + 1
+            instance.usage_count += 1
+            if instance.charges is not None:
+                instance.charges -= charges
+            return True
+        return False
 
     def disable(
         self, owner_id: Id, skill_id: str, *, version_id: Optional[str] = None,
