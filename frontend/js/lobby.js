@@ -11,6 +11,7 @@
     const MODE = '5人身份局';
 
     class LobbyController {
+        // 大厅控制器：一个页面只有一个实例（window.lobby）。
         constructor() {
             this.providers = [];
             this.aiConfigs = [];
@@ -21,6 +22,7 @@
             this.init();
         }
 
+        // 绑定表单与按钮事件，并读取 Provider、牌堆和本机战绩。
         init() {
             const name = document.getElementById('playerName');
             name.value = this.prefs.playerName || '';
@@ -51,6 +53,7 @@
             this.loadDecks();
         }
 
+        // 保存“称呼 / 席间聊天 / 记住 Key”等偏好到 localStorage['lobbyPrefs']。
         savePrefs() {
             this.prefs.playerName = document.getElementById('playerName').value.trim();
             this.prefs.chatEnabled = document.getElementById('chatEnabled').checked;
@@ -72,11 +75,13 @@
                 .catch(() => apply(null, false));
         }
 
+        // 开始按钮下方的小绿点：能读到 /api/providers 就算服务已就绪。
         setConnection(ok) {
             document.getElementById('connDot').className = 'conn-dot ' + (ok ? 'ok' : 'bad');
             document.getElementById('connText').textContent = ok ? '游戏服务已就绪' : '连不上游戏服务，请先运行 game_server.py';
         }
 
+        // 牌堆下拉框：选项来自服务器 /api/decks；优先恢复上次在大厅的选择，其次是设置页保存的默认牌堆。
         loadDecks() {
             const select = document.getElementById('deckSelect');
             SGS.fetchJSON('/api/decks').then(data => {
@@ -92,12 +97,14 @@
             });
         }
 
+        // 把当前牌堆名同步到左侧牌匾上的“牌堆 xxx”。
         updateDeckLabel() {
             const select = document.getElementById('deckSelect');
             const opt = select.options[select.selectedIndex];
             document.getElementById('deckLabel').textContent = opt ? opt.textContent : '服务器默认';
         }
 
+        // 第 i 席的默认配置：优先用全局设置里的默认提供方/模型，否则按提供方列表轮流分配。
         defaultAI(i) {
             const globalSettings = window.getGlobalSettings ? getGlobalSettings() : {};
             const preferred = this.providers.find(p => p.value === globalSettings.default_provider);
@@ -113,6 +120,7 @@
             };
         }
 
+        // 恢复四席配置：localStorage 里的配置（不含 Key）+ 本标签页 sessionStorage 里的 Key。
         restoreAIConfigs() {
             const saved = store.get('lobbyAIs', []);
             const sessionKeys = store.sget('lobbyKeys', []);
@@ -126,12 +134,14 @@
             });
         }
 
+        // 保存四席配置。Key 默认只放 sessionStorage（关掉标签页即清除）；勾选“记住 Key”才写进 localStorage。
         persistAIConfigs() {
             const remember = !!this.prefs.rememberKeys;
             store.set('lobbyAIs', this.aiConfigs.map(a => Object.assign({}, a, { apiKey: remember ? a.apiKey : '' })));
             store.sset('lobbyKeys', this.aiConfigs.map(a => a.apiKey || ''));
         }
 
+        // 渲染“座上宾”四张卡片：显示称呼、提供方/模型，以及是“模型对弈”还是“规则 AI”。
         renderGuests() {
             const row = document.getElementById('guestRow');
             row.innerHTML = this.aiConfigs.map((a, i) => {
@@ -147,6 +157,7 @@
             row.querySelectorAll('.guest').forEach(btn => btn.addEventListener('click', () => this.openDialog(Number(btn.dataset.ai))));
         }
 
+        // 打开某一席的配置弹窗。
         openDialog(index) {
             this.current = index;
             this.renderTabs();
@@ -154,6 +165,7 @@
             if (!this.dialog.open) this.dialog.showModal();
         }
 
+        // 弹窗顶部的席位标签，以及“同步给”勾选框（不包括当前席）。
         renderTabs() {
             const tabs = document.getElementById('aiTabs');
             tabs.innerHTML = this.aiConfigs.map((a, i) =>
@@ -169,6 +181,7 @@
                 '<label class="check"><input type="checkbox" data-sync-to="' + i + '"> ' + SEAT_NAMES[i] + '号位</label>').join('');
         }
 
+        // 把当前席的配置填进表单。
         fillForm() {
             const a = this.aiConfigs[this.current];
             const f = this.form.elements;
@@ -181,6 +194,7 @@
             f.thinking.checked = !!a.thinking;
         }
 
+        // 从表单读回当前席的配置（温度限制在 0~2），保存并刷新卡片。
         saveCurrent() {
             const f = this.form.elements;
             const t = parseFloat(f.temperature.value);
@@ -198,6 +212,7 @@
             this.renderGuests();
         }
 
+        // 切换提供方时，自动填入该提供方的默认 API 地址与模型名。
         onProviderChange(providerValue) {
             const provider = this.providers.find(p => p.value === providerValue);
             if (!provider) return;
@@ -205,6 +220,7 @@
             this.form.elements.model.value = provider.default_model;
         }
 
+        // 把当前席的连接配置（提供方 / 地址 / Key / 模型）复制给勾选的其他席。
         syncAPIConfig() {
             this.saveCurrent();
             const source = this.aiConfigs[this.current];
@@ -219,6 +235,7 @@
             toast('已同步给 ' + targets.map(i => SEAT_NAMES[i] + '号位').join('、'));
         }
 
+        // 整理成服务器 normalize_config 认识的格式（apiUrl / apiKey 会在引擎侧规范化）。
         collectAIConfigs() {
             return this.aiConfigs.map(a => ({
                 name: a.name,
@@ -231,6 +248,7 @@
             }));
         }
 
+        // 组装开局配置并进入选将页。带 Key 的完整配置只写 sessionStorage；localStorage 里的副本去掉 Key。
         startGame() {
             this.savePrefs();
             const ais = this.collectAIConfigs();
@@ -264,6 +282,7 @@
             window.location.href = 'select_hero.html';
         }
 
+        // 本机战绩：连胜、总局数、身份卡（连胜每满 2 局奖励 1 张，可在开局前指定身份）。
         loadUserData() {
             const userData = store.get('userData', {}) || {};
             document.getElementById('winStreak').textContent = userData.winStreak || 0;

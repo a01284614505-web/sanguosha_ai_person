@@ -1,5 +1,11 @@
-// 全局设置入口：自动注入到所有页面，设置保存在 localStorage。
-// 页面若已自带入口按钮（#openGlobalSettings / #sbtn），则不再注入悬浮按钮。
+// =============================================================================
+// 全局设置：自动注入到所有页面，设置保存在 localStorage['globalSettings']。
+// -----------------------------------------------------------------------------
+// - getGlobalSettings() / saveGlobalSettings() 供其他脚本读写；保存时广播
+//   'global-settings-changed' 事件（sgs_common.js 据此切换主题，对局页据此重绘）。
+// - 页面若已自带入口按钮（#openGlobalSettings / #sbtn），则不再注入右上角悬浮按钮。
+// - theme：dark 夜墨 / light 暖纸 / system 跟随系统；对局页始终是夜墨。
+// =============================================================================
 (function () {
     const STORAGE_KEY = 'globalSettings';
     const defaults = {
@@ -11,7 +17,8 @@
         default_model: 'deepseek-chat',
         default_temperature: 0.8,
         sfx_enabled: true,
-        sfx_volume: 0.5
+        sfx_volume: 0.5,
+        theme: 'dark'
     };
 
     window.getGlobalSettings = function () {
@@ -40,7 +47,7 @@
             .gs-card{width:min(94vw,600px);max-height:92dvh;overflow:auto;background:linear-gradient(180deg,#2f2117,#241911);border:1px solid #6e5229;border-radius:8px;padding:18px 20px;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35),inset 0 0 0 4px rgba(201,163,90,.28),0 18px 55px rgba(0,0,0,.7)}
             .gs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
             .gs-head h3{margin:0;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:22px;color:#f1d898}
-            .gs-head button{width:34px;height:34px;border-radius:50%;border:1px solid #6e5229;background:#1c140e;color:#f1d898;cursor:pointer}
+            .gs-head button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:1px solid #6e5229;background:#1c140e;color:#f1d898;cursor:pointer}
             .gs-section{border-top:1px solid rgba(201,163,90,.22);padding:12px 0 4px}
             .gs-section h4{margin:0 0 6px;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:16px;color:#f1d898;font-weight:600}
             .gs-row{display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;margin:8px 0;font-size:14px}
@@ -59,15 +66,26 @@
 
     function injectDOM() {
         injectStyle();
-        const hasOwnEntry = document.getElementById('openGlobalSettings') || document.getElementById('sbtn');
-        if (!document.getElementById('globalSettingsLauncher') && !hasOwnEntry) {
+        const hasOwnEntry = document.getElementById('openGlobalSettings') || document.getElementById('sbtn') || document.getElementById('globalSettingsLauncher') || document.querySelector('[data-gs-launcher]');
+        if (!hasOwnEntry) {
+            const gearIcon = window.SGS ? SGS.icon('gear') : '⚙';
+            const nav = document.querySelector('.topbar nav');
             const launcher = document.createElement('button');
             launcher.id = 'globalSettingsLauncher';
+            launcher.type = 'button';
             launcher.title = '全局设置';
             launcher.setAttribute('aria-label', '全局设置');
-            launcher.textContent = '⚙';
+            launcher.innerHTML = gearIcon;
             launcher.onclick = window.openGlobalSettings;
-            document.body.appendChild(launcher);
+            if (nav) {
+                // 有顶栏的页面：放进导航里，和主题按钮并排，不再悬浮遮挡
+                launcher.className = 'icon-btn';
+                launcher.removeAttribute('id');
+                launcher.dataset.gsLauncher = '1';
+                nav.appendChild(launcher);
+            } else {
+                document.body.appendChild(launcher);
+            }
         }
         if (document.getElementById('globalSettingsOverlay')) return;
         const overlay = document.createElement('div');
@@ -77,9 +95,10 @@
         overlay.setAttribute('aria-label', '全局设置');
         overlay.innerHTML = `
             <div class="gs-card">
-                <div class="gs-head"><h3>全局设置</h3><button id="gsClose" aria-label="关闭">✕</button></div>
+                <div class="gs-head"><h3>全局设置</h3><button id="gsClose" aria-label="关闭">${window.SGS ? SGS.icon('close') : '×'}</button></div>
                 <div class="gs-section">
                     <h4>对局与界面</h4>
+                    <label class="gs-row"><span>界面主题</span><select id="gsTheme"><option value="dark">夜墨（深色）</option><option value="light">暖纸（浅色）</option><option value="system">跟随系统</option></select></label>
                     <label class="gs-row"><span>出牌动画</span><select id="gsAnimation"><option value="800">轻快 0.8 秒</option><option value="1100">标准 1.1 秒</option><option value="1600">从容 1.6 秒</option></select></label>
                     <label class="gs-row"><span>AI 思考提示</span><span><input id="gsThinking" type="checkbox">在武将框上显示“思考中”，并把思考摘要写进战报</span></label>
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
@@ -154,6 +173,7 @@
 
     function fillForm() {
         const s = window.getGlobalSettings();
+        document.getElementById('gsTheme').value = s.theme || 'dark';
         document.getElementById('gsAnimation').value = String(s.animation_ms);
         document.getElementById('gsThinking').checked = !!s.show_ai_thinking;
         document.getElementById('gsSfx').checked = s.sfx_enabled !== false;
@@ -169,6 +189,7 @@
     function saveFromForm() {
         const temperature = Number(document.getElementById('gsTemperature').value);
         window.saveGlobalSettings({
+            theme: document.getElementById('gsTheme').value,
             animation_ms: Number(document.getElementById('gsAnimation').value) || 1100,
             show_ai_thinking: document.getElementById('gsThinking').checked,
             sfx_enabled: document.getElementById('gsSfx').checked,

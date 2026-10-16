@@ -81,3 +81,4 @@ audioManager.load('click', 'assets/audio/coin.mp3');
 audioManager.load('die', 'assets/audio/die_male.mp3');
 audioManager.load('win', 'assets/audio/win.mp3');
 audioManager.load('lose', 'assets/audio/lose.mp3');
+audioManager.load('judge', 'assets/audio/judge.mp3');

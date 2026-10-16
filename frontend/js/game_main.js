@@ -1,34 +1,52 @@
-// 对局页：渲染引擎状态、采集真人输入。纯 UI —— 合法候选全部来自引擎（your_turn / require_response），
-// 提交后由引擎复核；前端只做“候选里选哪个”。
+// =============================================================================
+// 对局页主逻辑
+// -----------------------------------------------------------------------------
+// 架构铁律：引擎自驱 / 服务器纯消息泵 / 前端纯 UI。
+// 本文件只做两件事：
+//   1. 把服务器推来的消息渲染成牌桌（座位、手牌、阶段栏、判定框、动画、日志）；
+//   2. 在引擎给出的合法候选里采集真人的选择并提交。
+// 任何“能不能出 / 能不能选”的判断都来自 your_turn.actions 或 require_response.options，
+// 提交后服务器端还会再复核一遍，前端从不自己推断规则。
+//
+// 收到的消息（见 ws_client.js / protocol.js）：
+//   game_state         整份可见状态（含自己的手牌 self_hand、各人判定区 judge_area）
+//   your_turn          我的出牌阶段：手牌 + 合法操作列表
+//   require_response   场外响应 / 选牌 / 选角色 / 是否
+//   event_notification 事件：出牌动画(card_to_discard)、判定(judge)、阶段(phase)、技能发动等
+//   ai_action / chat / game_end / error …
+// =============================================================================
 (function () {
     'use strict';
     const { esc, store, toast } = SGS;
     const SEAT_COUNT = 5;
 
+    // ------------------------------------------------------------------ 页面状态
+    // 所有可变状态集中放在 G 里，方便在浏览器控制台用 GameUI 查看调试。
     const G = {
-        cfg: null,
-        meId: null,
-        state: null,
-        players: [],
-        hand: [],
-        turn: null,        // 最近一次 your_turn（仅在我的出牌阶段有效）
-        sel: null,         // {kind:'card', index, action, targets} | {kind:'skill', name, cards, action, targets}
-        req: null,         // 当前 require_response
-        picked: [],        // req 中已选的候选下标
-        reqDeadline: 0,
+        cfg: null,          // 开局配置（来自大厅，sessionStorage 优先）
+        meId: null,         // 真人玩家的座位 id
+        state: null,        // 最近一次 game_state
+        players: [],        // state.players 的快捷引用
+        hand: [],           // 我的手牌（self_hand 或 your_turn.hand）
+        turn: null,         // 最近一次 your_turn；只在我的出牌阶段非空
+        sel: null,          // 当前选择：{kind:'card', index, action, targets} | {kind:'skill', name, cards, action, targets}
+        req: null,          // 当前 require_response
+        picked: [],         // req 中已选的候选下标
+        reqDeadline: 0,     // 响应倒计时截止时间（毫秒时间戳）
         reqTimer: null,
-        prev: {},          // id -> {hp, alive}
-        seatEls: {},
-        seatSig: {},
-        thinking: {},
-        animQueue: Promise.resolve(),
-        tableSeq: 0,
+        prev: {},           // 上一份状态里各人的 {hp, alive}，用于做受伤/回复/阵亡特效
+        seatEls: {},        // 对手座位 DOM（按玩家 id）
+        seatSig: {},        // 座位内容签名：内容没变就不重绘，避免图片闪烁
+        thinking: {},       // 正在思考的 AI（按玩家 id）
+        phase: { playerId: null, phase: '', skipped: new Set() },  // 阶段栏
+        animQueue: Promise.resolve(),   // 出牌/判定动画串行队列
         ended: false,
-        lastTurnKey: ''
+        lastTurnKey: ''     // “轮次:当前玩家”，用于识别换人
     };
     window.GameUI = G;
 
-    // ------------------------------------------------------------------ 配置
+    // ------------------------------------------------------------------ 配置与小工具
+    /** 读取开局配置；缺武将或 AI 数量不对时返回 null（页面会提示回大厅）。 */
     function loadConfig() {
         const cfg = store.sget('gameConfig', null) || store.get('gameConfig', null);
         if (!cfg || !cfg.selected_hero || !cfg.selected_hero.id || !Array.isArray(cfg.ais) || cfg.ais.length !== 4) return null;
@@ -39,28 +57,41 @@
     const playerById = (id) => G.players.find(p => p.id === id);
     const playerByName = (name) => G.players.find(p => p.name === name);
     const me = () => playerById(G.meId);
+    /** 现在是否轮到我出牌（且没有挂起的响应请求、对局未结束）。 */
     const isMyPlay = () => !!G.turn && !G.req && !G.ended;
 
     function sfx(name) { if (window.audioManager) audioManager.play(name); }
 
     // ------------------------------------------------------------------ 座次
+    /**
+     * 座位相对位置：0 = 我，1 = 下家（右侧），2 = 右上，3 = 左上，4 = 上家（左侧）。
+     * 引擎按 id 递增轮转，下家坐在右边，与官方一致。
+     */
     function seatPos(id) {
         const n = G.players.length || SEAT_COUNT;
         return ((id - (G.meId || 0)) % n + n) % n;
     }
 
+    /** 某玩家的武将框元素（做特效、画指向线时用）。 */
     function frameEl(id) {
         if (id === G.meId) return document.querySelector('#myHero .hero-frame');
         const seat = G.seatEls[id];
         return seat ? seat.querySelector('.seat-frame') : null;
     }
+    /** 某玩家的座位根元素（气泡、受伤闪烁挂在这里）。 */
     function seatRoot(id) {
         return id === G.meId ? document.getElementById('myHero') : G.seatEls[id];
     }
 
     // ------------------------------------------------------------------ 目标选择
+    /**
+     * 当前是否处于“点武将选目标”的状态。
+     * 返回 {valid:Set<id> 可点的人, chosen:id[] 已选, mode:'play'|'req'}，不在选目标时返回 null。
+     *   - mode 'req'：引擎在问“选择角色”（choose_players），可点的人来自候选；
+     *   - mode 'play'：我选了一张需要目标的牌/技能，可点的人来自 valid_targets；
+     *     借刀杀人（target_count = 2）分两步：先选持武器者，再按 valid_target_pairs 选他要杀的人。
+     */
     function currentTargeting() {
-        // 返回 {valid:Set, chosen:Array, max} 或 null
         if (G.req && G.req.kind === 'choose_players') {
             const valid = new Set();
             (G.req.options || []).forEach(o => { if (Number.isInteger(o.player_id)) valid.add(o.player_id); });
@@ -81,11 +112,11 @@
         return { valid: new Set(valid), chosen, mode: 'play' };
     }
 
+    /** 本次最多/最少选几名目标：来自手牌的 target_rule（如铁索连环可选 1~2 人），技能固定 1 人。 */
     function targetMax() {
         if (!G.sel || !G.sel.action) return 1;
         if (G.sel.kind === 'skill') return 1;
-        const card = G.hand[G.sel.index] || {};
-        const rule = card.target_rule || {};
+        const rule = (G.hand[G.sel.index] || {}).target_rule || {};
         return Math.max(1, Number(rule.max) || 1);
     }
     function targetMin() {
@@ -96,6 +127,7 @@
         return Math.max(1, Number(rule.min) || 1);
     }
 
+    /** “确定”按钮是否可点：已选中合法操作，且目标数量满足要求。 */
     function selectionReady() {
         if (!isMyPlay() || !G.sel || !G.sel.action) return false;
         if (!G.sel.action.requires_target) return true;
@@ -103,6 +135,7 @@
         return G.sel.targets.length >= targetMin() && G.sel.targets.length <= targetMax();
     }
 
+    /** 点击武将框：选目标时切换选中；否则打开武将信息。 */
     function onSeatClick(id) {
         const t = currentTargeting();
         if (t && (t.valid.has(id) || t.chosen.includes(id))) {
@@ -113,6 +146,7 @@
             }
             const arr = G.sel.targets;
             const at = arr.indexOf(id);
+            // 借刀杀人取消第一步的人时，第二步一并清掉
             if (at >= 0) arr.splice(at, at === 0 && G.sel.action.target_count === 2 ? arr.length : 1);
             else arr.push(id);
             renderAll();
@@ -126,12 +160,23 @@
     }
 
     // ------------------------------------------------------------------ 渲染：座位
+    /** 判定区的延时锦囊小方块（带插画，长按/悬停可看说明）。 */
+    function judgeTilesHTML(names) {
+        return (names || []).map(name => {
+            const art = SGS.cardArtURL(name);
+            return '<span class="judge-tile" ' + SGS.cardDetailAttrs({ name: name }) + ' title="' + esc(name) + '">' +
+                (art ? '<i style="background-image:url(' + art + ')"></i>' : '') +
+                '<b>' + esc(SGS.DELAYED[name] || name.charAt(0)) + '</b></span>';
+        }).join('');
+    }
+
+    /** 武将框内部：立绘、名字条、势力/身份印、竖排武将名、手牌数、判定区、勾玉、思考中。 */
     function seatFrameHTML(p, opts) {
         opts = opts || {};
         const hero = p.hero || {};
         const isMe = p.id === G.meId;
         const identity = p.identity && (isMe || p.identity_revealed) ? p.identity : null;
-        const judge = (p.judge_area || []).map(name => '<span class="judge-chip" title="' + esc(name) + '">' + esc(SGS.DELAYED[name] || name.charAt(0)) + '</span>').join('');
+        const judge = judgeTilesHTML(p.judge_area);
         const status = G.thinking[p.id] && settings().show_ai_thinking !== false && p.alive
             ? '<div class="s-status thinking">思考中</div>' : '';
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
@@ -142,12 +187,14 @@
             '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status;
     }
 
+    /** 武将框下方的装备栏（只列出已装备的格子）。 */
     function equipLines(p) {
         const eq = p.equipment || {};
         return SGS.EQUIP_ORDER.filter(slot => eq[slot]).map(slot =>
-            '<div class="equip-line" title="' + esc(SGS.EQUIP_SLOT[slot].name + '：' + eq[slot]) + '"><b>' + SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot]) + '</div>').join('');
+            '<div class="equip-line" ' + SGS.cardDetailAttrs({ name: eq[slot] }) + '><b>' + SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot]) + '</div>').join('');
     }
 
+    /** 渲染四名对手。座位 DOM 只建一次，之后按签名增量更新，气泡/特效不会被冲掉。 */
     function renderSeats() {
         const box = document.getElementById('opponents');
         const t = currentTargeting();
@@ -173,7 +220,7 @@
                 else if (t.valid.has(p.id)) cls.push('targetable');
                 else if (t.mode === 'play') cls.push('untargetable');
             }
-            // 保留气泡等额外子节点，只在内容变化时重绘框体
+            // 正在播放的受伤/回复动画 class 不能被这次重绘抹掉
             const keep = el.className.split(' ').filter(c => c === 'hurt' || c === 'healed');
             el.className = cls.concat(keep).join(' ');
             const frameHTML = seatFrameHTML(p);
@@ -189,18 +236,18 @@
     }
 
     // ------------------------------------------------------------------ 渲染：我的区域
+    /** 左侧装备区与判定区、右侧我的武将框和技能按钮。 */
     function renderMyArea() {
         const p = me();
         const zones = document.getElementById('myZones');
         const heroBox = document.getElementById('myHero');
         if (!p) return;
         const eq = p.equipment || {};
-        const judge = (p.judge_area || []);
+        const judge = p.judge_area || [];
         zones.innerHTML = '<h3>装备区</h3>' + SGS.EQUIP_ORDER.map(slot =>
-            '<div class="zone-slot' + (eq[slot] ? '' : ' empty') + '"><b>' + SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot] || SGS.EQUIP_SLOT[slot].name) + '</div>').join('') +
-            '<div class="zone-judge">' + (judge.length
-                ? '判定区 ' + judge.map(n => '<span class="judge-chip" title="' + esc(n) + '">' + esc(SGS.DELAYED[n] || n.charAt(0)) + '</span>').join('')
-                : '判定区 空') + '</div>';
+            '<div class="zone-slot' + (eq[slot] ? '' : ' empty') + '" ' + (eq[slot] ? SGS.cardDetailAttrs({ name: eq[slot] }) : '') + '><b>' +
+            SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot] || SGS.EQUIP_SLOT[slot].name) + '</div>').join('') +
+            '<div class="zone-judge"><span>判定区</span>' + (judge.length ? judgeTilesHTML(judge) : '<span class="faint">空</span>') + '</div>';
 
         const hero = p.hero || {};
         const t = currentTargeting();
@@ -214,12 +261,15 @@
         const keep = heroBox.className.split(' ').filter(c => c === 'hurt' || c === 'healed');
         heroBox.className = cls.concat(keep).join(' ');
 
+        // 技能按钮：引擎给了 use_skill 候选的技能会亮起（ready），正在发动的为 on。
+        // 每个按钮都带说明数据，悬停/长按可看技能全文。
         const readySkills = new Set(isMyPlay() ? (G.turn.actions || []).filter(a => a.type === 'use_skill').map(a => a.skill_name) : []);
         const skills = (hero.skills || []).map(s => typeof s === 'string' ? { name: s } : s);
         const skillHTML = skills.map(s => {
             const ready = readySkills.has(s.name);
             const on = G.sel && G.sel.kind === 'skill' && G.sel.name === s.name;
-            return '<button type="button" class="skill-btn' + (ready ? ' ready' : '') + (on ? ' on' : '') + '" data-skill="' + esc(s.name) + '" title="' + esc(s.description || '') + '">' + esc(s.name) + '</button>';
+            return '<button type="button" class="skill-btn' + (ready ? ' ready' : '') + (on ? ' on' : '') + '" data-skill="' + esc(s.name) + '"' +
+                ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' + esc(s.name) + '</button>';
         }).join('');
         const frameHTML = seatFrameHTML(p, { hideHand: true });
         const sig = frameHTML + '|' + skillHTML;
@@ -227,23 +277,73 @@
             G.seatSig.me = sig;
             heroBox.innerHTML = '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div><div class="skill-btns">' + skillHTML + '</div>';
             heroBox.querySelector('.hero-frame').addEventListener('click', () => onSeatClick(p.id));
-            heroBox.querySelectorAll('.skill-btn').forEach(b => b.addEventListener('click', () => onSkillClick(b.dataset.skill)));
+            heroBox.querySelectorAll('.skill-btn').forEach(b => b.addEventListener('click', () => onSkillClick(b.dataset.skill, b)));
         }
         document.getElementById('handCount').textContent = '手牌 ' + G.hand.length + ' / 上限 ' + Math.max(0, p.hp);
     }
 
+    // ------------------------------------------------------------------ 渲染：阶段栏
+    /**
+     * 顶部阶段栏：准 判 摸 出 弃 结。
+     * 引擎每进入一个阶段都会发 event_kind = 'phase' 的事件（含 skipped），这里据此“跳”到对应格子；
+     * 已经过的阶段变暗，被跳过的阶段划掉。
+     */
+    function renderPhaseTrack() {
+        const track = document.getElementById('phaseTrack');
+        const owner = playerById(G.phase.playerId);
+        const curIdx = SGS.PHASE_ORDER.indexOf(G.phase.phase);
+        track.querySelector('.pt-owner').textContent = owner ? (owner.id === G.meId ? '你' : owner.name) : '';
+        track.querySelectorAll('.pt-step').forEach((el, i) => {
+            const key = SGS.PHASE_ORDER[i];
+            el.classList.toggle('on', i === curIdx);
+            el.classList.toggle('done', curIdx >= 0 && i < curIdx);
+            el.classList.toggle('skip', G.phase.skipped.has(key));
+            el.setAttribute('aria-current', i === curIdx ? 'step' : 'false');
+        });
+        track.classList.toggle('mine', !!owner && owner.id === G.meId);
+    }
+
+    /** 收到阶段事件：换人时清空跳过记录；切到新阶段时让对应格子弹一下。 */
+    function onPhaseEvent(data) {
+        if (data.player_id !== G.phase.playerId) {
+            G.phase = { playerId: data.player_id, phase: '', skipped: new Set() };
+        }
+        G.phase.phase = data.phase;
+        if (data.skipped) G.phase.skipped.add(data.phase);
+        renderPhaseTrack();
+        const idx = SGS.PHASE_ORDER.indexOf(data.phase);
+        const step = document.querySelectorAll('#phaseTrack .pt-step')[idx];
+        if (step) { step.classList.remove('pop'); void step.offsetWidth; step.classList.add('pop'); }
+        // 我的回合里每个阶段都在牌桌中央写一下；别人的回合只提示被跳过的阶段
+        const mine = data.player_id === G.meId;
+        if (data.skipped) flashBanner((mine ? '你' : data.player_name) + ' 跳过' + (SGS.PHASE[data.phase] || ''));
+        else if (mine) flashBanner(SGS.PHASE[data.phase] || '');
+    }
+
+    /** 牌桌中央的阶段横幅：淡入，停留约 1.2 秒，淡出。 */
+    function flashBanner(text) {
+        const b = document.getElementById('phaseBanner');
+        b.textContent = text;
+        b.classList.remove('show');
+        void b.offsetWidth;
+        b.classList.add('show');
+    }
+
     // ------------------------------------------------------------------ 渲染：手牌
+    /** 出牌阶段里，某张手牌对应的合法 play_card 操作（没有就是这张牌现在不能出）。 */
     function playActionFor(index) {
         if (!isMyPlay()) return null;
         return (G.turn.actions || []).find(a => a.type === 'play_card' && a.card_index === index) || null;
     }
 
+    /** 当前技能的全部候选操作（同一技能可能有多种发动方式/多种用牌组合）。 */
     function skillCandidates() {
         if (!isMyPlay() || !G.sel || G.sel.kind !== 'skill') return [];
         return (G.turn.actions || []).filter(a => a.type === 'use_skill' && a.skill_name === G.sel.name);
     }
     const sortedKey = (arr) => (arr || []).slice().sort((a, b) => a - b).join(',');
 
+    /** 技能模式下还能继续选的手牌：在“包含已选牌”的候选组合里出现过的牌。 */
     function skillSelectableCards() {
         const chosen = G.sel.cards;
         const set = new Set();
@@ -253,13 +353,16 @@
         });
         return set;
     }
+    /** 与已选牌完全一致的候选组合。 */
     function skillMatches() {
         const key = sortedKey(G.sel.cards);
         return skillCandidates().filter(a => sortedKey(a.card_indices) === key);
     }
 
-    // 若当前请求的候选全部是“我自己手里的牌”，就直接在手牌上选（与官方一致），不再另开候选托盘。
-    // 返回 Map(手牌下标 -> 候选下标)；任何不确定的情况（暗牌、他人的牌、同一张牌对应多个候选）返回 null。
+    /**
+     * 若当前请求的候选全部是“我自己手里的牌”，就直接在手牌上选（与官方一致），不另开候选托盘。
+     * 返回 Map(手牌下标 -> 候选下标)；任何不确定的情况（暗牌、他人的牌、同一张牌对应多个候选）返回 null。
+     */
     function reqHandMap() {
         const r = G.req;
         if (!r || r.expired) return null;
@@ -280,6 +383,12 @@
         return map.size ? map : null;
     }
 
+    /**
+     * 渲染手牌。每张牌的状态：
+     *   can      可以出 / 可以选（绿边）
+     *   dim      现在不能用（压暗）
+     *   selected 已选中（上浮 + 金边）
+     */
     function renderHand() {
         const box = document.getElementById('hand');
         const hint = document.getElementById('actionHint');
@@ -295,6 +404,7 @@
             const cls = [];
             let asName = null;
             if (reqMap) {
+                // 响应模式：只有候选里的牌可选，并显示技能转化（如“当杀”）
                 const oi = reqMap.get(i);
                 if (oi === undefined) cls.push('dim');
                 else {
@@ -303,10 +413,12 @@
                 }
             } else if (isMyPlay()) {
                 if (selectable) {
+                    // 技能模式
                     if (G.sel.cards.includes(i)) cls.push('selected');
                     else if (selectable.has(i)) cls.push('can');
                     else cls.push('dim');
                 } else {
+                    // 普通出牌
                     if (G.sel && G.sel.kind === 'card' && G.sel.index === i) cls.push('selected');
                     else if (playActionFor(i)) cls.push('can');
                     else cls.push('dim');
@@ -323,6 +435,7 @@
         layoutHand();
     }
 
+    /** 手牌太多放不下时自动叠起来：按容器宽度算出每张牌的负边距。 */
     function layoutHand() {
         const box = document.getElementById('hand');
         const cards = box.querySelectorAll('.card');
@@ -334,6 +447,7 @@
         box.style.setProperty('--overlap', Math.max(-w * 0.72, overlap) + 'px');
     }
 
+    /** 点手牌：响应模式 → 选候选；技能模式 → 增减用牌；普通出牌 → 选中/取消这张牌。 */
     function onCardClick(i) {
         const reqMap = reqHandMap();
         if (reqMap) {
@@ -370,17 +484,17 @@
         renderAll();
     }
 
-    function onSkillClick(name) {
+    /** 点技能按钮：轮到我且引擎给了候选 → 进入技能模式；否则弹出技能说明。 */
+    function onSkillClick(name, btn) {
         if (!isMyPlay()) {
-            const p = me();
-            const s = ((p && p.hero && p.hero.skills) || []).find(x => x.name === name);
-            if (s) toast('【' + name + '】' + (s.description ? '：' + s.description.slice(0, 40) + (s.description.length > 40 ? '…' : '') : ''), { ms: 3200 });
+            if (btn) SGS.Detail.show(btn);
             return;
         }
         if (G.sel && G.sel.kind === 'skill' && G.sel.name === name) { G.sel = null; renderAll(); return; }
         const cands = (G.turn.actions || []).filter(a => a.type === 'use_skill' && a.skill_name === name);
         if (!cands.length) {
-            toast('【' + name + '】现在不能发动（锁定技与触发技由引擎自动结算）');
+            if (btn) SGS.Detail.show(btn);
+            toast('【' + name + '】现在不能主动发动（锁定技与触发技由引擎自动结算）');
             return;
         }
         G.sel = { kind: 'skill', name: name, cards: [], action: null, targets: [] };
@@ -388,6 +502,7 @@
         renderAll();
     }
 
+    /** 已选牌恰好对应唯一一种发动方式时自动选定；有多种时留给玩家在操作条里选。 */
     function refreshSkillAction() {
         const matches = skillMatches();
         const keep = G.sel.action && matches.includes(G.sel.action) ? G.sel.action : null;
@@ -396,6 +511,7 @@
     }
 
     // ------------------------------------------------------------------ 渲染：操作条
+    /** 操作条三种形态：响应请求 / 我的出牌阶段 / 等待（只显示一行提示）。 */
     function renderActionBar() {
         const bar = document.getElementById('actionBar');
         const prompt = document.getElementById('abPrompt');
@@ -428,6 +544,7 @@
             cancel.disabled = !G.sel;
             ok.disabled = !selectionReady();
             prompt.innerHTML = playPrompt();
+            // 同一组牌有多种发动方式（如国色：当乐不思蜀 / 弃牌移除乐不思蜀）时，列出来让玩家选
             if (G.sel && G.sel.kind === 'skill' && !G.sel.action) {
                 const matches = skillMatches();
                 if (matches.length > 1) {
@@ -446,6 +563,7 @@
         prompt.textContent = waitingText();
     }
 
+    /** 出牌阶段的提示语，随选择进度变化。 */
     function playPrompt() {
         if (!G.sel) return '出牌阶段：选择一张牌，或发动技能';
         if (G.sel.kind === 'card') {
@@ -480,17 +598,24 @@
         return '点击<em>确定</em>发动' + name + desc;
     }
 
+    /** 不是我操作时操作条上的一行字。 */
     function waitingText() {
         const s = G.state;
         if (!s) return '正在连接游戏服务…';
         if (!s.current_name) return '等待开局…';
-        const phase = SGS.PHASE[s.phase] || '';
+        const phase = SGS.PHASE[G.phase.playerId === s.current_player_id && G.phase.phase ? G.phase.phase : s.phase] || '';
         if (s.current_player_id === G.meId) return '你的' + phase;
         return s.current_name + ' 的' + phase;
     }
 
     const REQ_TITLE = { dying: '求桃', wuxie: '无懈可击', respond: '响应', choose_cards: '选牌', choose_players: '选择角色', confirm: '请决定', choose_option: '请选择' };
 
+    /**
+     * 渲染响应请求。两种协议：
+     *   旧通道（无 selection 字段）：respond / wuxie / dying，单选 + 「不响应」候选；
+     *   交互原语（有 selection）：choose_cards / choose_players / confirm / choose_option，
+     *     selection 里给出 mode(single|multi)、min、max、zone、cancelable。
+     */
     function renderRequest(prompt, opts, ok, cancel, end) {
         const r = G.req;
         const sel = r.selection || {};
@@ -502,7 +627,7 @@
             return;
         }
         const options = r.options || [];
-        const isLegacy = !r.selection; // respond / wuxie / dying 等旧通道：单选 + 「不响应」
+        const isLegacy = !r.selection;
         if (r.kind === 'confirm') {
             ok.textContent = (options[0] && options[0].label) || '是';
             cancel.textContent = (options[1] && options[1].label) || '否';
@@ -514,6 +639,7 @@
         } else if (r.kind === 'choose_players') {
             opts.innerHTML = options.map((o, i) => '<button type="button" class="opt-chip' + (G.picked.includes(i) ? ' picked' : '') + '" data-opt="' + i + '">' + esc(o.player_name || o.label) + '</button>').join('');
         } else if (!reqHandMap()) {
+            // 候选不全在我手里（他人的牌、五谷丰登的亮牌等）→ 在操作条里列出候选牌
             opts.innerHTML = options.map((o, i) => {
                 if (o.is_pass) return '';
                 const label = o.skill_name ? '（' + o.skill_name + '）' : (o.hidden ? '暗置手牌' : (o.detail || ''));
@@ -549,6 +675,7 @@
         return !!(G.req && G.req.selection && G.req.selection.mode === 'multi');
     }
 
+    /** 选中/取消一个候选；多选时不超过 max。 */
     function togglePick(i) {
         if (!G.req || G.req.expired) return;
         const at = G.picked.indexOf(i);
@@ -564,6 +691,7 @@
     }
 
     // ------------------------------------------------------------------ 提交
+    /** “确定”：响应请求时提交所选候选；出牌阶段时提交所选的牌/技能与目标。 */
     function onOk() {
         if (G.req) {
             if (G.req.expired) return;
@@ -578,6 +706,7 @@
             gameClient.playerAction({ type: 'play_card', card_index: sel.index }, sel.targets.slice());
             ChatPanel.addLog('你使用【' + card.name + '】' + targetsText(sel.targets), 'me');
         } else {
+            // 技能：原样提交引擎给的候选对象（引擎按 skill_name / variant / card_indices 复核）
             const action = Object.assign({}, sel.action);
             const targets = action.requires_target ? sel.targets.slice() : [];
             gameClient.playerAction(action, targets);
@@ -592,6 +721,7 @@
         return ids && ids.length ? '，目标：' + ids.map(id => (playerById(id) || {}).name || id).join('、') : '';
     }
 
+    /** “取消 / 不出 / 不救 / 否”。 */
     function onCancel() {
         if (G.req) {
             if (G.req.expired) return;
@@ -607,6 +737,7 @@
         if (G.sel) { G.sel = null; renderAll(); }
     }
 
+    /** “结束出牌”。 */
     function onEnd() {
         if (!isMyPlay()) return;
         gameClient.playerAction({ type: 'end_phase' }, []);
@@ -626,6 +757,7 @@
         }
     }
 
+    /** 提交响应：单选用 option_index，多选用 option_indices（协议约定）。 */
     function sendResponse(selection) {
         const r = G.req;
         if (!r || r.expired) return;
@@ -643,6 +775,7 @@
         renderAll();
     }
 
+    /** 响应倒计时条；时间到了显示“托管代选”，引擎那边会自动按规则托管。 */
     function startRequestTimer(seconds) {
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
@@ -672,6 +805,7 @@
         return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r };
     }
 
+    /** 武将框上飘出的数字（-1 红色 / +1 绿色）。 */
     function floatNumber(id, text, cls) {
         const el = frameEl(id);
         if (!el) return;
@@ -685,6 +819,7 @@
         setTimeout(() => n.remove(), 1200);
     }
 
+    /** 给座位加一次性的动画 class（hurt 受伤抖动 / healed 回复绿光）。 */
     function flash(id, cls) {
         const root = seatRoot(id);
         if (!root) return;
@@ -694,6 +829,7 @@
         setTimeout(() => root.classList.remove(cls), 750);
     }
 
+    /** 技能发动时在头像上写出技能名（书法大字）。 */
     function skillShout(id, text) {
         const el = frameEl(id);
         const c = el ? centerOf(el) : { x: innerWidth / 2, y: innerHeight / 2 };
@@ -706,6 +842,7 @@
         setTimeout(() => s.remove(), 1400);
     }
 
+    /** 聊天气泡：对手座位按方位朝向牌桌中央，我的气泡在头像上方。 */
     function showBubble(id, text) {
         const root = seatRoot(id);
         if (!root) return;
@@ -718,6 +855,7 @@
         setTimeout(() => { b.classList.add('fade'); setTimeout(() => b.remove(), 320); }, 3800);
     }
 
+    /** 出牌时从使用者画金线指向目标。 */
     function aimLines(fromId, toIds) {
         const svg = document.getElementById('fxLines');
         const from = frameEl(fromId);
@@ -738,6 +876,7 @@
         setTimeout(() => g.remove(), 1000);
     }
 
+    /** 飞牌起点：我自己出的牌从手牌位置飞出，别人的从武将框飞出。 */
     function cardSource(data) {
         if (data.actor_id === G.meId && Number.isInteger(data.card_index)) {
             const el = document.querySelector('#hand .card[data-index="' + data.card_index + '"]');
@@ -748,13 +887,15 @@
         return { left: innerWidth / 2 - 30, top: innerHeight / 2 - 40, width: 60, height: 84 };
     }
 
-    function putOnTable(data) {
+    /** 把牌放进中央处理区（最多保留 4 张，旧的变淡），下方写“谁 → 谁”。 */
+    function putOnTable(data, captionOverride) {
         const box = document.getElementById('tableCards');
         const fig = document.createElement('figure');
         fig.className = 'table-card';
         fig.style.margin = '0';
         let caption = data.actor_name || '';
-        if (data.reason === 'use' && data.target_name) caption += ' → ' + data.target_name;
+        if (captionOverride) caption = captionOverride;
+        else if (data.reason === 'use' && data.target_name) caption += ' → ' + data.target_name;
         else if (data.reason === 'hand_limit') caption += ' 弃置';
         else if (data.reason && data.reason !== 'use') caption = data.message || caption;
         fig.innerHTML = SGS.cardHTML(data.card || { name: data.card_name }) + '<figcaption>' + esc(caption) + '</figcaption>';
@@ -769,19 +910,23 @@
         document.getElementById('tableCards').innerHTML = '';
     }
 
+    /** 告诉服务器“这段动画播完了”，引擎收到后才继续结算（服务器最多等 2.5 秒）。 */
     function ack(data) {
         if (data.animation_id) gameClient.send({ type: Protocol.INBOUND.CARD_ANIMATION_DONE, animation_id: data.animation_id });
     }
 
+    const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /** 出牌动画：指向线 → 牌从起点飞到处理区 → 落地后 ACK → 稍停再放下一张。 */
     function animateCard(data) {
         return new Promise(resolve => {
             const total = Math.max(300, Number(settings().animation_ms) || 1100);
-            const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             if (data.reason === 'use') {
                 const ids = String(data.target_name || '').split('、').map(n => (playerByName(n) || {}).id).filter(Number.isInteger);
                 aimLines(data.actor_id, ids);
             }
-            if (document.hidden || reduced) {
+            // 页面在后台或用户要求减少动态：直接落地，立刻 ACK，不拖慢引擎
+            if (document.hidden || reducedMotion()) {
                 putOnTable(data);
                 sfx('card');
                 ack(data);
@@ -792,7 +937,7 @@
             const dest = document.getElementById('tableCards').getBoundingClientRect();
             const holder = document.createElement('div');
             holder.className = 'flying-card';
-            holder.innerHTML = SGS.cardHTML(data.card || { name: data.card_name });
+            holder.innerHTML = SGS.cardHTML(data.card || { name: data.card_name }, { noDetail: true });
             const cardEl = holder.firstChild;
             const w = parseFloat(getComputedStyle(document.getElementById('battle')).getPropertyValue('--hand-w')) || 86;
             cardEl.style.setProperty('--w', w + 'px');
@@ -811,17 +956,54 @@
                 putOnTable(data);
                 sfx('card');
                 ack(data);
-                // 给观看留一点停顿，再结算下一张
                 setTimeout(resolve, Math.round(total * 0.25));
             }, flyMs);
         });
     }
 
-    function enqueueCard(data) {
-        G.animQueue = G.animQueue.then(() => animateCard(data)).catch(err => { console.error('卡牌动画失败', err); ack(data); });
+    /**
+     * 判定框：牌桌中央弹出“【乐不思蜀】判定”，牌背翻成判定牌，再盖“生效 / 失效”印。
+     * 印盖下后立即 ACK（服务器 2.5 秒超时内），判定框再停留片刻后淡出，判定牌留在处理区。
+     */
+    function animateJudge(data) {
+        return new Promise(resolve => {
+            const owner = data.actor_id === G.meId ? '你' : (data.actor_name || '');
+            const verdict = data.effective === true ? '生效' : (data.effective === false ? '失效' : '');
+            ChatPanel.addLog(data.message || (owner + '进行判定'), data.effective ? 'important' : '');
+            const finish = () => {
+                putOnTable(data, owner + ' 判定' + (verdict ? '·' + verdict : ''));
+                ack(data);
+            };
+            if (document.hidden || reducedMotion()) { finish(); resolve(); return; }
+
+            const layer = document.getElementById('fxLayer');
+            const box = document.createElement('div');
+            box.className = 'judge-box';
+            box.innerHTML =
+                '<div class="jb-title"><b>【' + esc(data.judge_for || '判定') + '】</b>判定 · ' + esc(owner) + '</div>' +
+                '<div class="jb-flip"><div class="jb-inner">' +
+                '<div class="jb-face jb-back">' + SGS.cardHTML(null, { back: true }) + '</div>' +
+                '<div class="jb-face jb-front">' + SGS.cardHTML(data.card || { name: data.card_name }) + '</div>' +
+                '</div></div>' +
+                (verdict ? '<div class="jb-verdict ' + (data.effective ? 'hit' : 'miss') + '">' + verdict + '</div>' : '') +
+                (data.result_text ? '<div class="jb-text">' + esc(data.result_text) + '</div>' : '');
+            layer.appendChild(box);
+            sfx('judge');
+            // 0.35s 后翻牌，0.95s 盖印并 ACK，2.1s 淡出
+            setTimeout(() => box.classList.add('flipped'), 350);
+            setTimeout(() => { box.classList.add('stamped'); finish(); }, 950);
+            setTimeout(() => box.classList.add('leaving'), 2100);
+            setTimeout(() => { box.remove(); resolve(); }, 2450);
+        });
     }
 
-    // ------------------------------------------------------------------ 状态差异
+    /** 出牌与判定共用一条队列，保证顺序与引擎结算一致。 */
+    function enqueue(fn, data) {
+        G.animQueue = G.animQueue.then(() => fn(data)).catch(err => { console.error('动画失败', err); ack(data); });
+    }
+
+    // ------------------------------------------------------------------ 状态差异 → 特效
+    /** 对比前后两份状态：体力下降 → 受伤；上升 → 回复；存活变阵亡 → 阵亡提示。 */
     function applyStateEffects(prevMap) {
         G.players.forEach(p => {
             const before = prevMap[p.id];
@@ -851,13 +1033,11 @@
         document.getElementById('rn').textContent = s.round;
         document.getElementById('dc').textContent = s.deck_count;
         document.getElementById('discardCount').textContent = s.discard_count || 0;
-        const phase = SGS.PHASE[s.phase] || '';
-        document.getElementById('turnText').textContent = s.current_name ? (s.current_player_id === G.meId ? '你的' + phase : s.current_name + ' · ' + phase) : '等待开局';
-        document.getElementById('phaseBanner').textContent = s.current_player_id === G.meId && phase ? phase : '';
     }
 
     function renderAll() {
         renderHUD();
+        renderPhaseTrack();
         renderSeats();
         renderMyArea();
         renderHand();
@@ -865,6 +1045,7 @@
     }
 
     // ------------------------------------------------------------------ 消息处理
+    /** 连上服务器后立刻用大厅配置开局。 */
     gameClient.onConnect = function () {
         ChatPanel.addLog('已连接游戏服务，正在开局…');
         const cfg = Object.assign({}, G.cfg);
@@ -877,6 +1058,7 @@
         gameClient.createGame(cfg);
     };
 
+    /** 开局成功：若本局用了身份卡，扣掉一张（并从配置里删掉，刷新页面不会重复扣）。 */
     gameClient.onGameCreated = function () {
         if (G.cfg.identity_card && G.cfg.identity_card.use) {
             const user = store.get('userData', {}) || {};
@@ -889,12 +1071,14 @@
         sfx('click');
     };
 
+    /** 整份状态更新。 */
     gameClient.onStateUpdate = function (s) {
         const prevMap = G.prev;
         G.state = s;
         G.players = s.players || [];
         const human = G.players.find(p => !p.is_ai) || G.players.find(p => p.id === 0);
         if (human) G.meId = human.id;
+        // 手牌换了（摸牌、被拆等）时，原来的选择作废
         if (Array.isArray(s.self_hand)) {
             const oldKey = G.hand.map(c => c.id).join('|');
             const newKey = s.self_hand.map(c => c.id).join('|');
@@ -905,11 +1089,16 @@
             G.turn = null;
             G.sel = null;
         }
+        // 换人：清空处理区，写一行“—— X 的回合 ——”
         const turnKey = s.round + ':' + s.current_player_id;
         if (turnKey !== G.lastTurnKey) {
             G.lastTurnKey = turnKey;
             clearTable();
             if (s.current_name) ChatPanel.addLog('—— ' + (s.current_player_id === G.meId ? '你' : s.current_name) + ' 的回合 ——', 'turn');
+        }
+        // 兜底：老版本服务器没有阶段事件时，用状态里的 phase 驱动阶段栏
+        if (s.current_player_id != null && (G.phase.playerId !== s.current_player_id || !G.phase.phase)) {
+            G.phase = { playerId: s.current_player_id, phase: s.phase, skipped: new Set() };
         }
         G.prev = {};
         G.players.forEach(p => { G.prev[p.id] = { hp: p.hp, alive: p.alive }; });
@@ -917,6 +1106,7 @@
         applyStateEffects(prevMap);
     };
 
+    /** 轮到我出牌：保存合法操作，重置选择。 */
     gameClient.onYourTurn = function (data) {
         const fresh = !G.turn;
         G.turn = data;
@@ -933,6 +1123,7 @@
         }
     };
 
+    /** 场外响应 / 选择请求：开倒计时；手机上若开着聊天抽屉就先收起，免得挡住操作。 */
     gameClient.onRequireResponse = function (data) {
         G.req = data;
         G.picked = [];
@@ -946,23 +1137,32 @@
         ChatPanel.addMessage(data);
     };
 
+    /** 各类事件分发。 */
     gameClient.onEventNotification = function (data) {
-        if (data.event_kind === 'card_to_discard') {
-            ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '使用【' + (data.card_name || '') + '】'));
-            enqueueCard(data);
-            return;
-        }
-        if (data.event_kind === 'skill_activation') {
-            ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '发动【' + data.skill_name + '】'));
-            if (Number.isInteger(data.actor_id)) skillShout(data.actor_id, data.skill_name || '');
-            return;
-        }
-        if (data.message) {
-            ChatPanel.addLog(data.message, data.important ? 'important' : (data.trustee ? 'bad' : ''));
-            if (data.trustee && data.player_id === G.meId) toast(data.message);
+        switch (data.event_kind) {
+            case 'card_to_discard':
+                ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '使用【' + (data.card_name || '') + '】'));
+                enqueue(animateCard, data);
+                return;
+            case 'judge':
+                enqueue(animateJudge, data);
+                return;
+            case 'phase':
+                onPhaseEvent(data);
+                return;
+            case 'skill_activation':
+                ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '发动【' + data.skill_name + '】'));
+                if (Number.isInteger(data.actor_id)) skillShout(data.actor_id, data.skill_name || '');
+                return;
+            default:
+                if (data.message) {
+                    ChatPanel.addLog(data.message, data.important ? 'important' : (data.trustee ? 'bad' : ''));
+                    if (data.trustee && data.player_id === G.meId) toast(data.message);
+                }
         }
     };
 
+    /** AI 的回合事件：思考中提示、思考摘要。 */
     gameClient.onAIAction = function (data) {
         const p = playerByName(data.player_name);
         if (data.action === 'thinking_start' && p) {
@@ -991,6 +1191,7 @@
         toast('已请求结束对局，等待结算…');
     };
 
+    /** 对局结束：保存结算快照（结算页读取）、更新本机战绩与身份卡、弹出胜负印。 */
     gameClient.onGameEnd = function (data) {
         G.ended = true;
         G.turn = null; G.sel = null;
@@ -999,6 +1200,7 @@
         if (data.state) { G.state = data.state; G.players = data.state.players || G.players; }
         const mine = (state.players || []).find(p => p.id === G.meId) || {};
         const winner = data.winner;
+        // 主公胜利时忠臣也算赢
         const side = { lord: ['lord', 'loyalist'], rebel: ['rebel'], spy: ['spy'] }[winner] || [];
         const decided = side.length > 0;
         const won = decided && side.includes(mine.identity);
@@ -1016,6 +1218,7 @@
         };
         store.set('gameResult', result);
         if (decided) {
+            // 连胜每满 2 局奖励一张身份卡（大厅可用来指定身份）
             const user = store.get('userData', {}) || {};
             user.totalGames = (user.totalGames || 0) + 1;
             user.winStreak = won ? (user.winStreak || 0) + 1 : 0;
@@ -1032,6 +1235,7 @@
         document.getElementById('endResult').hidden = false;
         ChatPanel.addLog(data.message || '对局结束', 'important');
         sfx(decided ? (won ? 'win' : 'lose') : 'click');
+        // 稍等动画收尾再弹窗，让玩家看到最后一张牌
         setTimeout(() => { const d = document.getElementById('endModal'); if (!d.open) d.showModal(); }, 900);
     };
 
@@ -1042,6 +1246,7 @@
         if (data.fatal) showFatal('对局异常', msg);
     };
 
+    /** 断线：本局无法续上（引擎随连接一起结束），引导回大厅。 */
     gameClient.onDisconnect = function (info) {
         if (G.ended) return;
         showFatal('连接已断开', info && info.wasConnected
@@ -1062,6 +1267,7 @@
     }
 
     // ------------------------------------------------------------------ 武将信息 / AI 设置
+    /** 武将信息弹窗：身份、体力、手牌数、装备与判定区（含说明）、全部技能。 */
     function openPlayerInfo(id) {
         const p = playerById(id);
         if (!p) return;
@@ -1069,8 +1275,11 @@
         const isMe = id === G.meId;
         const identity = p.identity && (isMe || p.identity_revealed) ? (SGS.IDENTITY[p.identity] || {}).name : '未公开';
         const eq = p.equipment || {};
-        const eqText = SGS.EQUIP_ORDER.filter(s => eq[s]).map(s => SGS.EQUIP_SLOT[s].name + '：' + eq[s]).join('　') || '无';
-        const judgeText = (p.judge_area || []).join('、') || '无';
+        const eqItems = SGS.EQUIP_ORDER.filter(s => eq[s]).map(s => {
+            const info = SGS.CARD_INFO[eq[s]] || {};
+            return '<div class="info-skill"><b>' + esc(eq[s]) + '</b><small class="muted">' + SGS.EQUIP_SLOT[s].name + (info.range ? ' · 攻击范围 ' + info.range : '') + '</small><br>' + esc(info.text || '') + '</div>';
+        }).join('');
+        const judgeItems = (p.judge_area || []).map(n => '<div class="info-skill"><b>' + esc(n) + '</b>' + esc((SGS.CARD_INFO[n] || {}).text || '') + '</div>').join('');
         document.getElementById('playerInfoTitle').textContent = p.name + ' · ' + (hero.name || p.hero_name || '');
         document.getElementById('playerInfoBody').innerHTML =
             '<div class="info-grid"><div class="hero-frame faction-' + esc(hero.faction || '群') + '">' + SGS.heroImgHTML(hero.id, hero.name) + '</div>' +
@@ -1078,11 +1287,12 @@
             '<div class="row">' + SGS.factionSeal(hero.faction) + SGS.identitySeal(p.identity && (isMe || p.identity_revealed) ? p.identity : null) + '<span>' + esc(identity) + '</span></div>' +
             '<div class="row">' + SGS.hpHTML(p.hp, p.max_hp) + '<span class="muted">体力 ' + p.hp + ' / ' + p.max_hp + '</span></div>' +
             '<div>手牌 ' + p.hand_count + ' 张' + (p.alive ? '' : '　<b style="color:var(--bad)">已阵亡</b>') + '</div>' +
-            '<div class="muted">装备　' + esc(eqText) + '</div>' +
-            '<div class="muted">判定区　' + esc(judgeText) + '</div>' +
             (p.is_ai && p.ai_config ? '<div class="muted">模型　' + esc(p.ai_config.provider + ' / ' + p.ai_config.model) + '</div>' : '') +
             '</div></div>' +
-            '<div class="info-skills">' + (hero.skills || []).map(s => '<div class="info-skill"><b>' + esc(s.name) + '</b>' + esc(s.description || '') + '</div>').join('') + '</div>' +
+            '<h3 class="info-h">武将技能</h3><div class="info-skills">' + (hero.skills || []).map(s =>
+                '<div class="info-skill"><b>' + esc(s.name) + '</b>' + (SGS.SKILL_TAG[s.type] && s.type !== 'trigger' ? '<small class="muted">' + SGS.SKILL_TAG[s.type] + '</small><br>' : '') + esc(s.description || '') + '</div>').join('') + '</div>' +
+            (eqItems ? '<h3 class="info-h">装备</h3><div class="info-skills">' + eqItems + '</div>' : '') +
+            (judgeItems ? '<h3 class="info-h">判定区</h3><div class="info-skills">' + judgeItems + '</div>' : '') +
             (p.is_ai ? '<div class="dialog-actions"><button type="button" class="btn" id="infoAiBtn">调整这名 AI 的模型</button></div>' : '');
         const btn = document.getElementById('infoAiBtn');
         if (btn) btn.addEventListener('click', () => { document.getElementById('playerInfoModal').close(); openAISettings(id); });
@@ -1095,6 +1305,7 @@
         const list = (providerList && providerList.length) ? providerList : (window.Protocol ? Protocol.PROVIDERS : []);
         document.getElementById('aiSettingProvider').innerHTML = list.map(p => '<option value="' + esc(p.value) + '">' + esc(p.name) + '</option>').join('');
     }
+    /** 局内调整某个 AI 的模型（update_ai_config，立即生效；Key 留空则保留原 Key）。 */
     function openAISettings(id) {
         const p = playerById(id);
         if (!p || !p.is_ai) return;
@@ -1127,6 +1338,7 @@
         });
     }
 
+    /** 自绘确认框（替代浏览器自带 confirm，风格统一）。返回 Promise<boolean>。 */
     function confirmDialog(title, message, okText) {
         return new Promise(resolve => {
             const d = document.createElement('dialog');
@@ -1151,7 +1363,15 @@
     }
 
     // ------------------------------------------------------------------ 启动
+    /** 生成阶段栏的 6 个格子（准 判 摸 出 弃 结）。 */
+    function buildPhaseTrack() {
+        const track = document.getElementById('phaseTrack');
+        track.innerHTML = '<span class="pt-owner"></span>' + SGS.PHASE_ORDER.map(k =>
+            '<span class="pt-step" title="' + SGS.PHASE[k] + '">' + SGS.PHASE_SHORT[k] + '</span>').join('');
+    }
+
     function bindUI() {
+        buildPhaseTrack();
         document.getElementById('okBtn').addEventListener('click', onOk);
         document.getElementById('cancelBtn').addEventListener('click', onCancel);
         document.getElementById('endBtn').addEventListener('click', onEnd);
@@ -1163,6 +1383,7 @@
         document.getElementById('endModal').addEventListener('cancel', (e) => e.preventDefault());
         window.addEventListener('resize', layoutHand);
         window.addEventListener('global-settings-changed', () => { G.seatSig = {}; renderAll(); });
+        // 键盘：回车 = 确定，Esc = 取消（输入框里打字时不拦截）
         document.addEventListener('keydown', (e) => {
             if (e.target.closest('input, textarea, select') || document.querySelector('dialog[open]')) return;
             if (e.key === 'Enter' && !document.getElementById('okBtn').disabled) { e.preventDefault(); onOk(); }

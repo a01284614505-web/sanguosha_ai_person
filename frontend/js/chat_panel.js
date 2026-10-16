@@ -21,6 +21,7 @@
         activeTab: 'chat',
         unread: { chat: false, log: false },
 
+        // 初始化：opts.getPlayers / getMeId 提供玩家信息，opts.send 负责真正发送，opts.showBubble 在座位上冒气泡。
         init(opts) {
             this.opts = Object.assign({
                 getPlayers: () => [],
@@ -58,6 +59,7 @@
                 : '你在大厅关闭了席间聊天，AI 不会主动说话。<br>你仍然可以发言。') + '</div>';
         },
 
+        // 发送一条聊天（截断到 200 字，与服务器上限一致）。没连上时提示并返回 false。
         submit(text) {
             const msg = String(text || '').trim().slice(0, 200);
             if (!msg) return false;
@@ -66,8 +68,10 @@
             return ok;
         },
 
+        // 抽屉是否展开（只在窄屏有意义）。
         isOpen() { return this.panel.classList.contains('open'); },
         isDrawer() { return getComputedStyle(this.toggleBtn).display !== 'none'; },
+        // 展开抽屉，可顺便切换到指定标签。
         open(tab) {
             if (tab) this.showTab(tab);
             this.panel.classList.add('open');
@@ -78,10 +82,12 @@
             this.panel.classList.remove('open');
             this.toggleBtn.setAttribute('aria-expanded', 'false');
         },
+        // 某个标签此刻是否真的被看见（宽屏常驻；窄屏需抽屉展开）。看不见时才标未读。
         visible(tab) {
             return this.activeTab === tab && (!this.isDrawer() || this.isOpen());
         },
 
+        // 切换“席间 / 战报”标签。
         showTab(tab) {
             this.activeTab = tab;
             document.getElementById('tabChat').setAttribute('aria-selected', String(tab === 'chat'));
@@ -105,6 +111,7 @@
             if (tab === 'chat') document.getElementById('chatUnread').hidden = false;
         },
 
+        // 根据 from_id / from 找到说话的玩家；服务器回显真人发言时 from 为真人名字（旧版服务器为“玩家”）。
         resolveSpeaker(data) {
             const players = this.opts.getPlayers() || [];
             const meId = this.opts.getMeId();
@@ -115,6 +122,7 @@
             return p;
         },
 
+        // 追加一条聊天：左侧头像 + 名字 + 气泡；自己的发言靠右。同时在座位上冒气泡。
         addMessage(data) {
             const p = this.resolveSpeaker(data);
             const meId = this.opts.getMeId();
@@ -133,6 +141,7 @@
             if (!isMe) this.markUnread('chat');
         },
 
+        // 聊天区里的一行系统提示（居中灰字）。
         addSystem(text) {
             const empty = this.chatList.querySelector('.chat-empty');
             if (empty) empty.remove();
@@ -142,6 +151,7 @@
             this.append(this.chatList, row);
         },
 
+        // 追加一行战报。cls：turn 回合分隔 / me 我的操作 / important 关键事件 / bad 错误 / think AI 思考。
         addLog(text, cls) {
             if (!text) return;
             const line = document.createElement('div');
@@ -151,6 +161,7 @@
             if (cls === 'important' || cls === 'bad') this.markUnread('log');
         },
 
+        // 追加到列表并限制最多 200 条；用户正在往上翻看时不强行滚到底。
         append(list, el) {
             const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
             list.appendChild(el);

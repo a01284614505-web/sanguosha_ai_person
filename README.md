@@ -59,7 +59,8 @@ sanguosha_data/
 │   ├── result.html         # 结算（真实统计 + MVP）
 │   ├── settings.html       # 设置（牌堆切换、全局设置、数据状态）
 │   ├── hero_manager.html   # 武将导入（UI 空壳）
-│   ├── js/                 # protocol.js(生成) / ws_client.js / sgs_common.js /
+│   ├── handbook.html       # 图鉴（42 种卡牌说明 + 27 将技能）
+│   ├── js/                 # protocol.js(生成) / ws_client.js / sgs_common.js / card_info.js /
 │   │                       # lobby.js / select_hero.js / game_main.js /
 │   │                       # chat_panel.js(席间聊天+战报) / result.js / settings_page.js
 │   └── css/                # sgs.css(公共主题) / pages.css / game.css（main.css 仅 hero_manager 使用）

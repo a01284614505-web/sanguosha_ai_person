@@ -140,6 +140,31 @@ class MainEngine:
         self.game_log.append(entry)
         await self.emit(ENGINE_EVENT.EVENT_NOTIFICATION, **entry)
 
+    async def announce_judge(self, player: Player, card, judge_for: str, effective=None, result_text: str = ""):
+        """判定结果通知：前端在牌桌中央展示判定牌与“生效/失效”，并等待动画 ACK 后再继续结算。
+
+        effective 为 None 表示该判定没有统一的生效/失效语义（如技能判定），前端只展示判定牌。
+        """
+        suit_text = {"spade": "♠", "heart": "♥", "club": "♣", "diamond": "♦"}.get(card.suit, "")
+        verdict = "" if effective is None else ("生效" if effective else "失效")
+        message = f"{player.name}的【{judge_for}】判定：{suit_text}{card.rank}{card.name}"
+        if verdict:
+            message += f"，{verdict}"
+        if result_text:
+            message += f"（{result_text}）"
+        await self._notify_card_ui(
+            event_kind="judge",
+            actor_id=player.id,
+            actor_name=player.name,
+            card=card_to_dict(card),
+            card_name=card.name,
+            judge_for=judge_for,
+            effective=effective,
+            result_text=result_text,
+            message=message,
+            reason="judge",
+        )
+
     async def _notify_card_ui(self, **data):
         """卡牌UI统一通知（弃牌/出牌/技能转化共用）：等待浏览器确认动画完成后才继续结算。"""
         entry = {"event_kind": "card_to_discard", "await_ui": True, **data}
@@ -336,15 +361,18 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        self.game_state.current_phase = Phase.PLAY
+        await self._enter_phase(player, Phase.PLAY)
         player.sha_count = 0
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        while player.alive and not self.game_state.game_over:
+        # 乐不思蜀等效果会把出牌阶段加入跳过集合：此时不向真人下发 your_turn。
+        play_skipped = await self._skip_play_phase_if_needed(player)
+
+        while not play_skipped and player.alive and not self.game_state.game_over:
             actions = self.get_available_actions(player)
             # 必须先创建等待器再广播，避免WebSocket客户端立即响应造成丢操作。
             self._player_event = asyncio.Event()
@@ -373,19 +401,49 @@ class MainEngine:
             return
 
         for phase in [Phase.DISCARD, Phase.END]:
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    async def _enter_phase(self, player: Player, phase: Phase):
+        """切换到新阶段，并给前端阶段栏发一条轻量通知（不附整份状态）。
+
+        skipped=True 表示该阶段已被判定/技能标记为跳过（如兵粮寸断跳过摸牌、乐不思蜀跳过出牌），
+        前端据此把阶段栏对应格子显示为“跳过”。
+        """
+        self.game_state.current_phase = phase
+        skipped = phase in self.phase_controller.skip_phases
+        await self.emit(
+            ENGINE_EVENT.EVENT_NOTIFICATION,
+            event_kind="phase",
+            player_id=player.id,
+            player_name=player.name,
+            phase=phase.value,
+            skipped=skipped,
+        )
+
+    async def _skip_play_phase_if_needed(self, player: Player) -> bool:
+        """出牌阶段不经 PhaseController.execute_phase，因此在这里单独消费“跳过出牌阶段”标记。
+
+        修复：此前人类与 AI 的出牌阶段都不检查跳过集合，导致乐不思蜀判定生效后仍可出牌，
+        且标记残留到之后的回合。
+        """
+        if Phase.PLAY not in self.phase_controller.skip_phases:
+            return False
+        self.phase_controller.skip_phases.discard(Phase.PLAY)
+        await self.log_event(f"{player.name}跳过出牌阶段", player_id=player.id)
+        return True
 
     async def _run_phases(self, player: Player):
         for phase in Phase:
             if self.game_state.game_over:
                 break
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
             logger.info(f"\n[{phase.value}阶段]")
             if phase == Phase.PLAY:
                 player.sha_count = 0
-                await self._auto_play_phase(player)
+                if not await self._skip_play_phase_if_needed(player):
+                    await self._auto_play_phase(player)
             else:
                 await self._execute_phase_with_ui(phase)
             if not player.alive:

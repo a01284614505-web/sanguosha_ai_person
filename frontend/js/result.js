@@ -1,4 +1,5 @@
 // 结算页：只展示 game_end 下发的真实统计（口径见 game_engine/game_stats.py），不在 UI 层计算。
+// 数据来自对局页写入的 localStorage['gameResult']；没有数据时提示去大厅开局。
 (function () {
     'use strict';
     const { esc, store } = SGS;
@@ -13,6 +14,7 @@
         return m ? m + ' 分 ' + s + ' 秒' : s + ' 秒';
     }
 
+    // 胜负印 + 标题 + 轮数/用时/身份 + MVP + 统计表 + 身份卡奖励。
     function render(r) {
         const decided = ['lord', 'rebel', 'spy'].includes(r.winner);
         const verdict = document.getElementById('resultVerdict');
@@ -40,6 +42,7 @@
         if (r.reward === 'identity_card') document.getElementById('rewardSection').hidden = false;
     }
 
+    // 每名玩家一行：头像、身份印与七项统计；自己的一行高亮，阵亡的变灰。
     function renderStats(r) {
         const box = document.getElementById('statsList');
         const players = r.players || [];
