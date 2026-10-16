@@ -2,99 +2,128 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI三国杀酒馆</title>
-    <link rel="stylesheet" href="css/main.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17110c">
+    <title>三国杀酒馆 · 大厅</title>
+    <link rel="stylesheet" href="css/sgs.css?v=20261016a">
+    <link rel="stylesheet" href="css/pages.css?v=20261016a">
 </head>
 <body>
-    <div class="container">
-        <header class="lobby-header">
-            <h1>🍺 AI三国杀酒馆</h1>
-            <p class="subtitle">群雄逐鹿 · AI论剑</p>
-        </header>
+<div class="page">
+    <header class="topbar">
+        <a class="logo" href="index.html" aria-label="三国杀酒馆 大厅">
+            <span class="logo-seal">杀</span>
+            <span class="logo-text gold-text">三国杀酒馆</span>
+        </a>
+        <nav aria-label="主导航">
+            <a href="index.html" aria-current="page">大厅</a>
+            <a href="settings.html">设置</a>
+            <button class="icon-btn" type="button" id="openGlobalSettings" title="全局设置" aria-label="全局设置">⚙</button>
+        </nav>
+    </header>
 
-        <section class="mode-selection">
-            <h2>选择游戏模式</h2>
-            <div class="mode-grid">
-                <button class="mode-btn" data-mode="5人身份局">
-                    <span class="mode-icon">👥</span>
-                    <span class="mode-name">5人身份局</span>
-                    <span class="mode-desc">经典模式</span>
-                </button>
-                <button class="mode-btn mode-locked" type="button" data-mode="8人身份局" aria-disabled="true" title="后续阶段开放">
-                    <span class="mode-icon">👥👥</span>
-                    <span class="mode-name">8人身份局</span>
-                    <span class="mode-desc">后续阶段开放</span>
-                </button>
-                <button class="mode-btn mode-locked" type="button" data-mode="2v2" aria-disabled="true" title="后续阶段开放">
-                    <span class="mode-icon">⚔️</span>
-                    <span class="mode-name">2v2</span>
-                    <span class="mode-desc">后续阶段开放</span>
-                </button>
-                <button class="mode-btn mode-locked" type="button" data-mode="斗地主" aria-disabled="true" title="后续阶段开放">
-                    <span class="mode-icon">🃏</span>
-                    <span class="mode-name">斗地主</span>
-                    <span class="mode-desc">后续阶段开放</span>
-                </button>
-            </div>
-        </section>
+    <main>
+        <div class="lobby-grid">
+            <section class="frame cornered mode-hall" aria-labelledby="modeName">
+                <div>
+                    <h1 class="mode-name brush gold-text" id="modeName">身份局</h1>
+                    <p class="mode-sub">五人入席，主公一人、忠臣一人、反贼两人、内奸一人。除主公外身份皆隐，胜负全凭眼力与手段。</p>
+                    <div class="identity-lineup" aria-label="身份构成">
+                        <span class="seal id-lord">主</span>
+                        <span class="seal id-loyalist">忠</span>
+                        <span class="seal id-rebel">反</span>
+                        <span class="seal id-rebel">反</span>
+                        <span class="seal id-spy">内</span>
+                        <small>五人 · 每人一身份</small>
+                    </div>
+                    <div class="mode-meta">
+                        <span>将池 <b id="poolLabel">界限突破 27 将</b></span>
+                        <span>牌堆 <b id="deckLabel">读取中…</b></span>
+                    </div>
+                </div>
+                <div class="hall-art" aria-hidden="true">
+                    <div class="portrait p1"><img src="assets/heroes/caocao.jpg" alt=""></div>
+                    <div class="portrait p2"><img src="assets/heroes/liubei.jpg" alt=""></div>
+                    <div class="portrait p3"><img src="assets/heroes/sunquan.jpg" alt=""></div>
+                </div>
+            </section>
 
-        <section class="player-config">
-            <h2>玩家设置</h2>
-            <div class="config-item">
-                <label>你的名字：</label>
-                <input type="text" id="playerName" value="我" maxlength="10">
-            </div>
-            <div class="config-item" id="identityCardSection" style="display:none;">
-                <label>
-                    <input type="checkbox" id="useIdentityCard">
-                    使用身份卡（剩余<span id="cardCount">0</span>张）
+            <aside class="frame seat-panel" aria-labelledby="seatTitle">
+                <h2 class="section-title" id="seatTitle">入席</h2>
+                <label class="field"><span>你的称呼</span>
+                    <input id="playerName" maxlength="10" placeholder="无名客" autocomplete="nickname">
                 </label>
-                <select id="identitySelect" disabled>
-                    <option value="">选择身份</option>
-                </select>
-            </div>
-        </section>
-
-        <section class="ai-config">
-            <h2>AI配置 <span class="ai-count">(需要<span id="requiredAI">4</span>个AI)</span></h2>
-            <div id="aiConfigList" class="ai-list">
-                <!-- AI配置项将动态生成 -->
-            </div>
-        </section>
-
-        <section class="game-config">
-            <h2>游戏设置</h2>
-            <div class="config-item">
-                <label>将池：</label>
-                <select id="heroPool">
-                    <option value="界限突破27将" selected>界限突破27将</option>
-                </select>
-            </div>
-            <div class="config-item">
-                <label>
-                    <input type="checkbox" id="chatEnabled" checked>
-                    启用AI聊天
+                <label class="field"><span>牌堆</span>
+                    <select id="deckSelect"><option value="">读取中…</option></select>
                 </label>
-            </div>
-            <div id="chatModelConfig" class="config-sub" style="display:none;">
-                <label>聊天模型：</label>
-                <select id="chatProvider"></select>
-                <input type="text" id="chatModel" value="deepseek-chat" placeholder="模型名称">
-            </div>
-        </section>
-
-        <div class="action-buttons">
-            <button id="startGameBtn" class="btn-primary">开始游戏</button>
+                <label class="field"><span>将池</span>
+                    <select id="heroPool"><option value="界限突破27将" selected>界限突破 27 将</option></select>
+                </label>
+                <div class="field" id="identityCardSection" hidden>
+                    <span>身份卡（剩余 <b id="cardCount">0</b> 张）</span>
+                    <label class="check"><input type="checkbox" id="useIdentityCard"> 本局使用身份卡</label>
+                    <select id="identitySelect" disabled>
+                        <option value="">选择身份</option>
+                        <option value="主公">主公</option>
+                        <option value="忠臣">忠臣</option>
+                        <option value="反贼">反贼</option>
+                        <option value="内奸">内奸</option>
+                    </select>
+                </div>
+                <label class="check"><input type="checkbox" id="chatEnabled" checked> 席间聊天（AI 会在对局中说话）</label>
+                <div class="start-row">
+                    <button class="btn primary big" id="startGameBtn" type="button">开始游戏</button>
+                    <div class="start-hint"><span class="conn-dot" id="connDot"></span><span id="connText">正在连接游戏服务…</span></div>
+                </div>
+            </aside>
         </div>
 
-        <footer class="lobby-footer">
-            <p>连胜记录：<span id="winStreak">0</span>局 | 总对局：<span id="totalGames">0</span>局</p>
-        </footer>
-    </div>
+        <section class="guests" aria-labelledby="guestTitle">
+            <h2 class="section-title" id="guestTitle">座上宾 <small class="muted" style="font-size:13px;font-family:var(--font-ui);font-weight:400">点击可配置模型；不填 Key 的座位由规则 AI 代打</small></h2>
+            <div class="guest-row" id="guestRow"></div>
+        </section>
 
-    <script src="js/protocol.js"></script>
-    <script src="js/lobby.js?v=20260813a"></script>
-    <script src="js/global_settings.js?v=20260803c"></script>
+        <section class="more-modes" aria-label="其他模式">
+            <div class="frame locked-mode"><span class="brush">八人军争</span><small>未开放</small></div>
+            <div class="frame locked-mode"><span class="brush">欢乐 2v2</span><small>未开放</small></div>
+            <div class="frame locked-mode"><span class="brush">斗地主</span><small>未开放</small></div>
+        </section>
+
+        <p class="record-line">连胜 <b id="winStreak">0</b> 局　·　总对局 <b id="totalGames">0</b> 局</p>
+    </main>
+</div>
+
+<dialog class="sgs-dialog" id="aiDialog" aria-labelledby="aiDialogTitle">
+    <form class="frame dialog-body" id="aiForm" method="dialog">
+        <div class="dialog-head">
+            <h2 id="aiDialogTitle">配置座上宾</h2>
+            <button class="icon-btn" type="button" data-close aria-label="关闭">✕</button>
+        </div>
+        <div class="ai-tabs" role="tablist" id="aiTabs"></div>
+        <div class="form-grid">
+            <label class="field"><span>称呼</span><input name="name" maxlength="12" required></label>
+            <label class="field"><span>模型提供方</span><select name="provider"></select></label>
+            <label class="field full"><span>API 地址</span><input name="apiUrl" placeholder="留空使用提供方默认地址" autocomplete="off"></label>
+            <label class="field full"><span>API Key</span><input name="apiKey" type="password" placeholder="留空则此座位使用规则 AI" autocomplete="off"></label>
+            <label class="field"><span>模型名称</span><input name="model" autocomplete="off"></label>
+            <label class="field"><span>温度（0–2）</span><input name="temperature" type="number" min="0" max="2" step="0.1"></label>
+            <label class="check full"><input type="checkbox" name="thinking"> 启用思考模式</label>
+            <label class="check full"><input type="checkbox" id="rememberKeys"> 在本机记住 API Key（公用电脑请勿勾选）</label>
+        </div>
+        <div class="sync-box">
+            <span>把这一席的连接配置（提供方 / 地址 / Key）同步给：</span>
+            <span id="syncTargets"></span>
+            <button class="btn small" type="button" id="syncBtn">同步</button>
+        </div>
+        <div class="dialog-actions">
+            <button class="btn confirm" type="submit" value="save">保存</button>
+        </div>
+    </form>
+</dialog>
+
+<script src="js/protocol.js?v=20261016a"></script>
+<script src="js/sgs_common.js?v=20261016a"></script>
+<script src="js/global_settings.js?v=20261016a"></script>
+<script src="js/lobby.js?v=20261016a"></script>
 </body>
 </html>

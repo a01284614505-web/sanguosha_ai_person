@@ -1,313 +1,277 @@
-// 大厅页面逻辑 - 修复溢出版
-class LobbyController {
-    constructor() {
-        this.selectedMode = null;
-        this.aiCount = 0;
-        this.aiConfigs = [];
+// 大厅：入席设置、四席 AI 配置、牌堆选择。纯 UI：配置的合法性由引擎 normalize_config 复核。
+// 开局配置格式（交给 select_hero → game）：
+//   { mode, player_name, ais:[{name,provider,apiUrl,apiKey,model,temperature,thinking}],
+//     hero_pool, deck_id, chat:{enabled,provider,model}, global_settings, custom_worldbook, identity_card? }
+(function () {
+    'use strict';
+    const { esc, store, toast } = SGS;
 
-        // Provider 清单以服务端 /api/providers 为准（来源 protocol.py）；
-        // 拉取失败时回退到自动生成的 Protocol.PROVIDERS，保证一致性。
-        this.providers = [];
+    const SEAT_NAMES = ['二', '三', '四', '五'];
+    const DEFAULT_NAMES = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '吕布'];
+    const MODE = '5人身份局';
 
-        this.init();
-    }
+    class LobbyController {
+        constructor() {
+            this.providers = [];
+            this.aiConfigs = [];
+            this.current = 0;
+            this.prefs = Object.assign({ playerName: '', chatEnabled: true, rememberKeys: false }, store.get('lobbyPrefs', {}));
+            this.dialog = document.getElementById('aiDialog');
+            this.form = document.getElementById('aiForm');
+            this.init();
+        }
 
-    init() {
-        // 绑定模式选择按钮
-        document.querySelectorAll('.mode-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const mode = e.currentTarget.dataset.mode;
-                if (btn.classList.contains('mode-locked') || btn.getAttribute('aria-disabled') === 'true' || mode !== '5人身份局') {
-                    alert('后续阶段开放');
-                    return;
-                }
-                this.selectMode(mode);
+        init() {
+            const name = document.getElementById('playerName');
+            name.value = this.prefs.playerName || '';
+            name.addEventListener('input', () => this.savePrefs());
+            const chat = document.getElementById('chatEnabled');
+            chat.checked = this.prefs.chatEnabled !== false;
+            chat.addEventListener('change', () => this.savePrefs());
+            document.getElementById('rememberKeys').checked = !!this.prefs.rememberKeys;
+
+            document.getElementById('useIdentityCard').addEventListener('change', (e) => {
+                document.getElementById('identitySelect').disabled = !e.target.checked;
             });
-        });
+            document.getElementById('startGameBtn').addEventListener('click', () => this.startGame());
+            document.getElementById('openGlobalSettings').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
+            document.getElementById('deckSelect').addEventListener('change', (e) => {
+                if (e.target.value) store.set('active_deck_choice', e.target.value);
+                this.updateDeckLabel();
+            });
 
-        // 绑定开始游戏按钮
-        document.getElementById('startGameBtn').addEventListener('click', () => {
-            this.startGame();
-        });
+            this.dialog.querySelector('[data-close]').addEventListener('click', () => this.dialog.close());
+            this.dialog.addEventListener('click', (e) => { if (e.target === this.dialog) this.dialog.close(); });
+            this.form.addEventListener('submit', (e) => { e.preventDefault(); this.saveCurrent(); this.dialog.close(); toast('已保存'); });
+            this.form.elements.provider.addEventListener('change', (e) => this.onProviderChange(e.target.value));
+            document.getElementById('syncBtn').addEventListener('click', () => this.syncAPIConfig());
 
-        // 绑定身份卡复选框
-        document.getElementById('useIdentityCard').addEventListener('change', (e) => {
-            document.getElementById('identitySelect').disabled = !e.target.checked;
-        });
-
-        // 绑定聊天开关
-        document.getElementById('chatEnabled').addEventListener('change', (e) => {
-            document.getElementById('chatModelConfig').style.display = e.target.checked ? 'block' : 'none';
-        });
-
-        // 加载用户数据
-        this.loadUserData();
-
-        // 默认选择5人身份局
-        this.selectMode('5人身份局');
-
-        this.loadProviders();
-    }
-
-    loadProviders() {
-        var self = this;
-        function apply(list) {
-            self.providers = (list && list.length) ? list : (window.Protocol ? Protocol.PROVIDERS : []);
-            // 聊天模型下拉（index.html）与 AI 配置共用同一 Provider 清单
-            var cp = document.getElementById('chatProvider');
-            if (cp && !cp.options.length) {
-                cp.innerHTML = self.providers.map(function (p) {
-                    return '<option value="' + p.value + '">' + p.name + '</option>';
-                }).join('');
-            }
-            self.generateAIConfigs();
+            this.loadUserData();
+            this.loadProviders();
+            this.loadDecks();
         }
-        fetch('/api/providers', { cache: 'no-store' })
-            .then(function (r) { return r.json(); })
-            .then(function (d) { apply(d && d.providers); })
-            .catch(function () { apply(null); });
-    }
 
-    selectMode(mode) {
-        if (mode !== '5人身份局') {
-            alert('后续阶段开放');
-            return;
+        savePrefs() {
+            this.prefs.playerName = document.getElementById('playerName').value.trim();
+            this.prefs.chatEnabled = document.getElementById('chatEnabled').checked;
+            this.prefs.rememberKeys = document.getElementById('rememberKeys').checked;
+            store.set('lobbyPrefs', this.prefs);
         }
-        this.selectedMode = mode;
 
-        document.querySelectorAll('.mode-btn').forEach(btn => {
-            btn.classList.toggle('selected', btn.dataset.mode === mode);
-        });
+        // Provider 清单以服务端 /api/providers 为准（来源 protocol.py）；拉取失败时回退到生成的 Protocol.PROVIDERS。
+        loadProviders() {
+            const apply = (list, online) => {
+                this.providers = (list && list.length) ? list : (window.Protocol ? Protocol.PROVIDERS : []);
+                this.setConnection(online);
+                this.form.elements.provider.innerHTML = this.providers.map(p => '<option value="' + esc(p.value) + '">' + esc(p.name) + '</option>').join('');
+                this.restoreAIConfigs();
+                this.renderGuests();
+            };
+            SGS.fetchJSON('/api/providers')
+                .then(d => apply(d && d.providers, true))
+                .catch(() => apply(null, false));
+        }
 
-        this.aiCount = 4;
-        document.getElementById('requiredAI').textContent = this.aiCount;
+        setConnection(ok) {
+            document.getElementById('connDot').className = 'conn-dot ' + (ok ? 'ok' : 'bad');
+            document.getElementById('connText').textContent = ok ? '游戏服务已就绪' : '连不上游戏服务，请先运行 game_server.py';
+        }
 
-        this.updateIdentityOptions(mode);
-        this.generateAIConfigs();
-    }
+        loadDecks() {
+            const select = document.getElementById('deckSelect');
+            SGS.fetchJSON('/api/decks').then(data => {
+                if (!data.success || !Array.isArray(data.decks)) throw new Error('bad');
+                const chosen = store.get('active_deck_choice', null) || localStorage.getItem('active_deck') || data.active_deck;
+                const known = data.decks.some(d => d.id === chosen);
+                select.innerHTML = data.decks.map(d => '<option value="' + esc(d.id) + '">' + esc(d.name) + '（' + d.cards_count + ' 张）</option>').join('');
+                select.value = known ? chosen : data.active_deck;
+                this.updateDeckLabel();
+            }).catch(() => {
+                select.innerHTML = '<option value="">服务器默认</option>';
+                this.updateDeckLabel();
+            });
+        }
 
-    updateIdentityOptions(mode) {
-        const identitySelect = document.getElementById('identitySelect');
-        identitySelect.innerHTML = '<option value="">选择身份</option>';
-        if (mode !== '5人身份局') return;
+        updateDeckLabel() {
+            const select = document.getElementById('deckSelect');
+            const opt = select.options[select.selectedIndex];
+            document.getElementById('deckLabel').textContent = opt ? opt.textContent : '服务器默认';
+        }
 
-        ['主公', '忠臣', '反贼', '内奸'].forEach(identity => {
-            const option = document.createElement('option');
-            option.value = identity;
-            option.textContent = identity;
-            identitySelect.appendChild(option);
-        });
-    }
-
-    generateAIConfigs() {
-        // Provider 清单异步加载中（或拉取失败且无回退）时不渲染，
-        // 等 loadProviders 完成后重新调用本函数。
-        if (!this.providers.length) return;
-
-        const aiList = document.getElementById('aiConfigList');
-        aiList.innerHTML = '';
-
-        const aiNames = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '吕布', '司马懿', '周瑜', '赵云', '关羽'];
-
-        for (let i = 0; i < this.aiCount; i++) {
-            const aiItem = document.createElement('div');
-            aiItem.className = 'ai-item';
-            aiItem.dataset.aiIndex = i;
-            
+        defaultAI(i) {
             const globalSettings = window.getGlobalSettings ? getGlobalSettings() : {};
             const preferred = this.providers.find(p => p.value === globalSettings.default_provider);
-            const defaultProvider = preferred || this.providers[i % this.providers.length];
-            const defaultModel = globalSettings.default_model || defaultProvider.default_model;
-            const defaultTemperature = globalSettings.default_temperature ?? 0.8;
-            
-            aiItem.innerHTML = `
-                <div class="ai-item-header">AI ${i + 1}: ${aiNames[i] || 'AI' + (i + 1)}</div>
-                <div class="ai-controls">
-                    <div class="config-row field-name">
-                        <label>AI名称:</label>
-                        <input type="text" placeholder="AI名称" value="${aiNames[i] || 'AI' + (i + 1)}" data-field="name">
-                    </div>
-                    
-                    <div class="config-row field-provider">
-                        <label>Provider:</label>
-                        <select data-field="provider">
-                            ${this.providers.map(p => `<option value="${p.value}" ${p.value === defaultProvider.value ? 'selected' : ''}>${p.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    
-                    <div class="config-row field-url">
-                        <label>API地址:</label>
-                        <input type="text" placeholder="API地址" value="${defaultProvider.default_url}" data-field="apiUrl">
-                    </div>
-                    
-                    <div class="config-row field-key">
-                        <label>API Key:</label>
-                        <input type="password" placeholder="sk-..." value="" data-field="apiKey">
-                    </div>
-                    
-                    <div class="config-row">
-                        <label>模型名称:</label>
-                        <input type="text" placeholder="模型名" value="${defaultModel}" data-field="model">
-                    </div>
-                    
-                    <div class="config-row">
-                        <label>温度(0-2):</label>
-                        <input type="number" placeholder="0.8" value="${defaultTemperature}" min="0" max="2" step="0.1" data-field="temperature">
-                    </div>
-                    
-                    <div class="config-row">
-                        <label>
-                            <input type="checkbox" data-field="thinking"> 启用思考模式
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="api-sync-section">
-                    <span class="api-sync-label">🔗 将此API配置同步给其他AI：</span>
-                    <div class="sync-checkboxes" data-sync-target="${i}">
-                        <!-- 同步选项将动态生成 -->
-                    </div>
-                </div>
-            `;
-            
-            aiList.appendChild(aiItem);
-            
-            // 绑定Provider变化事件
-            const providerSelect = aiItem.querySelector('[data-field="provider"]');
-            providerSelect.addEventListener('change', (e) => {
-                this.onProviderChange(i, e.target.value);
-            });
-
-            // 生成同步选项
-            this.generateSyncOptions(i);
-        }
-    }
-
-    onProviderChange(aiIndex, providerValue) {
-        const provider = this.providers.find(p => p.value === providerValue);
-        if (!provider) return;
-
-        const aiItem = document.querySelector(`[data-ai-index="${aiIndex}"]`);
-        aiItem.querySelector('[data-field="apiUrl"]').value = provider.default_url;
-        aiItem.querySelector('[data-field="model"]').value = provider.default_model;
-    }
-
-    generateSyncOptions(sourceIndex) {
-        const syncContainer = document.querySelector(`[data-sync-target="${sourceIndex}"]`);
-        syncContainer.innerHTML = '';
-
-        for (let i = 0; i < this.aiCount; i++) {
-            if (i === sourceIndex) continue;
-
-            const label = document.createElement('label');
-            label.className = 'sync-checkbox-item';
-            label.innerHTML = `
-                <input type="checkbox" data-sync-from="${sourceIndex}" data-sync-to="${i}">
-                AI ${i + 1}
-            `;
-
-            label.querySelector('input').addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    this.syncAPIConfig(sourceIndex, i);
-                }
-            });
-
-            syncContainer.appendChild(label);
-        }
-    }
-
-    syncAPIConfig(fromIndex, toIndex) {
-        const sourceItem = document.querySelector(`[data-ai-index="${fromIndex}"]`);
-        const targetItem = document.querySelector(`[data-ai-index="${toIndex}"]`);
-
-        const apiUrl = sourceItem.querySelector('[data-field="apiUrl"]').value;
-        const apiKey = sourceItem.querySelector('[data-field="apiKey"]').value;
-        const provider = sourceItem.querySelector('[data-field="provider"]').value;
-
-        targetItem.querySelector('[data-field="apiUrl"]').value = apiUrl;
-        targetItem.querySelector('[data-field="apiKey"]').value = apiKey;
-        targetItem.querySelector('[data-field="provider"]').value = provider;
-
-        console.log(`✅ 已将 AI ${fromIndex + 1} 的API配置同步到 AI ${toIndex + 1}`);
-    }
-
-    collectAIConfigs() {
-        const configs = [];
-        document.querySelectorAll('.ai-item').forEach((item, index) => {
-            const config = {
-                name: item.querySelector('[data-field="name"]').value,
-                provider: item.querySelector('[data-field="provider"]').value,
-                apiUrl: item.querySelector('[data-field="apiUrl"]').value,
-                apiKey: item.querySelector('[data-field="apiKey"]').value,
-                model: item.querySelector('[data-field="model"]').value,
-                temperature: parseFloat(item.querySelector('[data-field="temperature"]').value),
-                thinking: item.querySelector('[data-field="thinking"]').checked
+            const defaultProvider = preferred || this.providers[i % this.providers.length] || { value: 'deepseek', default_url: '', default_model: 'deepseek-chat' };
+            return {
+                name: DEFAULT_NAMES[i] || ('AI' + (i + 1)),
+                provider: defaultProvider.value,
+                apiUrl: defaultProvider.default_url,
+                apiKey: '',
+                model: globalSettings.default_model || defaultProvider.default_model,
+                temperature: globalSettings.default_temperature ?? 0.8,
+                thinking: false
             };
-            configs.push(config);
-        });
-        return configs;
-    }
-
-    startGame() {
-        if (!this.selectedMode) {
-            alert('请选择游戏模式');
-            return;
         }
 
-        const aiConfigs = this.collectAIConfigs();
-
-        const missingKeys = aiConfigs.filter(ai => !ai.apiKey).map((ai, i) => `AI ${i + 1}: ${ai.name}`);
-        if (missingKeys.length > 0) {
-            const confirm = window.confirm(
-                `以下AI未配置API Key，将无法正常工作：\n${missingKeys.join('\n')}\n\n是否继续？`
-            );
-            if (!confirm) return;
+        restoreAIConfigs() {
+            const saved = store.get('lobbyAIs', []);
+            const sessionKeys = store.sget('lobbyKeys', []);
+            this.aiConfigs = [0, 1, 2, 3].map(i => {
+                const base = this.defaultAI(i);
+                const old = Array.isArray(saved) && saved[i] ? saved[i] : {};
+                const merged = Object.assign(base, old);
+                if (!merged.apiKey && sessionKeys[i]) merged.apiKey = sessionKeys[i];
+                if (!this.providers.some(p => p.value === merged.provider)) merged.provider = base.provider;
+                return merged;
+            });
         }
 
-        const config = {
-            mode: this.selectedMode,
-            player_name: document.getElementById('playerName').value || '我',
-            ais: aiConfigs,
-            hero_pool: document.getElementById('heroPool').value,
-            chat: {
-                enabled: document.getElementById('chatEnabled').checked,
-                provider: document.getElementById('chatProvider').value,
-                model: document.getElementById('chatModel').value
-            },
-            global_settings: window.getGlobalSettings ? getGlobalSettings() : {},
-            custom_worldbook: JSON.parse(localStorage.getItem('worldbook') || '[]')
-        };
+        persistAIConfigs() {
+            const remember = !!this.prefs.rememberKeys;
+            store.set('lobbyAIs', this.aiConfigs.map(a => Object.assign({}, a, { apiKey: remember ? a.apiKey : '' })));
+            store.sset('lobbyKeys', this.aiConfigs.map(a => a.apiKey || ''));
+        }
 
-        if (document.getElementById('useIdentityCard').checked) {
-            const identity = document.getElementById('identitySelect').value;
-            if (identity) {
-                config.identity_card = {
-                    use: true,
-                    identity: identity
-                };
+        renderGuests() {
+            const row = document.getElementById('guestRow');
+            row.innerHTML = this.aiConfigs.map((a, i) => {
+                const provider = this.providers.find(p => p.value === a.provider);
+                const hasKey = !!(a.apiKey && a.apiKey.trim());
+                return '<button type="button" class="frame guest" data-ai="' + i + '" aria-label="配置' + esc(a.name) + '">' +
+                    '<span class="seat-no">' + SEAT_NAMES[i] + '</span>' +
+                    '<span><strong>' + esc(a.name) + '</strong>' +
+                    '<small>' + esc(provider ? provider.name : a.provider) + ' · ' + esc(a.model || '默认模型') + '</small>' +
+                    '<span class="brain' + (hasKey ? ' model' : '') + '"><i></i>' + (hasKey ? '模型对弈' : '规则 AI') + '</span></span>' +
+                    '<span class="edit">配置</span></button>';
+            }).join('');
+            row.querySelectorAll('.guest').forEach(btn => btn.addEventListener('click', () => this.openDialog(Number(btn.dataset.ai))));
+        }
+
+        openDialog(index) {
+            this.current = index;
+            this.renderTabs();
+            this.fillForm();
+            if (!this.dialog.open) this.dialog.showModal();
+        }
+
+        renderTabs() {
+            const tabs = document.getElementById('aiTabs');
+            tabs.innerHTML = this.aiConfigs.map((a, i) =>
+                '<button type="button" role="tab" aria-selected="' + (i === this.current) + '" data-tab="' + i + '">' + SEAT_NAMES[i] + '号位 · ' + esc(a.name) + '</button>').join('');
+            tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+                this.saveCurrent();
+                this.current = Number(b.dataset.tab);
+                this.renderTabs();
+                this.fillForm();
+            }));
+            const targets = document.getElementById('syncTargets');
+            targets.innerHTML = this.aiConfigs.map((a, i) => i === this.current ? '' :
+                '<label class="check"><input type="checkbox" data-sync-to="' + i + '"> ' + SEAT_NAMES[i] + '号位</label>').join('');
+        }
+
+        fillForm() {
+            const a = this.aiConfigs[this.current];
+            const f = this.form.elements;
+            f.name.value = a.name;
+            f.provider.value = a.provider;
+            f.apiUrl.value = a.apiUrl || '';
+            f.apiKey.value = a.apiKey || '';
+            f.model.value = a.model || '';
+            f.temperature.value = a.temperature ?? 0.8;
+            f.thinking.checked = !!a.thinking;
+        }
+
+        saveCurrent() {
+            const f = this.form.elements;
+            const t = parseFloat(f.temperature.value);
+            this.aiConfigs[this.current] = {
+                name: f.name.value.trim() || DEFAULT_NAMES[this.current],
+                provider: f.provider.value,
+                apiUrl: f.apiUrl.value.trim(),
+                apiKey: f.apiKey.value.trim(),
+                model: f.model.value.trim(),
+                temperature: Number.isFinite(t) ? Math.max(0, Math.min(2, t)) : 0.8,
+                thinking: f.thinking.checked
+            };
+            this.savePrefs();
+            this.persistAIConfigs();
+            this.renderGuests();
+        }
+
+        onProviderChange(providerValue) {
+            const provider = this.providers.find(p => p.value === providerValue);
+            if (!provider) return;
+            this.form.elements.apiUrl.value = provider.default_url;
+            this.form.elements.model.value = provider.default_model;
+        }
+
+        syncAPIConfig() {
+            this.saveCurrent();
+            const source = this.aiConfigs[this.current];
+            const targets = Array.from(document.querySelectorAll('[data-sync-to]:checked')).map(el => Number(el.dataset.syncTo));
+            if (!targets.length) { toast('先勾选要同步的座位', { bad: true }); return; }
+            targets.forEach(i => {
+                Object.assign(this.aiConfigs[i], { provider: source.provider, apiUrl: source.apiUrl, apiKey: source.apiKey, model: source.model });
+            });
+            this.persistAIConfigs();
+            this.renderGuests();
+            this.renderTabs();
+            toast('已同步给 ' + targets.map(i => SEAT_NAMES[i] + '号位').join('、'));
+        }
+
+        collectAIConfigs() {
+            return this.aiConfigs.map(a => ({
+                name: a.name,
+                provider: a.provider,
+                apiUrl: a.apiUrl,
+                apiKey: a.apiKey,
+                model: a.model,
+                temperature: a.temperature,
+                thinking: !!a.thinking
+            }));
+        }
+
+        startGame() {
+            this.savePrefs();
+            const ais = this.collectAIConfigs();
+            const deckId = document.getElementById('deckSelect').value;
+            const first = this.providers.find(p => p.value === (ais[0] && ais[0].provider));
+            const config = {
+                mode: MODE,
+                player_name: document.getElementById('playerName').value.trim() || '无名客',
+                ais: ais,
+                hero_pool: document.getElementById('heroPool').value,
+                chat: {
+                    enabled: document.getElementById('chatEnabled').checked,
+                    provider: first ? first.value : 'deepseek',
+                    model: (ais[0] && ais[0].model) || (first ? first.default_model : 'deepseek-chat')
+                },
+                global_settings: window.getGlobalSettings ? getGlobalSettings() : {},
+                custom_worldbook: store.get('worldbook', [])
+            };
+            if (deckId) {
+                config.deck_id = deckId;
+                try { localStorage.setItem('active_deck', deckId); } catch (_) {}
             }
+            if (document.getElementById('useIdentityCard').checked) {
+                const identity = document.getElementById('identitySelect').value;
+                if (!identity) { toast('请选择要使用的身份', { bad: true }); return; }
+                config.identity_card = { use: true, identity: identity };
+            }
+            // 带 Key 的完整配置只放在本标签页的 sessionStorage；localStorage 中的副本去掉 Key。
+            store.sset('gameConfig', config);
+            store.set('gameConfig', Object.assign({}, config, { ais: ais.map(a => Object.assign({}, a, { apiKey: '' })) }));
+            window.location.href = 'select_hero.html';
         }
 
-        console.log('游戏配置:', config);
-        
-        localStorage.setItem('gameConfig', JSON.stringify(config));
-        
-        window.location.href = 'select_hero.html';
-    }
-
-    loadUserData() {
-        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-        
-        document.getElementById('winStreak').textContent = userData.winStreak || 0;
-        document.getElementById('totalGames').textContent = userData.totalGames || 0;
-        document.getElementById('cardCount').textContent = userData.identityCards || 0;
-
-        if (userData.identityCards > 0) {
-            document.getElementById('identityCardSection').style.display = 'block';
+        loadUserData() {
+            const userData = store.get('userData', {}) || {};
+            document.getElementById('winStreak').textContent = userData.winStreak || 0;
+            document.getElementById('totalGames').textContent = userData.totalGames || 0;
+            document.getElementById('cardCount').textContent = userData.identityCards || 0;
+            document.getElementById('identityCardSection').hidden = !(userData.identityCards > 0);
         }
     }
-}
 
-document.addEventListener('DOMContentLoaded', () => {
-    new LobbyController();
-});
+    document.addEventListener('DOMContentLoaded', () => { window.lobby = new LobbyController(); });
+})();

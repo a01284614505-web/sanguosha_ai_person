@@ -2,73 +2,61 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>游戏结束 - AI三国杀酒馆</title>
-    <link rel="stylesheet" href="css/main.css?v=20261003a">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17110c">
+    <title>三国杀酒馆 · 战绩</title>
+    <link rel="stylesheet" href="css/sgs.css?v=20261016a">
+    <link rel="stylesheet" href="css/pages.css?v=20261016a">
 </head>
 <body>
-    <div class="container">
-        <header class="result-header">
-            <h1 id="resultTitle">胜利！</h1>
-            <p id="resultSubtitle">主公阵营获胜</p>
-        </header>
+<div class="page">
+    <header class="topbar">
+        <a class="logo" href="index.html" aria-label="返回大厅">
+            <span class="logo-seal">杀</span>
+            <span class="logo-text gold-text">三国杀酒馆</span>
+        </a>
+        <nav aria-label="主导航">
+            <a href="index.html">大厅</a>
+            <a href="settings.html">设置</a>
+        </nav>
+    </header>
 
-        <section class="result-summary">
-            <div class="result-card">
-                <h3>游戏统计</h3>
-                <div class="stat-item">
-                    <span>回合数：</span>
-                    <span id="totalRounds">15</span>
-                </div>
-                <div class="stat-item">
-                    <span>游戏时长：</span>
-                    <span id="gameDuration">25分30秒</span>
-                </div>
-                <div class="stat-item">
-                    <span>你的身份：</span>
-                    <span id="yourIdentity" class="identity-reveal">反贼</span>
-                </div>
-            </div>
-
-            <div class="result-card" id="mvpCard">
-                <h3>MVP</h3>
-                <div id="mvpInfo" class="mvp-info">
-                    <div class="mvp-name">本局暂无MVP数据</div>
-                </div>
-            </div>
+    <main id="resultMain">
+        <section class="result-hero">
+            <div class="verdict neutral" id="resultVerdict">终</div>
+            <h1 class="brush gold-text" id="resultTitle">对局结束</h1>
+            <p id="resultSubtitle"></p>
         </section>
 
-        <section class="result-stats">
-            <h2>玩家数据</h2>
-            <div id="statsList" class="stats-list">
-                <!-- 引擎下发的真实对局统计将动态生成 -->
-            </div>
-        </section>
-
-        <section class="identity-reveal">
-            <h2>身份揭示</h2>
-            <div id="identityList" class="identity-grid">
-                <!-- 所有玩家的身份将动态生成 -->
-            </div>
-        </section>
-
-        <section class="rewards" id="rewardSection" style="display:none;">
-            <div class="reward-card">
-                <h3>🎉 连胜奖励</h3>
-                <p>恭喜你获得连胜！</p>
-                <p class="reward-detail">获得 <strong>1张身份卡</strong></p>
-                <p class="reward-hint">在下次游戏开局前可以选择自己的身份</p>
-            </div>
-        </section>
-
-        <div class="action-buttons">
-            <button id="playAgainBtn" class="btn-primary">再来一局</button>
-            <button id="backToLobbyBtn" class="btn-secondary">返回大厅</button>
+        <div class="result-facts">
+            <div>轮数<b id="totalRounds">-</b></div>
+            <div>用时<b id="gameDuration">-</b></div>
+            <div>你的身份<b id="yourIdentity">-</b></div>
         </div>
-    </div>
 
-    <script src="js/result.js?v=20261003a"></script>
-    <script src="js/protocol.js"></script>
-    <script src="js/global_settings.js?v=20260803c"></script>
+        <div class="result-grid">
+            <aside class="frame cornered mvp-card" id="mvpCard" hidden>
+                <span class="mvp-badge">MVP</span>
+                <div id="mvpInfo"></div>
+            </aside>
+            <section class="frame" style="padding:16px 18px">
+                <h2 class="section-title">本局战况</h2>
+                <div class="table-wrap" id="statsList"></div>
+            </section>
+        </div>
+
+        <div class="frame reward-note" id="rewardSection" hidden>连胜两局，获得一张身份卡，下局开局前可在大厅指定身份。</div>
+
+        <div class="result-actions">
+            <button class="btn primary big" id="playAgainBtn" type="button">再来一局</button>
+            <button class="btn" id="backToLobbyBtn" type="button">返回大厅</button>
+        </div>
+    </main>
+</div>
+
+<script src="js/protocol.js?v=20261016a"></script>
+<script src="js/sgs_common.js?v=20261016a"></script>
+<script src="js/global_settings.js?v=20261016a"></script>
+<script src="js/result.js?v=20261016a"></script>
 </body>
 </html>

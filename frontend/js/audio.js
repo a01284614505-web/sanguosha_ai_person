@@ -17,8 +17,12 @@ class AudioManager {
     
     play(name) {
         if (!this.enabled) return;
+        const gs = window.getGlobalSettings ? window.getGlobalSettings() : {};
+        if (gs.sfx_enabled === false) return;
         const sound = this.sounds[name];
         if (sound) {
+            const vol = Number(gs.sfx_volume);
+            sound.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : this.volume;
             sound.currentTime = 0;
             sound.play().catch(e => {});
         }
@@ -70,7 +74,10 @@ if (typeof window !== 'undefined') {
 }
 
 // 预加载音效
-audioManager.load('card', 'assets/audio/coin.mp3');
+audioManager.load('card', 'assets/audio/discard.mp3');
 audioManager.load('damage', 'assets/audio/damage.mp3');
-audioManager.load('heal', 'assets/audio/coin_cost.mp3');
+audioManager.load('heal', 'assets/audio/recover.mp3');
 audioManager.load('click', 'assets/audio/coin.mp3');
+audioManager.load('die', 'assets/audio/die_male.mp3');
+audioManager.load('win', 'assets/audio/win.mp3');
+audioManager.load('lose', 'assets/audio/lose.mp3');

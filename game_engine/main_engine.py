@@ -110,6 +110,9 @@ class MainEngine:
         self._watchdog_task: Any = None
         self._game_end_emitted = False
         self._started_at: Any = None
+        # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
+        chat_cfg = game_config.get("chat")
+        self.chat_enabled = not (isinstance(chat_cfg, dict) and chat_cfg.get("enabled") is False)
 
         logger.info(f"\n{'=' * 60}")
         logger.info("  🎮 引擎v2初始化")
@@ -208,10 +211,16 @@ class MainEngine:
                     "identity": p.identity if identity_visible else None,
                     "identity_revealed": identity_visible,
                     "equipment": {slot: card.name for slot, card in p.equipment.items()},
+                    # 判定区是公开信息（乐不思蜀/兵粮寸断/闪电），前端按牌名显示标记。
+                    "judge_area": [card.name for card in getattr(p, "judge_area", [])],
                     "stats": self.stats.row(p),
                 }
             )
+        # serialize() 只发给真人自己的连接（AI 决策不读它），因此可以附带真人自己的手牌，
+        # 让前端在非出牌阶段也能看到手牌。他人手牌仍只有 hand_count。
+        human = self.human_player()
         return {
+            "self_hand": self.get_player_hand(human) if human else [],
             "mode": gs.mode,
             "round": gs.round_number,
             "completed_turns": self.completed_turns,
@@ -224,6 +233,10 @@ class MainEngine:
             "game_over": gs.game_over,
             "winner": gs.winner,
         }
+
+    def human_player(self):
+        """本局的真人玩家（无则返回 None）。"""
+        return next((p for p in self.game_state.players if not p.is_ai), None)
 
     def get_player_hand(self, player: Player) -> List[Dict]:
         return [
@@ -310,12 +323,12 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
 
-        if random.random() < 0.3:
+        if self.chat_enabled and random.random() < 0.3:
             msg = await self.chat_engine.trigger_event_chat(
                 "turn_start", player, {"round": self.game_state.round_number}
             )
             if msg:
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg)
+                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg, from_id=player.id)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     async def _human_turn(self, player: Player):
@@ -397,8 +410,8 @@ class MainEngine:
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
 
-            if decision.get("chat"):
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"])
+            if decision.get("chat") and self.chat_enabled:
+                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"], from_id=player.id)
             if action.get("type") == "end_phase":
                 break
 
