@@ -30,7 +30,7 @@ class ShuSkillHandler(FactionSkillHandler):
         flags = ensure_flags(player)
 
         # 仁德：每次交一张牌，同一阶段不能重复同一目标；累计两张后可视为基本牌。
-        if self.has(player, "仁德") and player.hand:
+        if self.has(player, "仁德"):
             used_targets = set(flags.get("rende_targets", []))
             valid = [pid for pid in self._target_ids(player) if pid not in used_targets]
             for index in range(len(player.hand)):
@@ -233,7 +233,9 @@ class ShuSkillHandler(FactionSkillHandler):
                 flags = ensure_flags(target)
                 flags["cannot_use_hand"] = True
                 flags["nonlocked_disabled"] = True
-                flags["yijue_heart_source"] = player.id
+                sources = flags.setdefault("yijue_sources", [])
+                if player.id not in sources:
+                    sources.append(player.id)
                 ensure_flags(player).setdefault("yijue_targets", []).append(target.id)
             else:
                 if await self.manager.ask_confirm(
@@ -364,14 +366,22 @@ class ShuSkillHandler(FactionSkillHandler):
         if phase != Phase.END:
             return
         flags = ensure_flags(player)
-        for key in ("yijue_targets", "tieqi_targets"):
+        for key, source_key in (("yijue_targets", "yijue_sources"),
+                                ("tieqi_targets", "tieqi_sources")):
             for target_id in flags.pop(key, []):
                 target = player_by_id(self.state, target_id)
                 if target:
                     tflags = ensure_flags(target)
-                    tflags.pop("cannot_use_hand", None)
-                    tflags.pop("nonlocked_disabled", None)
-                    tflags.pop("yijue_heart_source", None)
+                    remaining = [source_id for source_id in tflags.get(source_key, [])
+                                 if source_id != player.id]
+                    if remaining:
+                        tflags[source_key] = remaining
+                    else:
+                        tflags.pop(source_key, None)
+                    if not tflags.get("yijue_sources"):
+                        tflags.pop("cannot_use_hand", None)
+                    if not (tflags.get("yijue_sources") or tflags.get("tieqi_sources")):
+                        tflags.pop("nonlocked_disabled", None)
         flags.pop("pao_tokens", None)
 
     async def before_sha(self, source, target, card, event):
@@ -383,7 +393,11 @@ class ShuSkillHandler(FactionSkillHandler):
             judge = await self.manager.judge(target, "铁骑")
             if judge is None or self.engine.game_aborted:
                 return
-            ensure_flags(target)["nonlocked_disabled"] = True
+            target_flags = ensure_flags(target)
+            target_flags["nonlocked_disabled"] = True
+            sources = target_flags.setdefault("tieqi_sources", [])
+            if source.id not in sources:
+                sources.append(source.id)
             ensure_flags(source).setdefault("tieqi_targets", []).append(target.id)
             candidates = [c for c in target.hand if c.suit == judge.suit]
             selected = await self.manager.ask_choose_cards(
@@ -414,7 +428,8 @@ class ShuSkillHandler(FactionSkillHandler):
             if tokens:
                 amount += tokens
                 await self.manager.announce(source, "咆哮", f"{source.name}弃置{tokens}枚“咆”，伤害+{tokens}")
-        if source and target and ensure_flags(target).get("yijue_heart_source") == source.id and card and card.name == "杀" and card.suit == "heart":
+        if (source and target and source.id in ensure_flags(target).get("yijue_sources", [])
+                and card and card.name == "杀" and card.suit == "heart"):
             amount += 1
         return amount
 

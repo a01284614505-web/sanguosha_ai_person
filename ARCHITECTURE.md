@@ -1,6 +1,6 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前验证环境：Linux / Python 3.12；Windows、Termux 为目标平台
-> 当前阶段：B5–B7 集成验证；五人局规则 AI 批量通过，技能版本和浏览器专项仍按交接台账验收
+> 当前阶段：B5–B7 已完成代码集成与浏览器专项；五人局规则 AI 批量通过，技能同版本证据及真实外部 Provider API 仍按交接台账验收
 > 更新时间：2026-10-17
 > 路线图见 [ROADMAP.md](ROADMAP.md)，现状事实基线见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)
 ## 1. 架构铁律
@@ -165,7 +165,7 @@ PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 | 选牌流程 | 四交互原语 + 加固复核（去重/跨牌区/临时池/两级兜底）；弃牌阶段、过河拆桥、顺手牵羊、五谷丰登均为真人手选，AI 走规则兜底 |
 | 弃牌阶段 | 真人手选（超时/离席落 `CARD_TABLE.discard_keep_score` 确定性策略）；AI 直接走该策略 |
 | 结算统计 | 引擎产出 7 项真实统计与 MVP（`game_stats.py`），随 `game_end` 下发，`result.js` 渲染真实数据 |
-| 托管 | CHRONICLE 13.5.3 四种来源只实现第 4 种（规则脚本兜底） |
+| 托管 | 默认连接、复制场上 AI 连接、单独配置及规则脚本四种来源已接入；真实外部 Provider API 待凭据验收 |
 | 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
 ### 7.3 本轮验收入口
 B2–B4 已有代表机制实现；B5–B7 的当前状态、未签收规则及浏览器场景以本轮交接日志为准。固定种子五人局批量入口：`.venv/bin/python -m scripts.verify_b7_games`（三套牌堆各十局，检查胜负终结、非法操作及每张实体牌守恒）。完整回归及两项 WebSocket 冒烟仍由 `scripts/verify_project.py` 提供。

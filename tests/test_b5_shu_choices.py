@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from game_engine import MainEngine
+from game_engine.skill_runtime_core import reset_turn_flags
 from game_engine.state_manager import Card, Phase
 
 
@@ -73,6 +74,25 @@ def test_guanxing_uses_player_order_and_places_remainder_at_bottom():
     assert [request["kind"] for request in requests] == ["confirm", "choose_cards", "choose_cards"]
 
 
+def test_guanxing_decline_and_short_deck_preserve_cards():
+    engine = engine_for("zhugeliang")
+    owner = engine.game_state.players[0]
+    handler = engine.skill_manager.handlers[0]
+    engine.game_state.current_phase = Phase.PREPARE
+    cards = list(engine.game_state.deck[:2])
+    engine.game_state.deck[:] = cards
+    engine.ask_confirm = AsyncMock(return_value=False)
+    asyncio.run(handler.before_phase(owner, Phase.PREPARE))
+    assert engine.game_state.deck == cards
+    assert not owner.flags.get("guanxing_bottomed")
+
+    engine.ask_confirm = AsyncMock(return_value=True)
+    engine.ask_choose_cards_result = AsyncMock(return_value={"bool": True, "cards": [cards[1]]})
+    asyncio.run(handler.before_phase(owner, Phase.PREPARE))
+    assert engine.game_state.deck == [cards[1], cards[0]]
+    assert len(engine.game_state.deck) == 2
+
+
 def test_tieqi_decline_does_not_judge_or_disable_target():
     engine = engine_for("machao")
     source, target = engine.game_state.players[:2]
@@ -134,6 +154,58 @@ def test_yijue_equipment_cost_is_legal_and_cancel_preserves_equipment():
     assert not owner.flags.get("skill_used", {}).get("义绝")
 
 
+def test_yijue_black_restricts_hand_and_nonlocked_skills_until_turn_end():
+    engine = engine_for("guanyu")
+    owner, target = engine.game_state.players[:2]
+    cost = Card("yijue_black_cost", "闪", "heart", 3, "basic")
+    shown = Card("yijue_black_shown", "杀", "spade", 8, "basic")
+    owner.hand.append(cost)
+    target.hand.append(shown)
+    assert engine.skill_manager.has_skill(target, "反馈")
+    engine.ask_choose_cards = AsyncMock(side_effect=[[cost], [shown]])
+    handler = engine.skill_manager.handlers[0]
+    assert asyncio.run(handler.execute(owner, {"skill_name": "义绝", "variant": "reveal"}, [target])) is True
+    assert target.flags["cannot_use_hand"] is True
+    assert target.flags["nonlocked_disabled"] is True
+    assert not engine.skill_manager.has_skill(target, "反馈")
+    assert engine.rules.can_play_card(target, shown, [owner])[0] is False
+    asyncio.run(handler.after_phase(owner, Phase.END))
+    assert not target.flags.get("cannot_use_hand")
+    assert not target.flags.get("nonlocked_disabled")
+    assert engine.skill_manager.has_skill(target, "反馈")
+
+
+def test_yijue_and_tieqi_overlapping_sources_clear_only_their_own_effects():
+    engine = engine_for("guanyu")
+    yijue_owner, target, tieqi_owner = engine.game_state.players[:3]
+    cost = Card("yijue_overlap_cost", "闪", "heart", 3, "basic")
+    shown = Card("yijue_overlap_shown", "杀", "spade", 8, "basic")
+    yijue_owner.hand.append(cost)
+    target.hand.append(shown)
+    engine.ask_choose_cards = AsyncMock(side_effect=[[cost], [shown]])
+    handler = engine.skill_manager.handlers[0]
+    assert asyncio.run(handler.execute(yijue_owner, {"skill_name": "义绝", "variant": "reveal"}, [target]))
+    original_has = handler.has
+    handler.has = lambda player, skill: (player is tieqi_owner and skill == "铁骑") or original_has(player, skill)
+    handler.manager.judge = AsyncMock(return_value=Card("tieqi_overlap_judge", "桃", "heart", 6, "basic"))
+    engine.ask_confirm = AsyncMock(return_value=True)
+    event = {"shanRequired": 1, "baseDamage": 1}
+    asyncio.run(handler.before_sha(tieqi_owner, target, Card("tieqi_overlap_sha", "杀", "club", 7, "basic"), event))
+    assert target.flags["yijue_sources"] == [yijue_owner.id]
+    assert target.flags["tieqi_sources"] == [tieqi_owner.id]
+    reset_turn_flags(target)
+    assert target.flags["cannot_use_hand"] and target.flags["nonlocked_disabled"]
+
+    asyncio.run(handler.after_phase(yijue_owner, Phase.END))
+    assert not target.flags.get("cannot_use_hand")
+    assert target.flags["nonlocked_disabled"]
+    assert asyncio.run(handler.modify_damage(yijue_owner, target, 1, Card("overlap_heart_sha", "杀", "heart", 4, "basic"))) == 1
+
+    asyncio.run(handler.after_phase(tieqi_owner, Phase.END))
+    assert not target.flags.get("nonlocked_disabled")
+    assert not target.flags.get("tieqi_sources")
+
+
 def test_yajiao_decline_preserves_deck_and_matching_reveal_uses_player_target():
     engine = engine_for("zhaoyun")
     owner, other = engine.game_state.players[:2]
@@ -154,6 +226,26 @@ def test_yajiao_decline_preserves_deck_and_matching_reveal_uses_player_target():
     assert reveal in owner.hand
     assert reveal not in engine.game_state.deck
     assert reveal not in engine.game_state.discard_pile
+
+
+def test_yajiao_mismatched_reveal_discards_selected_nearby_card():
+    engine = engine_for("zhaoyun")
+    owner, nearby, current = engine.game_state.players[:3]
+    engine.game_state.current_player = current
+    lost = Card("yajiao_mismatch_lost", "杀", "spade", 7, "basic")
+    nearby_card = Card("yajiao_nearby", "闪", "heart", 4, "basic")
+    owner.hand.append(lost)
+    nearby.hand.append(nearby_card)
+    reveal = engine.game_state.deck[0]
+    reveal.card_type = "trick"
+    engine.ask_confirm = AsyncMock(return_value=True)
+    engine.ask_choose_players = AsyncMock(return_value=[nearby])
+    engine.ask_choose_cards = AsyncMock(return_value=[nearby_card])
+    event = SimpleNamespace(from_zone="hand")
+    asyncio.run(engine.skill_manager.handlers[0].on_cards_lost(owner, [lost], "respond", event=event))
+    assert reveal in engine.game_state.discard_pile
+    assert nearby_card in engine.game_state.discard_pile
+    assert nearby_card not in nearby.hand
 
 
 def test_jijiang_response_requires_donor_consent_and_card_selection():
@@ -197,6 +289,7 @@ def test_rende_gifts_two_distinct_players_before_virtual_card_becomes_available(
     first_card = Card("rende_first", "杀", "club", 3, "basic")
     second_card = Card("rende_second", "闪", "diamond", 4, "basic")
     owner.hand.extend([first_card, second_card])
+    owner.hp -= 1
     handler = engine.skill_manager.handlers[0]
     give = {"skill_name": "仁德", "variant": "give", "card_indices": [0]}
     assert asyncio.run(handler.execute(owner, give, [first])) is True
@@ -206,6 +299,12 @@ def test_rende_gifts_two_distinct_players_before_virtual_card_becomes_available(
     assert asyncio.run(handler.execute(owner, give, [second])) is True
     assert second_card in second.hand
     assert owner.flags["rende_basic_available"] is True
+    choices = handler.get_actions(owner)
+    assert {choice["variant"] for choice in choices} >= {"basic_tao", "basic_sha"}
+    assert asyncio.run(handler.execute(owner, {"skill_name": "仁德", "variant": "basic_tao"}, [])) is True
+    assert owner.hp == owner.max_hp
+    assert owner.flags["rende_basic_used"] is True
+    assert not owner.flags["rende_basic_available"]
 
 
 def test_tieqi_target_may_give_matching_card_to_avoid_extra_damage():
@@ -222,6 +321,42 @@ def test_tieqi_target_may_give_matching_card_to_avoid_extra_damage():
     assert matching in source.hand and matching not in target.hand
     assert event == {"shanRequired": 1, "baseDamage": 1}
     assert target.flags["nonlocked_disabled"] is True
+
+
+def test_tieqi_without_matching_card_prevents_dodge_and_adds_damage():
+    engine = engine_for("machao")
+    owner, target = engine.game_state.players[:2]
+    target.hand.append(Card("tieqi_shan", "闪", "heart", 6, "basic"))
+    handler = engine.skill_manager.handlers[0]
+    handler.manager.judge = AsyncMock(return_value=Card("tieqi_judge_black", "杀", "spade", 8, "basic"))
+    engine.ask_confirm = AsyncMock(return_value=True)
+    before = target.hp
+    assert asyncio.run(engine.card_system.use_sha(owner, Card("tieqi_resolve", "杀", "club", 7, "basic"), target)) is True
+    assert target.hp == before - 2
+    assert target.flags["nonlocked_disabled"] is True
+    assert any(card.name == "闪" for card in target.hand)
+    asyncio.run(handler.after_phase(owner, Phase.END))
+    assert not target.flags.get("nonlocked_disabled")
+
+
+def test_rende_virtual_sha_resolves_after_last_hand_card_is_given():
+    engine = engine_for("liubei")
+    owner, first, second = engine.game_state.players[:3]
+    victim = engine.game_state.players[4]
+    owner.hand.extend([
+        Card("rende_sha_gift1", "闪", "heart", 2, "basic"),
+        Card("rende_sha_gift2", "桃", "heart", 3, "basic"),
+    ])
+    handler = engine.skill_manager.handlers[0]
+    give = {"skill_name": "仁德", "variant": "give", "card_indices": [0]}
+    assert asyncio.run(handler.execute(owner, give, [first])) is True
+    assert asyncio.run(handler.execute(owner, give, [second])) is True
+    assert not owner.hand
+    assert any(action["variant"] == "basic_sha" for action in handler.get_actions(owner))
+    before = victim.hp
+    assert asyncio.run(handler.execute(owner, {"skill_name": "仁德", "variant": "basic_sha"}, [victim])) is True
+    assert victim.hp == before - 1
+    assert owner.flags["rende_basic_used"] is True
 
 
 def test_jizhi_accept_draws_and_optional_basic_discard_increases_hand_limit():
@@ -273,6 +408,11 @@ def test_paoxiao_dodges_accumulate_damage_then_spend_tokens():
     assert owner.flags.get("pao_tokens", 0) == 0
     assert asyncio.run(handler.modify_damage(owner, target, 1, sha)) == 1
 
+    asyncio.run(handler.on_sha_dodged(owner, target, sha, {}))
+    asyncio.run(handler.after_phase(owner, Phase.END))
+    assert "pao_tokens" not in owner.flags
+    assert asyncio.run(handler.modify_damage(owner, target, 1, sha)) == 1
+
 
 def test_kongcheng_mashu_and_qicai_passive_boundaries():
     kongcheng = engine_for("zhugeliang")
@@ -281,6 +421,9 @@ def test_kongcheng_mashu_and_qicai_passive_boundaries():
     assert handler.can_target(attacker, owner, "杀")
     assert handler.can_target(attacker, owner, "决斗")
     assert handler.can_target(attacker, owner, "火攻") is None
+    owner.flags["nonlocked_disabled"] = True
+    assert handler.can_target(attacker, owner, "杀")
+    owner.flags.pop("nonlocked_disabled")
     owner.hand.append(Card("kongcheng_card", "桃", "heart", 1, "basic"))
     assert handler.can_target(attacker, owner, "杀") is None
 

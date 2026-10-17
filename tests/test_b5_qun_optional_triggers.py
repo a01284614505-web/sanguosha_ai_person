@@ -205,3 +205,58 @@ def test_biyue_draws_one_when_hand_is_not_empty():
     run(handler.after_phase(player, Phase.END))
 
     engine.skill_manager.draw_cards.assert_awaited_once_with(player, 1, "闭月")
+
+
+def test_guidao_cancelled_cost_selection_keeps_original_and_cost():
+    engine = game()
+    handler = handler_for(engine)
+    owner, judged = engine.game_state.players[:2]
+    cost = card("b5_guidao_cancel_cost", "闪", "spade")
+    original = card("b5_guidao_cancel_original", "桃", "heart")
+    owner.hand.append(cost)
+    handler.has = lambda p, skill: p is owner and skill == "鬼道"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_cards_result = AsyncMock(return_value={"status": "cancelled", "cards": []})
+
+    result = run(handler.before_judge(judged, original))
+
+    assert result is original
+    assert owner.hand == [cost]
+    assert original not in engine.game_state.discard_pile
+
+
+def test_leiji_club_judgment_recovers_and_damages_selected_target():
+    engine = game()
+    handler = handler_for(engine)
+    player, target = engine.game_state.players[:2]
+    player.hp = player.max_hp - 1
+    handler.has = lambda p, skill: p is player and skill == "雷击"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.judge = AsyncMock(return_value=card("b5_leiji_club", "闪", "club"))
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[target])
+    engine.skill_manager.recover = AsyncMock(return_value=1)
+    engine.card_system.damage = AsyncMock()
+
+    run(handler.on_card_responded(player, card("b5_leiji_response", "闪"), "闪"))
+
+    engine.skill_manager.recover.assert_awaited_once_with(player, 1, player, "雷击")
+    engine.card_system.damage.assert_awaited_once_with(player, target, 1, context={"reason": "雷击"})
+
+
+def test_leiji_with_no_living_target_does_not_request_player_choice():
+    engine = game()
+    handler = handler_for(engine)
+    player = engine.game_state.players[0]
+    for target in engine.game_state.players[1:]:
+        target.alive = False
+    handler.has = lambda p, skill: p is player and skill == "雷击"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.judge = AsyncMock(return_value=card("b5_leiji_solo", "闪电", "spade", "trick"))
+    engine.skill_manager.ask_choose_players = AsyncMock()
+    engine.card_system.damage = AsyncMock()
+
+    run(handler.on_card_responded(player, card("b5_leiji_solo_response", "闪"), "闪"))
+
+    engine.skill_manager.judge.assert_awaited_once_with(player, "雷击")
+    engine.skill_manager.ask_choose_players.assert_not_awaited()
+    engine.card_system.damage.assert_not_awaited()

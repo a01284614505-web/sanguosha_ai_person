@@ -341,3 +341,65 @@ def test_jiuyuan_ineligible_recovery_does_not_prompt():
     run(handler.on_recover(target, 1, target, "test"))
 
     engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_fenwei_already_spent_does_not_prompt_again():
+    engine = game()
+    handler = get_wu(engine)
+    owner, *targets = engine.game_state.players
+    handler.has = lambda p, skill: p is owner and skill == "奋威"
+    owner.flags["limited_skills"] = {"奋威"}
+    engine.skill_manager.ask_confirm = AsyncMock()
+
+    result = run(handler.before_multi_target_trick(owner, card("b5_fenwei_spent", "万箭齐发", card_type="trick"), targets[:2]))
+
+    assert result == targets[:2]
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_fenwei_illegal_selected_target_does_not_spend_limited_skill():
+    engine = game()
+    handler = get_wu(engine)
+    owner, *targets = engine.game_state.players
+    outsider = object()
+    handler.has = lambda p, skill: p is owner and skill == "奋威"
+    owner.flags["limited_skills"] = set()
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[outsider])
+
+    result = run(handler.before_multi_target_trick(owner, card("b5_fenwei_illegal", "万箭齐发", card_type="trick"), targets[:2]))
+
+    assert result == targets[:2]
+    assert "奋威" not in owner.flags["limited_skills"]
+
+
+def test_lianying_multiple_cards_asks_for_matching_number_of_recipients():
+    engine = game()
+    handler = get_wu(engine)
+    player, *recipients = engine.game_state.players
+    handler.has = lambda p, skill: p is player and skill == "连营"
+    pair = [card("b5_lianying_pair1", "杀"), card("b5_lianying_pair2", "桃", "heart")]
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=recipients[:2])
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    run(handler.on_cards_lost(player, pair))
+
+    request = engine.skill_manager.ask_choose_players.await_args
+    assert (request.kwargs["min_n"], request.kwargs["max_n"]) == (2, 2)
+    assert engine.skill_manager.draw_cards.await_count == 2
+
+
+def test_qinxue_does_not_awaken_at_or_below_hand_minus_hp_threshold():
+    engine = game()
+    handler = get_wu(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, skill: p is player and skill == "勤学"
+    player.hand = [card(f"b5_qinxue_below_{i}", "杀") for i in range(player.hp + 1)]
+    engine.skill_manager.ask_choose_option = AsyncMock()
+
+    run(handler._try_qinxue(player))
+
+    assert player.max_hp == 4
+    assert not player.flags.get("skill_state", {}).get("勤学", {}).get("awakened")
+    engine.skill_manager.ask_choose_option.assert_not_awaited()

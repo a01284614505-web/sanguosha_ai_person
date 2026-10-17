@@ -70,9 +70,6 @@ def reset_turn_flags(player):
     flags["trick_used_this_turn"] = False
     flags["turn_discard_suits"] = set()
     flags["hand_limit_bonus"] = 0
-    flags.pop("cannot_use_hand", None)
-    flags.pop("nonlocked_disabled", None)
-    flags.pop("yijue_heart_source", None)
     flags.pop("pao_tokens", None)
 
 

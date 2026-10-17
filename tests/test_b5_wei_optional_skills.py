@@ -393,3 +393,131 @@ def test_fankui_with_source_without_cards_does_not_prompt():
     run(handler.after_damage(source, target, 1))
 
     engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_jianxiong_does_not_prompt_if_damage_card_left_discard_pile():
+    engine = game()
+    handler = get_wei(engine)
+    target, source = engine.game_state.players[:2]
+    damage_card = card("b5_jianxiong_gone", "杀")
+    handler.has = lambda p, skill: p is target and skill == "奸雄"
+    engine.skill_manager.ask_confirm = AsyncMock()
+
+    run(handler.after_damage(source, target, 1, damage_card))
+
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+    assert damage_card not in target.hand
+
+
+def test_guicai_with_no_owned_cards_does_not_offer_replacement():
+    engine = game()
+    handler = get_wei(engine)
+    owner, judged = engine.game_state.players[:2]
+    original = card("b5_guicai_no_cost", "桃", "heart")
+    handler.has = lambda p, skill: p is owner and skill == "鬼才"
+    engine.skill_manager.ask_confirm = AsyncMock()
+
+    result = run(handler.before_judge(judged, original))
+
+    assert result is original
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_guicai_cancelled_cost_selection_preserves_original_judgment():
+    engine = game()
+    handler = get_wei(engine)
+    owner, judged = engine.game_state.players[:2]
+    cost = card("b5_guicai_cancel_cost", "闪", "club")
+    original = card("b5_guicai_cancel_original", "桃", "heart")
+    owner.hand.append(cost)
+    handler.has = lambda p, skill: p is owner and skill == "鬼才"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_cards_result = AsyncMock(return_value={"status": "cancelled", "cards": []})
+
+    result = run(handler.before_judge(judged, original))
+
+    assert result is original
+    assert owner.hand == [cost]
+    assert original not in engine.game_state.discard_pile
+
+
+def test_ganglie_red_judgment_damages_source_instead_of_discarding():
+    engine = game()
+    handler = get_wei(engine)
+    target, source = engine.game_state.players[:2]
+    handler.has = lambda p, skill: p is target and skill == "刚烈"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.judge = AsyncMock(return_value=card("b5_ganglie_red", "桃", "heart"))
+    engine.card_system.damage = AsyncMock()
+    engine.skill_manager.ask_choose_cards_result = AsyncMock()
+
+    run(handler.after_damage(source, target, 1, card("b5_ganglie_red_damage", "杀")))
+
+    engine.card_system.damage.assert_awaited_once_with(target, source, 1, context={"reason": "刚烈"})
+    engine.skill_manager.ask_choose_cards_result.assert_not_awaited()
+
+
+def test_qingjian_empty_gained_candidates_does_not_prompt():
+    engine = game()
+    handler = get_wei(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, skill: p is player and skill == "清俭"
+    engine.skill_manager.ask_confirm = AsyncMock()
+
+    run(handler.on_card_gained(player, [], "技能获得"))
+
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_tuxi_with_no_victim_hand_cards_does_not_prompt_and_keeps_draw_phase():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = get_wei(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, skill: p is player and skill == "突袭"
+    engine.skill_manager.ask_confirm = AsyncMock()
+
+    result = run(handler.before_phase(player, Phase.DRAW))
+
+    assert result is None
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_luoshen_stops_at_twelve_black_judgments():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = get_wei(engine)
+    player = engine.game_state.players[0]
+    blacks = [card(f"b5_luoshen_cap_{i}", "杀", "spade") for i in range(12)]
+    extra = card("b5_luoshen_cap_extra", "闪", "club")
+    engine.game_state.deck[:] = [*blacks, extra]
+    handler.has = lambda p, skill: p is player and skill == "洛神"
+
+    run(handler.before_phase(player, Phase.PREPARE))
+
+    assert player.hand == blacks
+    assert engine.game_state.deck == [extra]
+
+
+def test_yiji_when_no_other_alive_recipient_keeps_drawn_cards():
+    engine = game()
+    handler = get_wei(engine)
+    target = engine.game_state.players[0]
+    for player in engine.game_state.players[1:]:
+        player.alive = False
+    drawn = [card("b5_yiji_solo1", "闪"), card("b5_yiji_solo2", "桃", "heart")]
+    handler.has = lambda p, skill: p is target and skill == "遗计"
+
+    async def draw_two(player, count, reason):
+        target.hand.extend(drawn)
+        return drawn
+
+    engine.skill_manager.draw_cards = AsyncMock(side_effect=draw_two)
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[])
+
+    run(handler.after_damage(None, target, 1))
+
+    assert target.hand == drawn
+    assert engine.skill_manager.ask_choose_players.await_count == 2
+    assert all(call.kwargs["cancelable"] is False for call in engine.skill_manager.ask_choose_players.await_args_list)
