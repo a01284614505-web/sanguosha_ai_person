@@ -387,3 +387,10 @@ pre.preview { margin: 0; padding: 10px; border-radius: 6px; background: var(--in
     .log-players th, .log-players td { padding: 6px 4px; font-size: 13px; }
     .log-players td:nth-child(3) { word-break: break-all; }
 }
+
+/* 结算页：获得身份卡 */
+.reward-note:not([hidden]) { display: flex; gap: 16px; align-items: center; justify-content: center; text-align: left; }
+.reward-note .id-card { --idc-w: 92px; animation: rewardIn .7s cubic-bezier(.2, .8, .2, 1.2); }
+.reward-note b { font-size: 24px; }
+.reward-note p { margin: 4px 0 0; font-family: var(--font-ui); font-size: 14px; color: var(--text-dim); }
+@keyframes rewardIn { from { transform: rotateY(90deg) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }

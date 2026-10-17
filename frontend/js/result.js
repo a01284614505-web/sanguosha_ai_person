@@ -51,7 +51,10 @@
                 '<div>治疗 <b>' + (m.healing || 0) + '</b></div><div>出牌 <b>' + (m.cards_played || 0) + '</b></div></div>';
         }
         renderStats(r);
-        if (r.reward === 'identity_card') document.getElementById('rewardSection').hidden = false;
+        if (r.reward === 'identity_card') {
+            document.getElementById('rewardSection').hidden = false;
+            document.getElementById('rewardCard').innerHTML = SGS.identityCardHTML({});
+        }
     }
 
     // 每名玩家一行：头像、身份印与七项统计；自己的一行高亮，阵亡的变灰。

@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#17110c">
     <title>三国杀酒馆 · 大厅</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
-    <link rel="stylesheet" href="css/sgs.css?v=20261017d">
-    <link rel="stylesheet" href="css/pages.css?v=20261017d">
+    <link rel="stylesheet" href="css/sgs.css?v=20261017e">
+    <link rel="stylesheet" href="css/pages.css?v=20261017e">
     <!-- 主题脚本放在 head：先于页面渲染应用暖纸/夜墨，避免闪烁 -->
-    <script src="js/card_info.js?v=20261017d"></script>
-    <script src="js/sgs_common.js?v=20261017d"></script>
+    <script src="js/card_info.js?v=20261017e"></script>
+    <script src="js/sgs_common.js?v=20261017e"></script>
 </head>
 <body>
 <div class="page">
@@ -66,10 +66,21 @@
                 <label class="field"><span>将池</span>
                     <select id="heroPool"><option value="界限突破27将" selected>界限突破 27 将</option></select>
                 </label>
-                <div class="field" id="identityCardSection" hidden>
-                    <span>身份卡（剩余 <b id="cardCount">0</b> 张）</span>
-                    <label class="check"><input type="checkbox" id="useIdentityCard"> 本局使用身份卡</label>
-                    <select id="identitySelect" disabled>
+                <div class="idcard-panel" id="identityCardSection" hidden>
+                    <div id="idCardArt" title="身份卡"></div>
+                    <div class="idcard-side">
+                        <div class="idcard-title">身份卡<small>剩余 <b id="cardCount">0</b> 张</small></div>
+                        <div class="idcard-choices" role="radiogroup" aria-label="选择本局身份" id="idCardChoices">
+                            <button type="button" class="seal id-lord" role="radio" aria-checked="false" data-identity="主公" title="主公">主</button>
+                            <button type="button" class="seal id-loyalist" role="radio" aria-checked="false" data-identity="忠臣" title="忠臣">忠</button>
+                            <button type="button" class="seal id-rebel" role="radio" aria-checked="false" data-identity="反贼" title="反贼">反</button>
+                            <button type="button" class="seal id-spy" role="radio" aria-checked="false" data-identity="内奸" title="内奸">内</button>
+                        </div>
+                        <p class="idcard-hint" id="idCardHint">点一个身份，本局就用身份卡指定</p>
+                    </div>
+                    <!-- 真正提交给开局配置的控件（保持原 id，旧脚本与浏览器验收仍可用） -->
+                    <input type="checkbox" id="useIdentityCard" class="sr-only" tabindex="-1" aria-hidden="true">
+                    <select id="identitySelect" class="sr-only" tabindex="-1" aria-hidden="true" disabled>
                         <option value="">选择身份</option>
                         <option value="主公">主公</option>
                         <option value="忠臣">忠臣</option>
@@ -131,8 +142,8 @@
     </form>
 </dialog>
 
-<script src="js/protocol.js?v=20261017d"></script>
-<script src="js/global_settings.js?v=20261017d"></script>
-<script src="js/lobby.js?v=20261017d"></script>
+<script src="js/protocol.js?v=20261017e"></script>
+<script src="js/global_settings.js?v=20261017e"></script>
+<script src="js/lobby.js?v=20261017e"></script>
 </body>
 </html>

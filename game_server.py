@@ -453,7 +453,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
         if request_path == "/api/history":
             try:
                 profile_id = validate_profile_id(parse_qs(parsed.query).get("profile_id", [None])[0])
-                profile = GameHistoryStore(HISTORY_PATH).profile(profile_id)
+                # 与 WebSocket 线程共用同一个存储对象（同一把锁），补发见面礼时不会和战绩写入互相覆盖。
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                profile = store.profile(profile_id)
                 self._send_json(200, {"success": True, "profile": profile})
             except ValueError as exc:
                 self._send_json(400, {"success": False, "message": str(exc)})
