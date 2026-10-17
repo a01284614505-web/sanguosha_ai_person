@@ -117,6 +117,8 @@ class ServerChatEchoTest(unittest.TestCase):
         server.engines["1"] = engine
         server.ws_map[ws] = "1"
         server.viewers["1"] = ws
+        # 真人发言现在交给引擎入库，回显由引擎事件经服务器转发（与 create_game 时的接线一致）。
+        engine.on("chat", server._forward("1", "chat"))
         asyncio.run(server.do_chat(ws, {"message": "  大家好  "}))
         self.assertEqual(ws.sent[-1]["type"], "chat")
         self.assertEqual(ws.sent[-1]["message"], "大家好")
