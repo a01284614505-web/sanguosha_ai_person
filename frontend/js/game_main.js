@@ -46,7 +46,9 @@
         trustee: null,
         idleSince: 0,
         idleWarningTimer: null,
-        lastTurnKey: ''     // “轮次:当前玩家”，用于识别换人
+        lastTurnKey: '',    // “轮次:当前玩家”，用于识别换人
+        pool: null,         // 正在显示的临时展示池（五谷丰登）；结算结束后保留片刻再收起
+        poolTimer: null
     };
     window.GameUI = G;
 
@@ -689,8 +691,11 @@
             opts.innerHTML = options.map((o, i) => '<button type="button" class="opt-chip' + (G.picked.includes(i) ? ' picked' : '') + '" data-opt="' + i + '">' + esc(o.label) + '</button>').join('');
         } else if (r.kind === 'choose_players') {
             opts.innerHTML = options.map((o, i) => '<button type="button" class="opt-chip' + (G.picked.includes(i) ? ' picked' : '') + '" data-opt="' + i + '">' + esc(o.player_name || o.label) + '</button>').join('');
+        } else if (poolRequestMap() && G.pool) {
+            // 五谷丰登：在展示池面板里点选，操作条只留提示和确定按钮
+            opts.innerHTML = '<span class="muted">在上方【五谷丰登】面板中点选一张牌，再按确定（双击可直接确定）</span>';
         } else if (!reqHandMap()) {
-            // 候选不全在我手里（他人的牌、五谷丰登的亮牌等）→ 在操作条里列出候选牌
+            // 候选不全在我手里（他人的牌等）→ 在操作条里列出候选牌
             opts.innerHTML = options.map((o, i) => {
                 if (o.is_pass) return '';
                 const label = o.skill_name ? '（' + o.skill_name + '）' : (o.hidden ? '暗置手牌' : (o.detail || ''));
@@ -1235,6 +1240,87 @@
         renderMyArea();
         renderHand();
         renderActionBar();
+        renderShownPool();
+    }
+
+    // ------------------------------------------------------------------ 五谷丰登展示池
+    // 亮出的牌全桌可见：谁取走了哪张、轮到谁挑都由引擎在 state.shown_pool 里下发。
+    // 轮到我时，在面板里直接点牌；提交仍走 require_response 的候选下标，服务器会复核。
+
+    /** 当前请求是不是“从展示池里挑一张”；是则返回 {slot: 候选下标}。 */
+    function poolRequestMap() {
+        const r = G.req;
+        const slots = r && r.context && Array.isArray(r.context.pool_slots) ? r.context.pool_slots : null;
+        if (!slots || r.expired) return null;
+        const map = {};
+        slots.forEach((slot, i) => { map[slot] = i; });
+        return map;
+    }
+
+    /** 收到新状态时更新面板数据：池子消失后保留最后一帧 1.6 秒，让人看清最后一张被谁拿走。 */
+    function syncShownPool(s) {
+        const pool = s && s.shown_pool;
+        if (pool) {
+            clearTimeout(G.poolTimer);
+            G.poolTimer = null;
+            G.pool = Object.assign({}, pool, { closing: false });
+            return;
+        }
+        if (G.pool && !G.pool.closing) {
+            G.pool = Object.assign({}, G.pool, { closing: true, current_id: null });
+            clearTimeout(G.poolTimer);
+            G.poolTimer = setTimeout(() => { G.pool = null; G.poolTimer = null; renderShownPool(); }, 1600);
+        }
+    }
+
+    function renderShownPool() {
+        const el = document.getElementById('shownPool');
+        if (!el) return;
+        const pool = G.pool;
+        if (!pool || !Array.isArray(pool.cards) || !pool.cards.length) {
+            el.hidden = true;
+            el.innerHTML = '';
+            return;
+        }
+        const pick = poolRequestMap();
+        const current = pool.current_id != null ? playerById(pool.current_id) : null;
+        let status;
+        if (pool.closing) status = '分配完毕';
+        else if (pick) status = '轮到你挑选：点一张牌';
+        else if (current) status = '轮到 ' + esc(current.name) + ' 挑选';
+        else status = '亮出牌堆顶 ' + pool.cards.length + ' 张';
+        const left = pool.cards.filter(c => c.picked_by == null).length;
+        el.innerHTML =
+            '<header class="sp-head"><b>【' + esc(pool.title || '五谷丰登') + '】</b>' +
+            '<span>' + esc(pool.source_name || '') + ' 使用</span>' +
+            '<span class="sp-status' + (pick ? ' mine' : '') + '">' + status + '</span>' +
+            (pool.closing ? '' : '<span class="sp-left">剩 ' + left + ' 张</span>') + '</header>' +
+            '<div class="sp-cards">' + pool.cards.map(entry => {
+                const taken = entry.picked_by != null;
+                const optIndex = pick && !taken ? pick[entry.slot] : undefined;
+                const selectable = optIndex !== undefined;
+                const chosen = selectable && G.picked.includes(optIndex);
+                const cls = ['sp-card'];
+                if (taken) cls.push('taken');
+                if (taken && entry.picked_by === G.meId) cls.push('mine');
+                if (selectable) cls.push('selectable');
+                if (chosen) cls.push('chosen');
+                const who = taken ? (entry.picked_by === G.meId ? '你' : esc(entry.picked_name || '')) + ' 取走' : (selectable ? '可选' : '待取');
+                const attrs = selectable
+                    ? 'data-pool-opt="' + optIndex + '" role="button" tabindex="0" aria-pressed="' + chosen + '"'
+                    : '';
+                return '<figure class="' + cls.join(' ') + '" ' + attrs + '>' +
+                    SGS.cardHTML(entry.card, {}) + '<figcaption>' + who + '</figcaption></figure>';
+            }).join('') + '</div>';
+        el.hidden = false;
+        el.querySelectorAll('[data-pool-opt]').forEach(node => {
+            const i = Number(node.dataset.poolOpt);
+            node.addEventListener('click', () => togglePick(i));
+            node.addEventListener('dblclick', () => { G.picked = [i]; submitPicked(); });
+            node.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePick(i); }
+            });
+        });
     }
 
     // ------------------------------------------------------------------ 消息处理
@@ -1278,6 +1364,7 @@
         const prevMap = G.prev;
         G.state = s;
         G.players = s.players || [];
+        syncShownPool(s);
         const human = G.players.find(p => !p.is_ai) || G.players.find(p => p.id === 0);
         if (human) G.meId = human.id;
         renderTrusteeStatus();
@@ -1465,7 +1552,7 @@
         G.turn = null; G.sel = null;
         if (G.req) { G.req = null; clearInterval(G.reqTimer); }
         const state = data.state || G.state || {};
-        if (data.state) { G.state = data.state; G.players = data.state.players || G.players; }
+        if (data.state) { G.state = data.state; G.players = data.state.players || G.players; syncShownPool(data.state); }
         const winner = data.winner;
         const decided = ['lord', 'rebel', 'spy'].includes(winner);
         const result = {

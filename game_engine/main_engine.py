@@ -3,6 +3,7 @@
 
 import asyncio
 from collections import deque
+import copy
 from itertools import combinations, permutations
 import logging
 import random
@@ -143,6 +144,8 @@ class MainEngine:
         self._open_prompts: Dict[str, Dict] = {}
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
+        # 临时展示池（五谷丰登亮出的牌）：公开信息，随状态快照下发；结算结束置 None。
+        self.shown_pool: Any = None
         # 后台运行的聊天任务；对局结束时统一取消。
         self._chat_tasks: Set[asyncio.Task] = set()
         self._game_end_emitted = False
@@ -399,7 +402,13 @@ class MainEngine:
             "hide_dead_identity": self.hide_dead_identity,
             "winner": gs.winner,
             "trustee": self.trustee_status(),
+            "shown_pool": copy.deepcopy(self.shown_pool) if self.shown_pool else None,
         }
+
+    async def set_shown_pool(self, pool):
+        """更新临时展示池并推送状态：亮牌、轮到谁、谁取走了哪张，全桌可见。"""
+        self.shown_pool = copy.deepcopy(pool) if pool else None
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     @staticmethod
     def _has_model_key(player: Player) -> bool:
@@ -894,6 +903,10 @@ class MainEngine:
             # so omit card objects instead of exposing suit/rank by accident.
             elif isinstance(value, (str, int, float, bool)) or value is None:
                 out[key] = value
+            elif isinstance(value, (list, tuple)) and all(
+                    isinstance(item, (str, int, float, bool)) for item in value):
+                # 只放行纯标量列表（如五谷丰登的 pool_slots），对象列表一律不传。
+                out[key] = list(value)
         return out
 
     def _next_request_id(self) -> str:
