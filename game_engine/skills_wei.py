@@ -3,6 +3,7 @@
 
 import inspect
 
+from . import card_flow
 from .state_manager import Phase
 from .skill_runtime_core import FactionSkillHandler, card_color, card_type_group, ensure_flags, hero_faction, mark_once_per_turn, once_per_turn
 
@@ -13,10 +14,17 @@ class WeiSkillHandler(FactionSkillHandler):
     def _finished(self):
         return bool(self.engine.game_aborted or self.state.game_over)
 
-    async def _choose_owned_card(self, chooser, owner, skill_name, prompt, *, cancelable=True):
-        """Ask against a frozen hand/equipment snapshot and return its real zone."""
-        places = [(owner, "hand", card) for card in list(owner.hand)]
-        places.extend((owner, "equipment", card) for card in list(owner.equipment.values()))
+    async def _choose_owned_card(self, chooser, owner, skill_name, prompt, *, cancelable=True,
+                                 zones=("hand", "equipment")):
+        """Ask against a frozen hand/equipment snapshot and return its real zone.
+
+        zones 限定可选的牌区（突袭只能拿手牌）。
+        """
+        places = []
+        if "hand" in zones:
+            places.extend((owner, "hand", card) for card in list(owner.hand))
+        if "equipment" in zones:
+            places.extend((owner, "equipment", card) for card in list(owner.equipment.values()))
         if not places:
             return None
         result = await self.manager.ask_choose_cards_result(
@@ -63,13 +71,23 @@ class WeiSkillHandler(FactionSkillHandler):
         if phase == Phase.DRAW and self.has(player, "突袭"):
             victims = [p for p in self.state.players if p.alive and p is not player and p.hand]
             if victims:
-                use = await self.manager.ask_confirm(player, "是否发动【突袭】少摸牌并获得其他角色的手牌？", skill_name="突袭", default=False)
+                ai_seat = player.is_ai or (
+                    getattr(self.engine, "_trustee_active", False) is True
+                    and player is self.engine.human_player())
+                if ai_seat:
+                    # AI / 托管座位：发不发动和选谁合并成一次决策，选 0 人即不发动。
+                    use = True
+                else:
+                    use = await self.manager.ask_confirm(player, "是否发动【突袭】少摸牌并获得其他角色的手牌？", skill_name="突袭", default=False)
                 if self._finished():
                     return {"skip_default": True}
                 if use:
                     chosen = await self.manager.ask_choose_players(
-                        player, "【突袭】：选择1至2名有手牌的角色", victims,
-                        min_n=1, max_n=2, skill_name="突袭", cancelable=True,
+                        player,
+                        "【突袭】：选择0至2名有手牌的角色（选0人表示不发动）" if ai_seat
+                        else "【突袭】：选择1至2名有手牌的角色",
+                        victims,
+                        min_n=0 if ai_seat else 1, max_n=2, skill_name="突袭", cancelable=True,
                     )
                     if self._finished():
                         return {"skip_default": True}
@@ -81,13 +99,14 @@ class WeiSkillHandler(FactionSkillHandler):
                             continue
                         selected = await self._choose_owned_card(
                             player, victim, "突袭", f"【突袭】：选择{victim.name}的一张手牌",
-                            cancelable=False,
+                            cancelable=False, zones=("hand",),
                         )
                         if self._finished():
                             return {"skip_default": True}
                         if selected:
                             steals.append((victim, *selected))
                     gained = []
+                    victim_names = []
                     for victim, stolen, zone in steals:
                         if stolen not in victim.hand or not victim.alive:
                             continue
@@ -99,21 +118,30 @@ class WeiSkillHandler(FactionSkillHandler):
                             return {"skip_default": True}
                         await self.manager.on_cards_lost(victim, [stolen], "突袭")
                         gained.append(stolen)
+                        victim_names.append(victim.name)
                     if gained:
                         await self.manager.on_card_gained(player, gained, "突袭")
                     remaining = max(0, 2 - len(gained))
                     if remaining:
                         await self.manager.draw_cards(player, remaining, "突袭补摸")
-                    await self.manager.announce(player, "突袭", f"{player.name}发动【突袭】，获得{len(gained)}张手牌并补摸{remaining}张")
+                    await self.manager.announce(player, "突袭", (
+                        f"{player.name}发动【突袭】，获得{'、'.join(victim_names)}各一张手牌"
+                        + (f"并补摸{remaining}张" if remaining else "")
+                        if gained else f"{player.name}发动【突袭】，补摸{remaining}张"))
                     return {"skip_default": True}
 
         if phase == Phase.DRAW and self.has(player, "裸衣") and len(self.state.deck) >= 3:
-            shown = [self.state.deck.pop(0) for _ in range(3)]
+            shown = await card_flow.reveal_top(
+                self.engine, self.state, player, 3, reason="裸衣亮牌", refill=False)
             weapons = {"诸葛连弩", "青釭剑", "青龙偃月刀", "丈八蛇矛", "贯石斧", "方天画戟", "麒麟弓", "寒冰剑", "古锭刀"}
             gained = [c for c in shown if card_type_group(c) == "basic" or c.name in weapons or c.name == "决斗"]
             rejected = [c for c in shown if c not in gained]
-            player.hand.extend(gained)
-            self.state.discard_pile.extend(rejected)
+            for gained_card in gained:
+                await card_flow.release_shown(self.engine, self.state, gained_card, "hand",
+                                              to_owner=player, reason="裸衣", actor_id=player.id)
+            for rejected_card in rejected:
+                await card_flow.release_shown(self.engine, self.state, rejected_card, "discard",
+                                              reason="裸衣", actor_id=player.id)
             ensure_flags(player)["luoyi_active"] = True
             await self.manager.on_card_gained(player, gained, "裸衣")
             for card in rejected:
@@ -125,9 +153,11 @@ class WeiSkillHandler(FactionSkillHandler):
     async def _luoshen(self, player):
         obtained = []
         for _ in range(12):
-            if not self.state.refill_deck_if_empty():
+            revealed = await card_flow.reveal_top(
+                self.engine, self.state, player, 1, reason="判定【洛神】")
+            if not revealed:
                 break
-            card = self.state.deck.pop(0)
+            card = revealed[0]
             card = await self.manager.before_judge(player, card, {"reason": "洛神"})
             # 每一次判定都在牌桌中央亮出（与官方一致）：黑色“获得”，红色“结束”。
             announce = getattr(self.engine, "announce_judge", None)
@@ -140,13 +170,15 @@ class WeiSkillHandler(FactionSkillHandler):
                 if self._finished():
                     return
             if card_color(card) == "black":
-                player.hand.append(card)
+                await card_flow.release_shown(self.engine, self.state, card, "hand",
+                                              to_owner=player, reason="洛神", actor_id=player.id)
                 obtained.append(card)
                 await self.manager.on_card_gained(player, [card], "洛神")
             else:
                 claimed = await self.manager.after_judge(player, card, {"reason": "洛神"})
                 if not claimed:
-                    self.state.discard_pile.append(card)
+                    await card_flow.release_shown(self.engine, self.state, card, "discard",
+                                                  reason="判定【洛神】结算", actor_id=player.id)
                     await self.manager.on_card_discarded(player, card, "洛神")
                 break
         if obtained:
@@ -167,17 +199,15 @@ class WeiSkillHandler(FactionSkillHandler):
         if self._finished() or not selected:
             return card
         replacement, zone = selected
-        if zone == "hand" and replacement in owner.hand:
-            owner.hand.remove(replacement)
-        elif zone == "equipment":
-            slot = next((k for k, value in owner.equipment.items() if value is replacement), None)
-            if slot is None:
-                return card
-            owner.equipment.pop(slot)
-        else:
+        taken = await card_flow.take_judge_replacement(
+            self.engine, self.state, owner, player, replacement, zone, reason="鬼才")
+        if taken is None:
             return card
-        self.state.discard_pile.append(card)
-        await self.manager.on_cards_lost(owner, [replacement], "鬼才")
+        await card_flow.release_shown(self.engine, self.state, card, "discard",
+                                      reason="判定替换", actor_id=owner.id)
+        if taken == "legacy":
+            # 直接改牌区时没有牌移动事件，失去牌的技能钩子要自己触发。
+            await self.manager.on_cards_lost(owner, [replacement], "鬼才")
         await self.manager.on_card_discarded(player, card, "判定替换")
         await self.manager.announce(owner, "鬼才", f"{owner.name}发动【鬼才】替换{player.name}的判定牌")
         return replacement
@@ -187,7 +217,8 @@ class WeiSkillHandler(FactionSkillHandler):
             use = await self.manager.ask_confirm(player, "是否发动【天妒】获得判定牌？", skill_name="天妒", default=False)
             if self._finished() or not use:
                 return False
-            player.hand.append(card)
+            await card_flow.release_shown(self.engine, self.state, card, "hand",
+                                          to_owner=player, reason="天妒", actor_id=player.id)
             await self.manager.on_card_gained(player, [card], "天妒")
             await self.manager.announce(player, "天妒", f"{player.name}发动【天妒】获得判定牌【{card.name}】")
             return True

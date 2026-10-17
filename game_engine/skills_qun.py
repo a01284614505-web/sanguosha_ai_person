@@ -3,6 +3,7 @@
 
 from itertools import combinations
 
+from . import card_flow
 from .game_stats import record_stat
 from .state_manager import Card, Phase
 from .skill_runtime_core import (
@@ -233,19 +234,15 @@ class QunSkillHandler(FactionSkillHandler):
         if self._finished() or not selected:
             return card
         replacement, zone = selected
-        if zone == "hand" and replacement in owner.hand:
-            owner.hand.remove(replacement)
-        elif zone == "equipment":
-            slot = next((k for k, value in owner.equipment.items() if value is replacement), None)
-            if slot is None:
-                return card
-            owner.equipment.pop(slot)
-        else:
+        taken = await card_flow.take_judge_replacement(
+            self.engine, self.state, owner, player, replacement, zone, reason="鬼道")
+        if taken is None:
             return card
-        self.state.discard_pile.append(card)
-        await self.manager.on_cards_lost(owner, [replacement], "鬼道")
-        await self.manager.on_card_discarded(player, card, "判定替换")
-        owner.hand.append(card)
+        # 原判定牌由鬼道的持有者获得。旧代码先把它放进弃牌堆、又放进手牌，同一张牌同时在两个牌区。
+        await card_flow.release_shown(self.engine, self.state, card, "hand",
+                                      to_owner=owner, reason="鬼道", actor_id=owner.id)
+        if taken == "legacy":
+            await self.manager.on_cards_lost(owner, [replacement], "鬼道")
         await self.manager.on_card_gained(owner, [card], "鬼道")
         if replacement.suit == "spade" and 2 <= replacement.rank <= 9:
             await self.manager.draw_cards(owner, 1, "鬼道")

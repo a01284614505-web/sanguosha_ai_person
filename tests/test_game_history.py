@@ -98,3 +98,35 @@ def test_server_game_end_forwards_persisted_receipt(tmp_path):
     assert message["profile"]["total_games"] == 1
     assert message["player_won"] is True
     assert GameHistoryStore(tmp_path / "history.json").profile("local_1")["total_games"] == 1
+
+
+def aborted(rounds, human_alive):
+    data = result("aborted")
+    data["state"]["round"] = rounds
+    data["state"]["players"][0]["alive"] = human_alive
+    return data
+
+
+def _streak_of(store, game_id, payload):
+    return store.record_result("local_9", game_id, payload)["profile"]["win_streak"]
+
+
+def test_abort_clears_streak_only_when_human_alive_after_grace(tmp_path):
+    store = GameHistoryStore(tmp_path / "h.json")
+    store.record_result("local_9", "w1", result())
+    assert _streak_of(store, "a1", aborted(3, True)) == 0  # 存活中止 + 第 3 轮 → 清零
+
+
+def test_abort_after_human_died_keeps_streak(tmp_path):
+    store = GameHistoryStore(tmp_path / "h.json")
+    store.record_result("local_9", "w1", result())
+    receipt = store.record_result("local_9", "a1", aborted(3, False))
+    assert receipt["profile"]["win_streak"] == 1
+    assert receipt["player_won"] is None
+    assert receipt["profile"]["history"][0]["status"] == "interrupted"
+
+
+def test_abort_after_human_died_in_first_rounds_keeps_streak(tmp_path):
+    store = GameHistoryStore(tmp_path / "h.json")
+    store.record_result("local_9", "w1", result())
+    assert _streak_of(store, "a1", aborted(1, False)) == 1

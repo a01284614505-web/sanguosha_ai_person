@@ -123,7 +123,10 @@
         },
 
         // 追加一条聊天：左侧头像 + 名字 + 气泡；自己的发言靠右。同时在座位上冒气泡。
+        // data.kind：human 真人 / ai AI / spectator 观战 / system 系统。系统消息走灰色居中样式，
+        // 真人（自己）靠右深漆底，AI 与观战为左侧宣纸气泡；缺 kind 的旧消息按 AI 处理。
         addMessage(data) {
+            if (data.kind === 'system') { this.addSystem(data.message); return; }
             const p = this.resolveSpeaker(data);
             const meId = this.opts.getMeId();
             const isMe = !!p && p.id === meId;
@@ -132,7 +135,8 @@
             const empty = this.chatList.querySelector('.chat-empty');
             if (empty) empty.remove();
             const row = document.createElement('div');
-            row.className = 'msg' + (isMe ? ' me' : '');
+            const kind = ['human', 'spectator'].includes(data.kind) ? data.kind : 'ai';
+            row.className = 'msg kind-' + kind + (isMe ? ' me' : '');
             row.innerHTML = '<div class="avatar">' + SGS.heroImgHTML(hero.id, hero.name || name) + '</div>' +
                 '<div><div class="who"><b>' + esc(name) + '</b>' + esc(p && p.hero_name ? p.hero_name : '') + '</div>' +
                 '<div class="text">' + esc(data.message) + '</div></div>';

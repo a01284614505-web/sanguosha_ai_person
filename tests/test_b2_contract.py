@@ -60,7 +60,11 @@ class B2ContractTest(unittest.TestCase):
 
     def test_model_choice_uses_masked_prompt_and_engine_validation(self):
         hidden = make_card("model_secret", "桃")
+        # T0-10：候选全是暗牌时 AI 不再调用模型（见 test_b5_wei_optional_skills），
+        # 所以这里放一张明牌，保持“混合候选仍走模型 + 脱敏 + 引擎复核”的原有覆盖。
+        visible = make_card("model_visible", "闪")
         self.human.hand.append(hidden)
+        self.human.equipment["weapon"] = visible
         self.ai.ai_config["api_key"] = "fake-key"
         prompts = []
 
@@ -70,8 +74,8 @@ class B2ContractTest(unittest.TestCase):
 
         self.engine.ai_decision._call_with_session = model_call
         result = asyncio.run(self.engine.ask_choose_cards_result(
-            self.ai, "选择隐藏牌", [hidden], hidden_indices=[0],
-            places=[(self.human, "hand")],
+            self.ai, "选择隐藏牌", [hidden, visible], hidden_indices=[0],
+            places=[(self.human, "hand"), (self.human, "equipment")],
         ))
         self.assertEqual(result["cards"], [hidden])
         self.assertEqual(result["status"], "resolved")
@@ -84,10 +88,11 @@ class B2ContractTest(unittest.TestCase):
 
         self.engine.ai_decision._call_with_session = invalid_model
         result = asyncio.run(self.engine.ask_choose_cards_result(
-            self.ai, "非法模型输出", [hidden], hidden_indices=[0],
-            places=[(self.human, "hand")], cancelable=False,
+            self.ai, "非法模型输出", [hidden, visible], hidden_indices=[0],
+            places=[(self.human, "hand"), (self.human, "equipment")], cancelable=False,
         ))
-        self.assertEqual(result["cards"], [hidden])
+        self.assertEqual(len(result["cards"]), 1)
+        self.assertIn(result["cards"][0], (hidden, visible))
         self.assertEqual(result["status"], "resolved")
 
     def test_human_and_ai_choices_recheck_original_snapshot(self):

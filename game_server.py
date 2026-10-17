@@ -284,16 +284,15 @@ class GameServer:
         message = str(data.get("message", "")).strip()[:200]
         if not message:
             return
-        payload = {"type": OUTBOUND.CHAT, "from": "玩家", "message": message, "is_self": True}
         engine = self.engine_for(ws)
         human = engine.human_player() if engine else None
-        if human is not None:
-            payload["from"] = human.name
-            payload["from_id"] = human.id
-        if engine is not None:
-            engine.chat_log.append({"seq": engine.next_log_seq(), "round": engine.game_state.round_number, "from": payload["from"],
-                                    "kind": "human", "message": message})
-        await self.send(ws, payload)
+        if engine is not None and human is not None:
+            # 真人发言交给引擎入库（AI 下次出牌决策能看到）；回显由引擎事件统一转发，这里不再自己发。
+            await engine.submit_chat(human.id, message)
+            return
+        # 没有对局时（例如大厅里误发）只给发送者一条系统回显。
+        await self.send(ws, {"type": OUTBOUND.CHAT, "from": "玩家", "message": message,
+                             "is_self": True, "kind": "system", "free": False})
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
         if waiter and not waiter.done():
@@ -351,9 +350,12 @@ class GameServer:
                     data["history_error"] = "战绩保存失败，请检查服务器日志"
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
-            if event == OUTBOUND.CHAT and engine is not None:
-                engine.chat_log.append({"seq": engine.next_log_seq(), "round": engine.game_state.round_number, "from": data.get("from"),
-                                        "kind": "ai", "message": str(data.get("message", ""))[:200]})
+            if event == OUTBOUND.CHAT and isinstance(data.get("from_id"), int):
+                # 座位号 = 内部 id + 1（界面显示用）；引擎不关心显示规则，在这里补算。
+                data["seat"] = data["from_id"] + 1
+            if event == OUTBOUND.CHAT and data.get("kind") == "human":
+                # 旧前端靠 is_self 认出“这是我自己说的话”，保持兼容。
+                data["is_self"] = True
             if event == ENGINE_EVENT.CARD_MOVE and isinstance(data.get("move"), dict):
                 move = dict(data["move"])
                 owner_id = move.get("to_owner") if move.get("to_owner") is not None else move.get("from_owner")

@@ -383,6 +383,62 @@
 .table-card.old { opacity: .45; }
 @keyframes land { from { transform: translateY(-6px); opacity: .6; } }
 
+/* ---------- 五谷丰登展示池 ----------
+   亮出的牌全桌可见：已被取走的牌变暗并写上取走者；轮到我时可点的牌描金边。 */
+.shown-pool {
+    position: absolute;
+    left: 50%; top: 45%;
+    transform: translate(-50%, -50%);
+    z-index: 30;
+    width: min(94%, 640px);
+    padding: 10px 12px 12px;
+    display: grid; gap: 8px;
+    background: rgba(18, 11, 7, .93);
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 12px 30px rgba(0, 0, 0, .6);
+    pointer-events: auto;
+    animation: land .25s var(--ease);
+}
+.shown-pool[hidden] { display: none; }
+.shown-pool .sp-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+    font-family: var(--font-kai); color: var(--paper-dim); font-size: 13px;
+}
+.shown-pool .sp-head b { color: var(--gold-hi); font-size: 16px; font-weight: 600; }
+.shown-pool .sp-status { color: var(--paper); }
+.shown-pool .sp-status.mine { color: var(--gold-hi); font-weight: 600; }
+.shown-pool .sp-left { margin-left: auto; font-size: 12px; }
+.shown-pool .sp-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.sp-card {
+    margin: 0;
+    width: calc(var(--hand-w) * .9);
+    display: grid; justify-items: center; gap: 4px;
+    transition: opacity .25s, transform .15s;
+}
+.sp-card .card { --w: calc(var(--hand-w) * .82); }
+.sp-card figcaption {
+    width: 100%; text-align: center;
+    font-size: 11px; line-height: 1.3; color: var(--paper-dim);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; overflow-wrap: anywhere;
+}
+.sp-card.taken .card { filter: grayscale(.75) brightness(.55); }
+.sp-card.taken figcaption { color: var(--gold); }
+.sp-card.taken.mine figcaption { color: var(--gold-hi); font-weight: 600; }
+.sp-card.selectable { cursor: pointer; }
+.sp-card.selectable .card { box-shadow: 0 0 0 1px var(--gold-dim); }
+.sp-card.selectable:hover, .sp-card.selectable:focus-visible { transform: translateY(-3px); outline: none; }
+.sp-card.chosen { transform: translateY(-6px); }
+.sp-card.chosen .card { box-shadow: 0 0 0 2px var(--gold-hi), 0 0 14px 3px rgba(241, 216, 152, .45); }
+.sp-card.chosen figcaption { color: var(--gold-hi); }
+@media (max-width: 600px) {
+    /* 竖屏时对手座位占满顶部一排，面板放在座位下方，不挡体力 */
+    .shown-pool { top: 47%; padding: 8px; }
+    .sp-card { width: calc(var(--hand-w) * .78); }
+    .sp-card .card { --w: calc(var(--hand-w) * .7); }
+}
+
 /* ======================================================================
    4. 特效层：指向线、飞牌、浮字、技能大字、判定框
    ====================================================================== */
@@ -615,6 +671,8 @@
 .msg.me > div:not(.avatar) { text-align: right; }
 .msg.me .text { border-radius: 9px 2px 9px 9px; background: linear-gradient(180deg, #4a3220, #2e1f14); color: #f1e4c3; border: 1px solid var(--gold-dim); text-align: left; }
 .msg.system { grid-template-columns: 1fr; text-align: center; font-size: 12px; color: var(--text-faint); }
+/* 观战者的发言（Stage T 后续批次）：同为左侧气泡，但淡一点，提示对方已不在局中 */
+.msg.kind-spectator .text { opacity: .78; font-style: italic; }
 .quick-phrases { display: flex; gap: 6px; overflow-x: auto; padding: 6px 10px; border-top: 1px solid rgba(201, 163, 90, .15); scrollbar-width: none; }
 .quick-phrases::-webkit-scrollbar { display: none; }
 .quick-phrases button {

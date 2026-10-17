@@ -2,13 +2,16 @@
 """主游戏引擎 v2：引擎生成合法操作，玩家或AI只能从中选择。"""
 
 import asyncio
+from collections import deque
+import copy
 from itertools import combinations, permutations
 import logging
 import random
+import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Set, Tuple
 
 from .state_manager import Card, GameState, Player, Phase, card_to_dict
 from .phase_controller import PhaseController
@@ -43,6 +46,12 @@ class _TrusteePlayerView:
 
 class MainEngine:
     """自驱动游戏引擎。服务器仅负责消息转发。"""
+
+    TABLE_CHAT_KEEP = 50          # 引擎内存里保留的最近桌面发言条数
+    CHAT_TEXT_MAX = 200           # 单条发言入库上限
+    AI_CHAT_PER_ROUND = 5         # 单 AI 每回合最多发言数（含免费台词）
+    # 发言文本里伪造的系统标记：入库时把【】换成〔〕，防止有人在聊天里冒充引擎事实（方案 5.2）。
+    _CHAT_MARK_RE = re.compile(r"【(\s*(?:引擎确认|仅你可见|发言·未验证)[^】]*)(】?)")
 
     normalize_config = staticmethod(normalize_config)
     @staticmethod
@@ -135,6 +144,10 @@ class MainEngine:
         self._open_prompts: Dict[str, Dict] = {}
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
+        # 临时展示池（五谷丰登亮出的牌）：公开信息，随状态快照下发；结算结束置 None。
+        self.shown_pool: Any = None
+        # 后台运行的聊天任务；对局结束时统一取消。
+        self._chat_tasks: Set[asyncio.Task] = set()
         self._game_end_emitted = False
         self._started_at: Any = None
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
@@ -147,7 +160,12 @@ class MainEngine:
         self.hide_dead_identity = game_config.get("hide_dead_identity") is True
         # 局后日志用：每次 AI 决策的完整理由（不实时下发，只在对局结束后按设置写入日志）。
         self.decision_log: List[Dict] = []
+        # 桌面发言（Stage T0）：table_chat 只留最近 50 条，进入出牌决策的 L2；
+        # chat_log 是同一批发言的完整记录（局后日志用），两者由 _record_table_chat 同时写入。
         self.chat_log: List[Dict] = []
+        self.table_chat: deque = deque(maxlen=self.TABLE_CHAT_KEEP)
+        # 单个 AI 每回合最多发言数（含免费台词）：(player_id, round) → 已发句数。
+        self._chat_counts: Dict[Tuple[int, int], int] = {}
         self._log_seq = 0
 
         logger.info(f"\n{'=' * 60}")
@@ -384,7 +402,13 @@ class MainEngine:
             "hide_dead_identity": self.hide_dead_identity,
             "winner": gs.winner,
             "trustee": self.trustee_status(),
+            "shown_pool": copy.deepcopy(self.shown_pool) if self.shown_pool else None,
         }
+
+    async def set_shown_pool(self, pool):
+        """更新临时展示池并推送状态：亮牌、轮到谁、谁取走了哪张，全桌可见。"""
+        self.shown_pool = copy.deepcopy(pool) if pool else None
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     @staticmethod
     def _has_model_key(player: Player) -> bool:
@@ -478,6 +502,7 @@ class MainEngine:
             if self._watchdog_task is not None:
                 self._watchdog_task.cancel()
                 self._watchdog_task = None
+            self._cancel_chat_tasks()
 
         await self._emit_game_end_once()
         logger.info(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
@@ -488,15 +513,82 @@ class MainEngine:
     async def _ai_turn(self, player: Player):
         logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
-        await self._run_phases(player)
-
         if self.chat_enabled and random.random() < 0.3:
-            msg = await self.chat_engine.trigger_event_chat(
-                "turn_start", player, {"round": self.game_state.round_number}
-            )
-            if msg:
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg, from_id=player.id)
+            self._spawn_chat("turn_start", player, {"round": self.game_state.round_number})
+        await self._run_phases(player)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    def _spawn_chat(self, event_type: str, player: Player, context: Dict):
+        """台词在后台生成，主循环不等它：模型慢或失败都不会拖住对局。"""
+        task = asyncio.create_task(self._run_chat(event_type, player, context))
+        self._chat_tasks.add(task)
+        task.add_done_callback(self._chat_tasks.discard)
+        return task
+
+    async def _run_chat(self, event_type: str, player: Player, context: Dict):
+        msg = await self.chat_engine.trigger_event_chat(event_type, player, context)
+        if msg and not self.is_game_over() and not self.game_aborted:
+            await self._record_ai_chat(player, msg, free=False)
+
+    # ---------- 桌面发言（Stage T0） ----------
+
+    @classmethod
+    def clean_chat_text(cls, text: Any) -> str:
+        """去首尾空白、截断，并把伪造的系统标记【引擎确认】等转义成〔〕。"""
+        value = str(text or "").strip()[:cls.CHAT_TEXT_MAX]
+        return cls._CHAT_MARK_RE.sub(lambda m: "〔" + m.group(1) + ("〕" if m.group(2) else ""), value)
+
+    async def _record_table_chat(self, player_id: int, name: str, kind: str, text: Any, *, free: bool = False):
+        """一条桌面发言的唯一入库点：写 table_chat 与 chat_log，再广播给界面。"""
+        clean = self.clean_chat_text(text)
+        if not clean:
+            return None
+        seq = self.next_log_seq()
+        round_number = self.game_state.round_number
+        ts = self.time_source()
+        entry = {"seq": seq, "round": round_number, "from_id": player_id, "name": name,
+                 "kind": kind, "text": clean, "free": bool(free), "ts": ts}
+        self.table_chat.append(entry)
+        self.chat_log.append({"seq": seq, "round": round_number, "from": name, "kind": kind,
+                              "message": clean, "from_id": player_id, "free": bool(free), "ts": ts})
+        await self.emit(ENGINE_EVENT.CHAT, from_=name, message=clean, from_id=player_id,
+                        kind=kind, free=bool(free), ts=ts)
+        return entry
+
+    async def submit_chat(self, player_id: int, text: Any):
+        """真人发言：进入桌面发言记录（下一次 AI 出牌决策能看到），并广播。"""
+        player = next((p for p in self.game_state.players if p.id == player_id), None)
+        if player is None:
+            return None
+        return await self._record_table_chat(player.id, player.name, "human", text, free=False)
+
+    async def _emit_response_chat(self, player: Player):
+        """取走响应决策顺带的台词并发出；只有 AI 座位会说话（真人托管时模型台词不冒充真人）。"""
+        pending = getattr(self.ai_decision, "last_chat", None)
+        if not isinstance(pending, dict):
+            return
+        text = pending.pop(player.id, "")
+        if text and player.is_ai and not self.game_aborted and not self.is_game_over():
+            await self._record_ai_chat(player, text, free=True)
+
+    async def _record_ai_chat(self, player: Player, text: Any, *, free: bool):
+        """AI 发言入口（免费台词与开场白共用）：受「单 AI 每回合 5 句」上限约束。"""
+        if not self.chat_enabled:
+            return None
+        key = (player.id, self.game_state.round_number)
+        if self._chat_counts.get(key, 0) >= self.AI_CHAT_PER_ROUND:
+            logger.info("  💬 %s 本回合发言已达 %d 句上限，丢弃：%s", player.name,
+                        self.AI_CHAT_PER_ROUND, str(text)[:20])
+            return None
+        entry = await self._record_table_chat(player.id, player.name, "ai", text, free=free)
+        if entry is not None:
+            self._chat_counts[key] = self._chat_counts.get(key, 0) + 1
+        return entry
+
+    def _cancel_chat_tasks(self):
+        for task in list(self._chat_tasks):
+            task.cancel()
+        self._chat_tasks.clear()
 
     async def _human_turn(self, player: Player):
         logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
@@ -647,7 +739,7 @@ class MainEngine:
             target_ids = decision.get("target_ids", [])
 
             if decision.get("chat") and self.chat_enabled:
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"], from_id=player.id)
+                await self._record_ai_chat(player, decision["chat"], free=True)
             if action.get("type") == "end_phase":
                 await self._emit_decision_trace(player, "play", len(actions), action,
                                                 "accepted")
@@ -811,6 +903,10 @@ class MainEngine:
             # so omit card objects instead of exposing suit/rank by accident.
             elif isinstance(value, (str, int, float, bool)) or value is None:
                 out[key] = value
+            elif isinstance(value, (list, tuple)) and all(
+                    isinstance(item, (str, int, float, bool)) for item in value):
+                # 只放行纯标量列表（如五谷丰登的 pool_slots），对象列表一律不传。
+                out[key] = list(value)
         return out
 
     def _next_request_id(self) -> str:
@@ -1526,6 +1622,7 @@ class MainEngine:
                 result = await handler(decision_player, decision_request)
                 if trustee:
                     self._update_trustee_failure(player)
+                await self._emit_response_chat(player)
                 return result
             except Exception as exc:
                 logger.info("  ⚠️ 响应AI失败，切换规则AI: %s", type(exc).__name__)

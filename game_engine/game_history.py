@@ -145,8 +145,10 @@ class GameHistoryStore:
                     reward = "identity_card"
             elif player_won is False or winner == "draw":
                 profile["win_streak"] = 0
-            elif winner == "aborted" and self._round_of(payload) > INTERRUPT_GRACE_ROUNDS:
+            elif (winner == "aborted" and self._round_of(payload) > INTERRUPT_GRACE_ROUNDS
+                  and not (human is not None and human.get("alive") is False)):
                 # 前两轮内退出不计；之后中断视同输掉连胜，防止快输时退出保连胜。
+                # 真人已阵亡时的中止（观战超时等）不清零，也不加：过渡规则，见 Stage T 方案第 20 节 H 项。
                 profile["win_streak"] = 0
 
             record = {

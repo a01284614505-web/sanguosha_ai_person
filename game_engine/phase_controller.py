@@ -5,6 +5,7 @@ import inspect
 import logging
 from typing import TYPE_CHECKING
 
+from . import card_flow
 from .card_table import CARD_TABLE
 from .state_manager import Phase, PlayerStatus
 
@@ -109,16 +110,19 @@ class PhaseController:
                 and getattr(self.engine, "game_aborted", False)):
             return
 
-        if not self.game_state.refill_deck_if_empty():
+        # 判定牌先亮到被判定者的展示区（公开的牌移动事件），结算时再离开；牌堆空了先洗牌。
+        judge_reason = f"判定【{delayed_card.name}】"
+        revealed = await card_flow.reveal_top(self.engine, self.game_state, player, 1, reason=judge_reason)
+        if not revealed:
             return
-
-        result = self.game_state.deck.pop(0)
+        result = revealed[0]
         if self.skill_manager:
             result = await self.skill_manager.before_judge(player, result, {"delayed_card": delayed_card})
         logger.info(f"  判定【{delayed_card.name}】: {result.suit}{result.rank}")
         claimed = bool(self.skill_manager and await self.skill_manager.after_judge(player, result, {"delayed_card": delayed_card}))
         if not claimed:
-            self.game_state.discard_pile.append(result)
+            await card_flow.release_shown(self.engine, self.game_state, result, "discard",
+                                          reason=f"{judge_reason}结算", actor_id=player.id)
 
         # 判定结果先通知前端（判定框），再落地效果。
         effective, text = None, ""
