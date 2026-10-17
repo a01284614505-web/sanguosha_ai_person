@@ -131,8 +131,15 @@ class GameServer:
             await self.send(ws, {"type": OUTBOUND.ACTION_RESULT, **receipt})
     async def do_chat(self, ws, data):
         message = str(data.get("message", "")).strip()[:200]
-        if message:
-            await self.send(ws, {"type": OUTBOUND.CHAT, "from": "玩家", "message": message})
+        if not message:
+            return
+        payload = {"type": OUTBOUND.CHAT, "from": "玩家", "message": message, "is_self": True}
+        engine = self.engine_for(ws)
+        human = engine.human_player() if engine else None
+        if human is not None:
+            payload["from"] = human.name
+            payload["from_id"] = human.id
+        await self.send(ws, payload)
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
         if waiter and not waiter.done():

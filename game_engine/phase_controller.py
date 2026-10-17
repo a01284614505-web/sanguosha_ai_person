@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """六阶段控制器：负责非交互阶段的确定性结算。"""
 
+import inspect
 import logging
 from typing import TYPE_CHECKING
 
@@ -120,6 +121,24 @@ class PhaseController:
         claimed = bool(self.skill_manager and await self.skill_manager.after_judge(player, result, {"delayed_card": delayed_card}))
         if not claimed:
             self.game_state.discard_pile.append(result)
+
+        # 判定结果先通知前端（判定框），再落地效果。
+        effective, text = None, ""
+        if delayed_card.name == "兵粮寸断":
+            effective = result.suit != "club"
+            text = "跳过摸牌阶段" if effective else "梅花，不受影响"
+        elif delayed_card.name == "乐不思蜀":
+            effective = result.suit != "heart"
+            text = "跳过出牌阶段" if effective else "红桃，不受影响"
+        elif delayed_card.name == "闪电":
+            effective = result.suit == "spade" and 2 <= result.rank <= 9
+            text = "受到3点雷电伤害" if effective else "移给下家"
+        announce = getattr(self.engine, "announce_judge", None) if self.engine is not None else None
+        if announce is not None:
+            pending = announce(player, result, delayed_card.name, effective, text)
+            if inspect.isawaitable(pending):  # 测试里的 MagicMock 引擎返回非协程，直接忽略
+                await pending
+
         if delayed_card.name == "兵粮寸断" and result.suit != "club":
             self.skip_phases.add(Phase.DRAW)
             logger.info(f"  {player.name}的【兵粮寸断】生效：跳过摸牌阶段")

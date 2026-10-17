@@ -13,7 +13,8 @@ class GameClient {
     }
     
     connect() {
-        const wsUrl = `ws://${window.location.hostname}:8889`;
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:8889`;
         console.log('[WS] 连接:', wsUrl);
         this.ws = new WebSocket(wsUrl);
         
@@ -32,10 +33,11 @@ class GameClient {
             }
         };
         
-        this.ws.onclose = () => {
+        this.ws.onclose = (event) => {
+            const wasConnected = this.connected;
             this.connected = false;
             console.log('[WS] 断开');
-            if (this.onDisconnect) this.onDisconnect();
+            if (this.onDisconnect) this.onDisconnect({ wasConnected: wasConnected, code: event && event.code });
         };
         
         this.ws.onerror = (e) => {
@@ -48,6 +50,7 @@ class GameClient {
             case Protocol.OUTBOUND.GAME_CREATED:
                 this.gameId = data.game_id;
                 console.log('[游戏] 已创建:', this.gameId);
+                if (this.onGameCreated) this.onGameCreated(data);
                 break;
 
             case Protocol.OUTBOUND.GAME_STATE:
@@ -147,6 +150,7 @@ GameClient.prototype.onAIConfigUpdated = null;
 GameClient.prototype.onEndGameAccepted = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;
+GameClient.prototype.onGameCreated = null;
 
 // 全局实例
 const gameClient = new GameClient();

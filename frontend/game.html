@@ -1,87 +1,139 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark" data-theme-lock>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>游戏中 - 三国杀酒馆</title>
-    <link rel="stylesheet" href="css/main.css?v=20261003a">
-    <link rel="stylesheet" href="css/game.css?v=20261012b">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17110c">
+    <title>三国杀酒馆 · 对局</title>
+    <link rel="stylesheet" href="css/sgs.css?v=20261016b">
+    <link rel="stylesheet" href="css/game.css?v=20261016b">
 </head>
 <body class="game-page">
-    <div id="opponents"></div>
-    <div id="center">
-        <h2 id="phaseText">等待连接</h2>
-        <p id="turnText"></p>
-        <div id="discardPile">
-            <div class="topCard" id="topCard"></div>
-            <div class="count" id="discardCount">0</div>
-            <div class="label">弃牌堆</div>
-        </div>
-    </div>
-    <div id="myarea">
-        <div id="myinfo">
-            <div id="myav" class="avatar-click" onclick="openPlayerInfo(GameUI.myId)"></div>
-            <div>
-                <div id="myname">玩家</div>
-                <div id="myhp"></div>
-                <div id="myhc">手牌：0张</div>
-                <div id="actionHint">👆 选择卡牌</div>
+<div class="battle" id="battle">
+    <div class="field" id="field">
+        <header class="hud" aria-label="对局信息">
+            <div class="hud-info">
+                <span class="hud-round">第 <b id="rn">-</b> 轮</span>
+                <span class="hud-pile" title="牌堆剩余">牌堆 <b id="dc">-</b></span>
+                <span class="hud-pile" title="弃牌堆">弃牌 <b id="discardCount">0</b></span>
             </div>
+            <!-- 阶段栏：准 判 摸 出 弃 结，由引擎的 phase 事件驱动 -->
+            <div class="phase-track" id="phaseTrack" role="list" aria-label="回合阶段"></div>
+            <div class="hud-tools">
+                <button class="icon-btn chat-toggle" id="chatToggle" type="button" aria-label="打开席间聊天" aria-expanded="false"><span class="ic" data-icon="chat"></span><i class="unread" id="chatUnread" hidden></i></button>
+                <button class="icon-btn" id="sbtn" type="button" aria-label="全局设置" title="全局设置"><span class="ic" data-icon="gear"></span></button>
+                <button class="icon-btn" id="quitBtn" type="button" aria-label="结束对局" title="结束对局"><span class="ic" data-icon="exit"></span></button>
+            </div>
+        </header>
+
+        <!-- 四名对手的座位由脚本按座次生成 -->
+        <div class="seats" id="opponents"></div>
+
+        <!-- 中央处理区：刚打出的牌 -->
+        <div class="arena" id="arena" aria-live="polite">
+            <div class="phase-banner" id="phaseBanner" aria-live="polite"></div>
+            <div class="table-cards" id="tableCards"></div>
         </div>
-        <div id="hand"></div>
-    </div>
-    <div id="btns">
-        <button class="btn-play" id="playBtn" onclick="doPlay()" disabled>出牌</button>
-        <button class="btn-skill" id="skillBtn" onclick="showMySkills()">技能</button>
-        <button class="btn-end" id="endBtn" onclick="doEnd()" disabled>结束阶段</button>
-        <button class="btn-danger" id="quitBtn" onclick="doEndGame()">结束游戏</button>
-    </div>
-    <div id="info"><div>回合<span id="rn">-</span></div><div>牌堆<span id="dc">-</span></div></div>
-    <div id="logWrap"><div id="logToggle" onclick="toggleLog()">▼</div><div id="log"></div></div>
-    <div id="systemToasts"></div>
-    <div id="responseModal" aria-live="assertive">
-        <div id="responseCard">
-            <h3 id="responseTitle">场外响应</h3>
-            <div id="responsePrompt"></div>
-            <div id="responseContext" class="response-context"></div>
-            <div id="responseCountdown"></div>
-            <div id="responseOptions"></div>
-            <button id="responseCancel" class="secondary" onclick="cancelResponse()" style="display:none">取消</button>
-            <div id="responseMultiSelect" class="multi-select-container" style="display:none">
-                <div id="responseMultiOptions" class="multi-select-options"></div>
-                <div class="multi-select-footer">
-                    <span id="responseMultiCount" class="multi-select-count"></span>
-                    <button id="responseMultiConfirm" class="multi-select-confirm" onclick="submitMultiResponse()">确认</button>
-                </div>
+
+        <!-- 指向线与特效层 -->
+        <svg class="fx-lines" id="fxLines" aria-hidden="true"></svg>
+        <div class="fx-layer" id="fxLayer" aria-hidden="true"></div>
+
+        <!-- 操作条：提示语 + 候选 + 按钮 -->
+        <div class="action-bar" id="actionBar" aria-live="assertive">
+            <div class="ab-timer" id="abTimer"><i></i></div>
+            <div class="ab-prompt" id="abPrompt">正在连接游戏服务…</div>
+            <div class="ab-options" id="abOptions"></div>
+            <div class="ab-buttons">
+                <button class="btn confirm" id="okBtn" type="button" disabled>确定</button>
+                <button class="btn cancel" id="cancelBtn" type="button" disabled>取消</button>
+                <button class="btn primary" id="endBtn" type="button" disabled>结束出牌</button>
             </div>
         </div>
     </div>
-    <div id="sbtn" onclick="openGlobalSettings()">⚙</div>
 
-    <div id="playerInfoModal" class="info-modal" onclick="if(event.target===this)closeModal('playerInfoModal')">
-        <div class="modal-card">
-            <div class="modal-head"><h3 id="playerInfoTitle">武将信息</h3><button class="modal-close" onclick="closeModal('playerInfoModal')">关闭</button></div>
-            <div id="playerInfoBody"></div>
+    <!-- 自己的区域 -->
+    <section class="my-area" id="myArea" aria-label="我的区域">
+        <div class="my-zones" id="myZones"></div>
+        <div class="hand-wrap">
+            <div class="hand-meta"><span id="handCount">手牌 0</span><span id="actionHint"></span></div>
+            <div class="hand" id="hand" aria-label="我的手牌"></div>
+        </div>
+        <div class="my-hero" id="myHero"></div>
+    </section>
+
+    <!-- 席间：聊天 + 战报 -->
+    <aside class="side-panel" id="sidePanel" aria-label="席间">
+        <div class="sp-tabs" role="tablist">
+            <button role="tab" type="button" id="tabChat" aria-selected="true" aria-controls="chatPane">席间</button>
+            <button role="tab" type="button" id="tabLog" aria-selected="false" aria-controls="logPane">战报<i class="unread" id="logUnread" hidden></i></button>
+            <button class="sp-close" type="button" id="sideClose" aria-label="收起"><span class="ic" data-icon="close"></span></button>
+        </div>
+        <div class="sp-pane" id="chatPane" role="tabpanel" aria-labelledby="tabChat">
+            <div class="chat-list" id="chatList" aria-live="polite"></div>
+            <div class="quick-phrases" id="quickPhrases"></div>
+            <form class="chat-input" id="chatForm" autocomplete="off">
+                <input id="chatInput" maxlength="200" placeholder="说点什么…" aria-label="聊天内容">
+                <button class="btn small confirm" type="submit">发送</button>
+            </form>
+        </div>
+        <div class="sp-pane" id="logPane" role="tabpanel" aria-labelledby="tabLog" hidden>
+            <div class="log-list" id="log"></div>
+        </div>
+    </aside>
+</div>
+
+<!-- 武将信息 -->
+<dialog class="sgs-dialog" id="playerInfoModal" aria-labelledby="playerInfoTitle">
+    <div class="frame dialog-body">
+        <div class="dialog-head">
+            <h2 id="playerInfoTitle">武将信息</h2>
+            <button class="icon-btn" type="button" data-close aria-label="关闭"><span class="ic" data-icon="close"></span></button>
+        </div>
+        <div id="playerInfoBody"></div>
+    </div>
+</dialog>
+
+<!-- 局内调整 AI -->
+<dialog class="sgs-dialog" id="aiSettingsModal" aria-labelledby="aiSettingsTitle">
+    <form class="frame dialog-body" id="aiSettingsForm" method="dialog">
+        <div class="dialog-head">
+            <h2 id="aiSettingsTitle">调整 AI</h2>
+            <button class="icon-btn" type="button" data-close aria-label="关闭"><span class="ic" data-icon="close"></span></button>
+        </div>
+        <input type="hidden" id="aiSettingPlayerId">
+        <div class="form-grid">
+            <label class="field"><span>提供方</span><select id="aiSettingProvider"></select></label>
+            <label class="field"><span>模型名称</span><input id="aiSettingModel" autocomplete="off"></label>
+            <label class="field full"><span>API 地址</span><input id="aiSettingUrl" placeholder="留空使用默认地址" autocomplete="off"></label>
+            <label class="field full"><span>新的 API Key</span><input id="aiSettingKey" type="password" placeholder="留空则保留原 Key" autocomplete="off"></label>
+            <label class="field"><span>温度（0–2）</span><input id="aiSettingTemperature" type="number" min="0" max="2" step="0.1"></label>
+            <label class="check"><input id="aiSettingThinking" type="checkbox"> 启用思考模式</label>
+        </div>
+        <div class="dialog-actions"><button class="btn confirm" type="submit">保存并立即生效</button></div>
+    </form>
+</dialog>
+
+<!-- 结束 / 断线 -->
+<dialog class="sgs-dialog end-dialog" id="endModal" aria-labelledby="endTitle">
+    <div class="frame cornered dialog-body end-body">
+        <div class="verdict" id="endVerdict">终</div>
+        <h2 class="brush gold-text" id="endTitle">对局结束</h2>
+        <p id="endMessage" class="muted"></p>
+        <div class="dialog-actions" style="justify-content:center">
+            <a class="btn" href="index.html" id="endLobby">返回大厅</a>
+            <a class="btn primary" href="result.html" id="endResult">查看战绩</a>
         </div>
     </div>
-    <div id="aiSettingsModal" class="info-modal" onclick="if(event.target===this)closeModal('aiSettingsModal')">
-        <div class="modal-card">
-            <div class="modal-head"><h3 id="aiSettingsTitle">AI模型设置</h3><button class="modal-close" onclick="closeModal('aiSettingsModal')">关闭</button></div>
-            <input type="hidden" id="aiSettingPlayerId">
-            <label class="modal-field">Provider<select id="aiSettingProvider"></select></label>
-            <label class="modal-field">Model<input id="aiSettingModel"></label>
-            <label class="modal-field">API地址<input id="aiSettingUrl" placeholder="可留空使用默认地址"></label>
-            <label class="modal-field">新API Key<input id="aiSettingKey" type="password" placeholder="留空则保留原Key"></label>
-            <label class="modal-field">Temperature<input id="aiSettingTemperature" type="number" min="0" max="2" step="0.1"></label>
-            <label class="modal-field"><span><input id="aiSettingThinking" type="checkbox"> 启用思考模式标记</span></label>
-            <div class="modal-actions"><button onclick="saveAISettings()">保存并立即生效</button></div>
-        </div>
-    </div>
+</dialog>
 
-    <script src="js/protocol.js?v=20260813b"></script>
-    <script src="js/audio.js?v=20260813b"></script>
-    <script src="js/ws_client.js?v=20260813b"></script>
-    <script src="js/global_settings.js?v=20260813b"></script>
-    <script src="js/game_main.js?v=20261012b"></script>
+<script src="js/protocol.js?v=20261016b"></script>
+<script src="js/card_info.js?v=20261016b"></script>
+<script src="js/sgs_common.js?v=20261016b"></script>
+<script src="js/audio.js?v=20261016b"></script>
+<script src="js/ws_client.js?v=20261016b"></script>
+<script src="js/global_settings.js?v=20261016b"></script>
+<script src="js/chat_panel.js?v=20261016b"></script>
+<script src="js/game_main.js?v=20261016b"></script>
 </body>
 </html>

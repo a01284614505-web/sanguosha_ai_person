@@ -117,6 +117,9 @@ class MainEngine:
         self._watchdog_task: Any = None
         self._game_end_emitted = False
         self._started_at: Any = None
+        # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
+        chat_cfg = game_config.get("chat")
+        self.chat_enabled = not (isinstance(chat_cfg, dict) and chat_cfg.get("enabled") is False)
 
         logger.info(f"\n{'=' * 60}")
         logger.info("  🎮 引擎v2初始化")
@@ -170,6 +173,31 @@ class MainEngine:
             # 防具/宝物失去装备区的效果观察同一条已提交移动事实。
             await self.card_system.on_equipment_left(from_owner, card, event)
         return event
+
+    async def announce_judge(self, player: Player, card, judge_for: str, effective=None, result_text: str = ""):
+        """判定结果通知：前端在牌桌中央展示判定牌与“生效/失效”，并等待动画 ACK 后再继续结算。
+
+        effective 为 None 表示该判定没有统一的生效/失效语义（如技能判定），前端只展示判定牌。
+        """
+        suit_text = {"spade": "♠", "heart": "♥", "club": "♣", "diamond": "♦"}.get(card.suit, "")
+        verdict = "" if effective is None else ("生效" if effective else "失效")
+        message = f"{player.name}的【{judge_for}】判定：{suit_text}{card.rank}{card.name}"
+        if verdict:
+            message += f"，{verdict}"
+        if result_text:
+            message += f"（{result_text}）"
+        await self._notify_card_ui(
+            event_kind="judge",
+            actor_id=player.id,
+            actor_name=player.name,
+            card=card_to_dict(card),
+            card_name=card.name,
+            judge_for=judge_for,
+            effective=effective,
+            result_text=result_text,
+            message=message,
+            reason="judge",
+        )
 
     async def _notify_card_ui(self, **data):
         """卡牌UI统一通知（弃牌/出牌/技能转化共用）：等待浏览器确认动画完成后才继续结算。"""
@@ -253,6 +281,8 @@ class MainEngine:
                     "identity": p.identity if identity_visible else None,
                     "identity_revealed": identity_visible,
                     "equipment": {slot: card.name for slot, card in p.equipment.items()},
+                    # 判定区是公开信息（乐不思蜀/兵粮寸断/闪电），前端按牌名显示标记。
+                    "judge_area": [card.name for card in getattr(p, "judge_area", [])],
                     "stats": self.stats.row(p),
                     "skill_state": [
                         instance.to_dict()
@@ -260,7 +290,11 @@ class MainEngine:
                     ],
                 }
             )
+        # serialize() 只发给真人自己的连接（AI 决策不读它），因此可以附带真人自己的手牌，
+        # 让前端在非出牌阶段也能看到手牌。他人手牌仍只有 hand_count。
+        human = self.human_player()
         return {
+            "self_hand": self.get_player_hand(human) if human else [],
             "mode": gs.mode,
             "round": gs.round_number,
             "completed_turns": self.completed_turns,
@@ -273,6 +307,10 @@ class MainEngine:
             "game_over": gs.game_over,
             "winner": gs.winner,
         }
+
+    def human_player(self):
+        """本局的真人玩家（无则返回 None）。"""
+        return next((p for p in self.game_state.players if not p.is_ai), None)
 
     def get_player_hand(self, player: Player) -> List[Dict]:
         # 扣置牌仅向当前宝物拥有者开放，按独立牌区标记，不增加手牌数。
@@ -369,12 +407,12 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
 
-        if random.random() < 0.3:
+        if self.chat_enabled and random.random() < 0.3:
             msg = await self.chat_engine.trigger_event_chat(
                 "turn_start", player, {"round": self.game_state.round_number}
             )
             if msg:
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg)
+                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg, from_id=player.id)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     async def _human_turn(self, player: Player):
@@ -384,15 +422,20 @@ class MainEngine:
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
             if self.game_aborted:
                 return
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
+            if self.game_aborted:
+                return
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        self.game_state.current_phase = Phase.PLAY
+        await self._enter_phase(player, Phase.PLAY)
         player.sha_count = 0
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        while player.alive and not self.game_state.game_over:
+        # 乐不思蜀等效果会把出牌阶段加入跳过集合：此时不向真人下发 your_turn。
+        play_skipped = await self._skip_play_phase_if_needed(player)
+
+        while not play_skipped and player.alive and not self.game_state.game_over:
             actions = self.get_available_actions(player)
             # 必须先创建等待器再广播，避免WebSocket客户端立即响应造成丢操作。
             self._player_event = asyncio.Event()
@@ -423,19 +466,51 @@ class MainEngine:
         for phase in [Phase.DISCARD, Phase.END]:
             if self.game_aborted:
                 return
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
+            if self.game_aborted:
+                return
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    async def _enter_phase(self, player: Player, phase: Phase):
+        """切换到新阶段，并给前端阶段栏发一条轻量通知（不附整份状态）。
+
+        skipped=True 表示该阶段已被判定/技能标记为跳过（如兵粮寸断跳过摸牌、乐不思蜀跳过出牌），
+        前端据此把阶段栏对应格子显示为“跳过”。
+        """
+        self.game_state.current_phase = phase
+        skipped = phase in self.phase_controller.skip_phases
+        await self.emit(
+            ENGINE_EVENT.EVENT_NOTIFICATION,
+            event_kind="phase",
+            player_id=player.id,
+            player_name=player.name,
+            phase=phase.value,
+            skipped=skipped,
+        )
+
+    async def _skip_play_phase_if_needed(self, player: Player) -> bool:
+        """出牌阶段不经 PhaseController.execute_phase，因此在这里单独消费“跳过出牌阶段”标记。
+
+        修复：此前人类与 AI 的出牌阶段都不检查跳过集合，导致乐不思蜀判定生效后仍可出牌，
+        且标记残留到之后的回合。
+        """
+        if Phase.PLAY not in self.phase_controller.skip_phases:
+            return False
+        self.phase_controller.skip_phases.discard(Phase.PLAY)
+        await self.log_event(f"{player.name}跳过出牌阶段", player_id=player.id)
+        return True
 
     async def _run_phases(self, player: Player):
         for phase in Phase:
             if self.game_state.game_over:
                 break
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
             logger.info(f"\n[{phase.value}阶段]")
             if phase == Phase.PLAY:
                 player.sha_count = 0
-                await self._auto_play_phase(player)
+                if not await self._skip_play_phase_if_needed(player):
+                    await self._auto_play_phase(player)
             else:
                 await self._execute_phase_with_ui(phase)
             if not player.alive:
@@ -460,8 +535,8 @@ class MainEngine:
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
 
-            if decision.get("chat"):
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"])
+            if decision.get("chat") and self.chat_enabled:
+                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"], from_id=player.id)
             if action.get("type") == "end_phase":
                 break
 

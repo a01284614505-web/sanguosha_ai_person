@@ -1,0 +1,576 @@
+/* ==========================================================================
+   三国杀酒馆 · 公共主题
+   --------------------------------------------------------------------------
+   所有页面共用：色彩令牌、字体、框体、按钮、图标、卡牌、勾玉、印章、对话框、
+   提示条、卡牌/技能详情浮窗。
+
+   主题：
+     夜墨（默认，data-theme="dark"）—— 漆木底、鎏金框，贴近官方对局界面；
+     暖纸（data-theme="light"）—— 宣纸底、赭金框，仅用于大厅等非对局页面。
+   对局页在 <html> 上写死 data-theme="dark" 并加 data-theme-lock，不随设置切换。
+
+   字体只用本机字体栈（楷体 / 行楷），不依赖任何外网字体服务，国内可直接使用。
+   ========================================================================== */
+
+/* ---------- 1. 色彩令牌（夜墨，默认） ---------- */
+:root {
+    /* 底色：漆木与墨 */
+    --ink-0: #0f0b08;
+    --ink-1: #17110c;
+    --wood-1: #241911;
+    --wood-2: #2f2117;
+    --wood-3: #3d2b1d;
+
+    /* 鎏金：暗金 / 金 / 亮金 */
+    --gold-dim: #6e5229;
+    --gold: #c9a35a;
+    --gold-hi: #f1d898;
+
+    /* 朱漆：降低饱和度的暗红，只用在主按钮、印章等少数位置，避免“亮红色”的廉价感 */
+    --lacquer-1: #6a1d15;
+    --lacquer-2: #46110c;
+    --cinnabar: #8f2a1d;
+    --cinnabar-hi: #b5452f;
+
+    /* 宣纸（牌面） */
+    --paper: #f1e4c3;
+    --paper-dim: #d9c7a0;
+    --paper-ink: #2b1d12;
+
+    /* 文字 */
+    --text: #eadcbf;
+    --text-dim: #a89577;
+    --text-faint: #6f6150;
+    --heading: var(--gold-hi);
+
+    /* 语义面：框体、输入框、内嵌块 */
+    --surface-top: var(--wood-2);
+    --surface-bottom: var(--wood-1);
+    --frame-line: var(--gold-dim);
+    --inset: rgba(0, 0, 0, .26);
+    --field-bg: rgba(8, 5, 3, .55);
+    --field-line: #5d4730;
+    --rule: rgba(201, 163, 90, .22);
+
+    /* 势力色（略压低饱和度，接近官方印章色） */
+    --wei: #3a5fa5;
+    --shu: #a3392b;
+    --wu: #3a7d3c;
+    --qun: #7f776b;
+    --shen: #b8964a;
+
+    /* 身份色 */
+    --id-lord: #b88a2e;
+    --id-loyal: #c4a447;
+    --id-rebel: #417f3b;
+    --id-spy: #3f5f9f;
+
+    /* 勾玉：满 / 半 / 危 / 失 */
+    --hp-green: #57c05a;
+    --hp-yellow: #e4c24a;
+    --hp-red: #d8422f;
+    --hp-lost: #3a332c;
+
+    /* 状态 */
+    --ok: #7fcf7a;
+    --warn: #e7b44b;
+    --bad: #e0614f;
+    --target: #69e07a;
+
+    --font-brush: "STXingkai", "华文行楷", "Xingkai SC", "STKaiti", "KaiTi", "Kaiti SC", "楷体", serif;
+    --font-kai: "STKaiti", "KaiTi", "Kaiti SC", "楷体", "Songti SC", "SimSun", serif;
+    --font-ui: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
+
+    --radius-s: 4px;
+    --radius-m: 8px;
+    --ease: cubic-bezier(.2, .8, .2, 1);
+    --anim: 1100ms;
+
+    /* 页面底纹（漆木桌面：极淡木纹 + 四角暗角） */
+    --page-bg:
+        radial-gradient(ellipse at 50% 38%, rgba(120, 72, 32, .22), transparent 62%),
+        radial-gradient(ellipse at 50% 120%, rgba(0, 0, 0, .7), transparent 60%),
+        repeating-linear-gradient(92deg, rgba(255, 220, 160, .018) 0 2px, transparent 2px 9px),
+        linear-gradient(180deg, #1c140e, #120d09);
+    --page-bg-color: var(--ink-1);
+    color-scheme: dark;
+}
+
+/* ---------- 1b. 暖纸主题：只覆盖语义令牌，组件写法不变 ---------- */
+:root[data-theme="light"] {
+    --text: #2e2216;
+    --text-dim: #6c5a42;
+    --text-faint: #9a8a70;
+    --heading: #7a4f1a;
+    --surface-top: #f8f1df;
+    --surface-bottom: #ece0c2;
+    --frame-line: #b9935a;
+    --inset: rgba(120, 88, 40, .09);
+    --field-bg: rgba(255, 252, 242, .75);
+    --field-line: #cbb185;
+    --rule: rgba(140, 100, 45, .25);
+    --page-bg:
+        radial-gradient(ellipse at 50% 30%, rgba(255, 250, 235, .9), transparent 65%),
+        repeating-linear-gradient(92deg, rgba(120, 80, 30, .025) 0 2px, transparent 2px 10px),
+        linear-gradient(180deg, #efe6d0, #e3d6b8);
+    --page-bg-color: #ebe1c8;
+    color-scheme: light;
+}
+
+/* ---------- 2. 基础 ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    color: var(--text);
+    font: 15px/1.6 var(--font-ui);
+    background-color: var(--page-bg-color);
+    background-image: var(--page-bg);
+    background-attachment: fixed;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .3s, color .3s;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--heading); }
+img { display: block; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--gold-dim); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 3. 文字 ---------- */
+.brush { font-family: var(--font-brush); font-weight: 400; letter-spacing: .06em; }
+.kai { font-family: var(--font-kai); }
+/* 标题鎏金字：上亮下暗的金属渐变 */
+.gold-text {
+    color: var(--gold-hi);
+    background: linear-gradient(180deg, #fff3c9 0%, #e9c879 45%, #a97c35 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .55));
+}
+/* 暖纸主题下的“鎏金字”改成深赭金，否则在浅底上发灰 */
+:root[data-theme="light"] .gold-text {
+    background: linear-gradient(180deg, #a8742a 0%, #7a4f1a 55%, #4f3210 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .6));
+}
+.muted { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+
+/* ---------- 4. 图标（线描 SVG，由 sgs_common.js 按 data-icon 填充） ---------- */
+.ic { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -.2em; flex: none; }
+.ic svg { width: 100%; height: 100%; display: block; }
+.ic svg * { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- 5. 框体：双线鎏金边 ---------- */
+.frame {
+    position: relative;
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bottom));
+    border: 1px solid var(--frame-line);
+    border-radius: var(--radius-m);
+    box-shadow:
+        inset 0 0 0 3px rgba(0, 0, 0, .35),
+        inset 0 0 0 4px rgba(201, 163, 90, .28),
+        0 10px 30px rgba(0, 0, 0, .45);
+}
+:root[data-theme="light"] .frame {
+    box-shadow:
+        inset 0 0 0 3px rgba(255, 255, 255, .55),
+        inset 0 0 0 4px rgba(160, 120, 60, .3),
+        0 8px 24px rgba(90, 60, 20, .15);
+}
+/* 四角包金：左上与右下两个折角 */
+.frame.cornered::before,
+.frame.cornered::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--gold);
+    pointer-events: none;
+}
+.frame.cornered::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; border-top-left-radius: var(--radius-m); }
+.frame.cornered::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; border-bottom-right-radius: var(--radius-m); }
+
+/* 区块标题：楷体 + 右侧渐隐金线 */
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    font-family: var(--font-kai);
+    font-size: 19px;
+    color: var(--heading);
+    font-weight: 600;
+}
+.section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--frame-line), transparent);
+}
+
+/* ---------- 6. 按钮 ----------
+   .btn          墨底鎏金（默认）
+   .btn.primary  朱漆金字（开局、出战、结束出牌等主操作）
+   .btn.confirm  哑光金（确定）
+   .btn.cancel   褐灰（取消 / 不出） */
+.btn {
+    --btn-bg: linear-gradient(180deg, #3a2a1d, #241911);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 6px 18px;
+    border: 1px solid var(--gold);
+    border-radius: 5px;
+    background: var(--btn-bg);
+    color: var(--gold-hi);
+    font-family: var(--font-kai);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-decoration: none;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+    box-shadow: inset 0 1px 0 rgba(255, 236, 190, .18), inset 0 -2px 0 rgba(0, 0, 0, .35), 0 3px 8px rgba(0, 0, 0, .35);
+    transition: transform .12s var(--ease), filter .15s, box-shadow .15s;
+    user-select: none;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.1); }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(.98); }
+.btn:disabled { opacity: .42; cursor: not-allowed; filter: grayscale(.5); }
+.btn.primary {
+    --btn-bg: linear-gradient(180deg, var(--lacquer-1), var(--lacquer-2));
+    color: #f3dca0;
+    border-color: #b8904c;
+    box-shadow: inset 0 0 0 1px rgba(241, 216, 152, .22), inset 0 1px 0 rgba(255, 220, 170, .15), 0 3px 10px rgba(0, 0, 0, .4);
+}
+.btn.confirm { --btn-bg: linear-gradient(180deg, #c9a456, #8f6a2d); color: #2a1a0b; border-color: #ead296; text-shadow: 0 1px 0 rgba(255, 240, 200, .45); }
+.btn.cancel { --btn-bg: linear-gradient(180deg, #514234, #2c231b); color: var(--paper-dim); border-color: #8c765a; }
+.btn.small { min-height: 30px; padding: 3px 12px; font-size: 14px; letter-spacing: .06em; }
+.btn.big { min-height: 52px; padding: 8px 34px; font-size: 22px; letter-spacing: .3em; }
+:root[data-theme="light"] .btn:not(.primary):not(.confirm):not(.cancel) {
+    --btn-bg: linear-gradient(180deg, #fbf5e6, #e9dcbd);
+    color: #6a4517;
+    border-color: #b9935a;
+    text-shadow: none;
+    box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(90, 60, 20, .15);
+}
+
+/* 圆形图标按钮（设置、退出、聊天等） */
+.icon-btn {
+    width: 38px;
+    height: 38px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--gold-dim);
+    background: radial-gradient(circle at 50% 35%, #3b2a1c, #1c140e);
+    color: var(--gold-hi);
+    font-size: 18px;
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .45);
+    transition: border-color .15s, color .15s;
+}
+.icon-btn:hover { border-color: var(--gold); color: #fff3d0; }
+:root[data-theme="light"] .icon-btn { background: radial-gradient(circle at 50% 35%, #fffaf0, #eadcbd); color: #7a4f1a; border-color: #b9935a; box-shadow: 0 2px 6px rgba(90, 60, 20, .15); }
+
+/* ---------- 7. 表单 ---------- */
+.field { display: grid; gap: 5px; font-size: 13px; color: var(--text-dim); }
+.field > span { font-family: var(--font-kai); font-size: 14px; color: var(--text-dim); }
+.input, .field input, .field select, .field textarea {
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--field-line);
+    border-radius: 5px;
+    background: var(--field-bg);
+    color: var(--text);
+    font-size: 14px;
+}
+.input:focus, .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(201, 163, 90, .25); }
+.field small { color: var(--text-faint); }
+.check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: var(--text); }
+.check input { width: 17px; height: 17px; accent-color: var(--cinnabar); }
+
+/* ---------- 8. 印章：势力 / 身份 ----------
+   官方印章是“平涂底色 + 一圈细金边 + 楷体字”，不做塑料高光。 */
+.seal {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-family: var(--font-kai);
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 1;
+    color: #f6ead0;
+    background: var(--seal-bg, #4a3f34);
+    box-shadow:
+        inset 0 0 0 1.5px rgba(241, 216, 152, .75),
+        inset 0 0 0 3px rgba(0, 0, 0, .18),
+        0 1px 3px rgba(0, 0, 0, .55);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, .45);
+    flex: none;
+}
+.seal.square { border-radius: 4px; }
+.faction-魏 { --faction: var(--wei); }
+.faction-蜀 { --faction: var(--shu); }
+.faction-吴 { --faction: var(--wu); }
+.faction-群 { --faction: var(--qun); }
+.faction-神 { --faction: var(--shen); }
+.seal.faction { --seal-bg: var(--faction, var(--qun)); }
+.seal.id-lord { --seal-bg: var(--id-lord); color: #fff4d6; }
+.seal.id-loyalist { --seal-bg: var(--id-loyal); color: #3a2608; text-shadow: none; }
+.seal.id-rebel { --seal-bg: var(--id-rebel); }
+.seal.id-spy { --seal-bg: var(--id-spy); }
+.seal.id-unknown { --seal-bg: #3e352c; color: #b9a888; }
+
+/* ---------- 9. 勾玉（阴阳鱼） ----------
+   形状取太极图的一半：大圆头 + 收尖的尾巴 + 鱼眼。颜色随体力比例变化：绿 → 黄 → 红，失去的体力为暗灰。 */
+.hp { display: inline-flex; gap: 1px; align-items: center; }
+.hp.vertical { flex-direction: column-reverse; }
+.gouyu { width: 14px; height: 14px; flex: none; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .75)); }
+.gouyu .fish { stroke: rgba(0, 0, 0, .55); stroke-width: .8; }
+.gouyu .eye { fill: rgba(0, 0, 0, .45); }
+.gouyu.g .fish { fill: url(#gy-green); }
+.gouyu.y .fish { fill: url(#gy-yellow); }
+.gouyu.r .fish { fill: url(#gy-red); }
+.gouyu.lost .fish { fill: var(--hp-lost); }
+.gouyu.lost .eye { fill: rgba(0, 0, 0, .25); }
+.hp-num { font: 700 12px/1 var(--font-ui); color: var(--paper); text-shadow: 0 1px 2px #000; margin-left: 2px; }
+
+/* ---------- 10. 卡牌（宣纸牌面） ----------
+   --w 控制整张牌的宽度，其余尺寸全部按比例计算。 */
+.card {
+    --w: 86px;
+    position: relative;
+    width: var(--w);
+    height: calc(var(--w) * 1.4);
+    flex: none;
+    border-radius: 6px;
+    background:
+        radial-gradient(ellipse at 50% 50%, rgba(255, 252, 240, .7), transparent 70%),
+        linear-gradient(180deg, #f6ecd2, #e6d4ab);
+    border: 1px solid #8a6b3a;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .45), inset 0 0 0 3px rgba(150, 110, 50, .35), 0 4px 10px rgba(0, 0, 0, .5);
+    color: var(--paper-ink);
+    overflow: hidden;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+/* 插画：白底图标用 multiply 融进宣纸 */
+.card .c-art {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 16%;
+    height: 56%;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    mix-blend-mode: multiply;
+    opacity: .94;
+}
+/* 万一缺图时的兜底：大号书法首字 */
+.card .c-art.text-art {
+    display: grid;
+    place-items: center;
+    font-family: var(--font-brush);
+    font-size: calc(var(--w) * .42);
+    color: rgba(80, 50, 20, .78);
+    mix-blend-mode: normal;
+}
+/* 左上角点数与花色 */
+.card .c-corner {
+    position: absolute;
+    top: 3px;
+    left: 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font: 700 calc(var(--w) * .16)/1 Georgia, "Times New Roman", serif;
+}
+.card .c-corner .suit { font-size: calc(var(--w) * .17); margin-top: 1px; }
+.card .c-corner.red { color: #a8261c; }
+.card .c-corner.black { color: #1b1612; }
+.card .c-name {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 5%;
+    text-align: center;
+    font-family: var(--font-kai);
+    font-weight: 700;
+    font-size: calc(var(--w) * .17);
+    letter-spacing: .04em;
+    line-height: 1.1;
+    padding: 0 3px;
+}
+.card .c-name.long { font-size: calc(var(--w) * .135); letter-spacing: 0; }
+/* 右上角竖排类型签：锦囊 / 延时 / 装备 */
+.card .c-type {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font: 600 calc(var(--w) * .11)/1 var(--font-kai);
+    padding: 2px 3px;
+    border-radius: 2px;
+    color: #f6ead0;
+    writing-mode: vertical-rl;
+}
+.card .c-type.trick { background: #6a4a2a; }
+.card .c-type.equipment { background: #46535d; }
+.card .c-type.delay { background: #5d3a52; }
+/* 技能转化（如武圣当杀）：牌面中部一条暗朱漆腰封 */
+.card .c-as {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 42%;
+    text-align: center;
+    font: 700 calc(var(--w) * .14)/1.2 var(--font-kai);
+    color: #f3dca0;
+    background: rgba(74, 17, 12, .86);
+    border-top: 1px solid rgba(241, 216, 152, .5);
+    border-bottom: 1px solid rgba(241, 216, 152, .5);
+    padding: 2px 0;
+}
+/* 牌背：暗朱漆底 + 鎏金菱形纹，不写任何牌名，避免与真牌混淆 */
+.card.back {
+    background:
+        repeating-linear-gradient(45deg, rgba(201, 163, 90, .16) 0 3px, transparent 3px 9px),
+        radial-gradient(circle at 50% 50%, #5e1f16, #2e0e09);
+    border-color: var(--gold);
+}
+.card.back::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: calc(var(--w) * .46);
+    height: calc(var(--w) * .46);
+    transform: translate(-50%, -50%) rotate(45deg);
+    border: 2px solid rgba(241, 216, 152, .75);
+    box-shadow: 0 0 0 4px rgba(46, 14, 9, .9), 0 0 0 6px rgba(241, 216, 152, .45);
+    background: radial-gradient(circle, rgba(241, 216, 152, .5) 0 18%, transparent 20%);
+}
+.card.mini { --w: 54px; }
+
+/* ---------- 11. 详情浮窗（长按 / 悬停卡牌或技能时出现） ---------- */
+.detail-pop {
+    position: fixed;
+    z-index: 9500;
+    width: min(300px, calc(100vw - 20px));
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #33251a, #1d150f);
+    border: 1px solid var(--gold-dim);
+    box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .3), inset 0 0 0 4px rgba(201, 163, 90, .25), 0 12px 32px rgba(0, 0, 0, .65);
+    color: #eadcbf;
+    font: 13.5px/1.7 var(--font-ui);
+    pointer-events: none;
+    animation: pop-in .14s var(--ease);
+}
+.detail-pop .dp-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 6px; }
+.detail-pop .dp-head .card { --w: 48px; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+.detail-pop h4 { margin: 0; font-family: var(--font-kai); font-size: 18px; color: #f1d898; line-height: 1.3; }
+.detail-pop .dp-meta { font-size: 12px; color: #a89577; }
+.detail-pop .dp-tag { display: inline-block; margin-right: 4px; padding: 0 6px; border: 1px solid #6e5229; border-radius: 8px; font-size: 11px; color: #d9c7a0; }
+.detail-pop .dp-note { margin-top: 6px; font-size: 12px; color: #c89a6a; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* ---------- 12. 对话框 ---------- */
+dialog.sgs-dialog {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    max-width: min(94vw, 640px);
+    width: 100%;
+    max-height: 92dvh;
+}
+dialog.sgs-dialog::backdrop { background: rgba(5, 3, 2, .72); backdrop-filter: blur(2px); }
+dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
+@keyframes dlg-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+.dialog-body { padding: 20px 22px; max-height: 92dvh; overflow: auto; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.dialog-head h2 { margin: 0; font-family: var(--font-kai); font-size: 22px; color: var(--heading); }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+/* ---------- 13. 提示条（屏幕上方的横幅） ---------- */
+.toast-stack {
+    position: fixed;
+    left: 50%;
+    top: 14%;
+    transform: translateX(-50%);
+    z-index: 9000;
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    pointer-events: none;
+}
+.toast {
+    padding: 7px 26px;
+    font-family: var(--font-kai);
+    font-size: 16px;
+    color: var(--gold-hi);
+    background: linear-gradient(90deg, transparent, rgba(20, 12, 7, .92) 18%, rgba(20, 12, 7, .92) 82%, transparent);
+    border-top: 1px solid rgba(201, 163, 90, .5);
+    border-bottom: 1px solid rgba(201, 163, 90, .5);
+    animation: toast-in .2s var(--ease);
+    transition: opacity .25s;
+    white-space: nowrap;
+}
+.toast.bad { color: #f0b9a8; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* ---------- 14. 非对局页面骨架 ---------- */
+.page { max-width: 1180px; margin: 0 auto; padding: 18px 20px 40px; }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 6px 0 16px; border-bottom: 1px solid var(--rule); margin-bottom: 20px; }
+.topbar .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+/* 左上角的“杀”字印：暗朱漆方印，略微倾斜 */
+.logo-seal {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 5px;
+    background: linear-gradient(160deg, #7a2419, #4a110c);
+    color: #f3dca0;
+    font-family: var(--font-brush);
+    font-size: 30px;
+    box-shadow: inset 0 0 0 2px rgba(241, 216, 152, .55), inset 0 0 0 4px rgba(0, 0, 0, .2), 0 3px 8px rgba(0, 0, 0, .45);
+    transform: rotate(-4deg);
+}
+.logo-text { font-family: var(--font-brush); font-size: 28px; line-height: 1; }
+.topbar nav { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.topbar nav a { white-space: nowrap; text-decoration: none; padding: 6px 12px; border-radius: 5px; font-family: var(--font-kai); font-size: 16px; color: var(--text-dim); }
+.topbar nav a:hover { color: var(--heading); }
+.topbar nav a[aria-current="page"] { color: var(--heading); background: rgba(201, 163, 90, .14); }
+
+@media (max-width: 640px) {
+    .page { padding: 12px 12px 28px; }
+    .logo-text { font-size: 22px; }
+    .logo-seal { width: 36px; height: 36px; font-size: 24px; }
+    .topbar nav { gap: 2px; }
+    .topbar nav a { padding: 6px 7px; font-size: 14px; }
+    .topbar .icon-btn { width: 34px; height: 34px; }
+    .btn.big { min-height: 48px; font-size: 20px; padding: 8px 24px; }
+}
+/* 很窄的手机：顶栏只留“杀”字印，把位置让给导航 */
+@media (max-width: 480px) {
+    .logo-text { display: none; }
+    .topbar { gap: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}

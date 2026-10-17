@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """54技能统一注册、合法操作和事件分发。"""
 
+import inspect
 import logging
 from importlib import import_module
 from typing import Dict, List
@@ -266,6 +267,12 @@ class SkillManager:
             return None
         card = state.deck.pop(0)
         card = await self.before_judge(player, card, {"reason": reason})
+        # 技能判定（洛神、刚烈、雷击等）也走判定框；是否“生效”由各技能自行解读，这里不下结论。
+        announce = getattr(self.engine, "announce_judge", None)
+        if announce is not None:
+            pending = announce(player, card, reason)
+            if inspect.isawaitable(pending):
+                await pending
         claimed = await self.after_judge(player, card, {"reason": reason})
         if not claimed:
             state.discard_pile.append(card)
