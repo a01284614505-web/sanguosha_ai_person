@@ -89,6 +89,7 @@ class WeiSkillHandler(FactionSkillHandler):
                         if selected:
                             steals.append((victim, *selected))
                     gained = []
+                    victim_names = []
                     for victim, stolen, zone in steals:
                         if stolen not in victim.hand or not victim.alive:
                             continue
@@ -100,12 +101,16 @@ class WeiSkillHandler(FactionSkillHandler):
                             return {"skip_default": True}
                         await self.manager.on_cards_lost(victim, [stolen], "突袭")
                         gained.append(stolen)
+                        victim_names.append(victim.name)
                     if gained:
                         await self.manager.on_card_gained(player, gained, "突袭")
                     remaining = max(0, 2 - len(gained))
                     if remaining:
                         await self.manager.draw_cards(player, remaining, "突袭补摸")
-                    await self.manager.announce(player, "突袭", f"{player.name}发动【突袭】，获得{len(gained)}张手牌并补摸{remaining}张")
+                    await self.manager.announce(player, "突袭", (
+                        f"{player.name}发动【突袭】，获得{'、'.join(victim_names)}各一张手牌"
+                        + (f"并补摸{remaining}张" if remaining else "")
+                        if gained else f"{player.name}发动【突袭】，补摸{remaining}张"))
                     return {"skip_default": True}
 
         if phase == Phase.DRAW and self.has(player, "裸衣") and len(self.state.deck) >= 3:

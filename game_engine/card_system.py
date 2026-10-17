@@ -647,7 +647,8 @@ class CardSystem:
                             "as_name": "闪", "owner": player}
         options = self.build_response_options(player, card_filter, requested_name)
         if not options:
-            logger.info(f"  → {player.name} 没有符合条件的牌")
+            asked = f"【{requested_name}】" if requested_name else "符合条件的牌"
+            logger.info(f"  → {player.name} 没有{asked}")
             return {'bool': False}
         if self.responder is None:
             return {'bool': False}
@@ -946,7 +947,9 @@ class CardSystem:
                     drawn.append(killer.hand[-1])
             if drawn:
                 await self.trigger_manager.on_card_gained(killer, drawn, "kill_rebel_reward")
+            logger.info(f"  → {killer.name} 击杀反贼，摸 {len(drawn)} 张牌")
         elif killer is not None and killer.alive and killer.identity == "lord" and victim.identity == "loyalist":
+            logger.info(f"  → {killer.name}误杀忠臣，弃置所有牌")
             await self._discard_player_zones(killer, "lord_killed_loyalist", include_judge=False)
 
         from .identity_system import IdentitySystem
