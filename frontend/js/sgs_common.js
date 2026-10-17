@@ -487,12 +487,55 @@
         return { reset() { models = []; hide(); } };
     }
 
+    /**
+     * 身份卡牌面：暗红漆底 + 暗金双线描边、四角卷草纹、中央圆形纹章。
+     * opts.identity：选中的身份（lord/loyalist/rebel/spy），没有则显示“令”；opts.count：右下角张数。
+     */
+    let idCardSeq = 0;
+    function identityCardHTML(opts) {
+        opts = opts || {};
+        const n = ++idCardSeq;
+        const g = 'idcGold' + n, c = 'idcCorner' + n, cl = 'idcCloud' + n;
+        const info = IDENTITY[opts.identity];
+        const corner = '<g id="' + c + '" fill="none" stroke="url(#' + g + ')" stroke-linecap="round">' +
+            '<path stroke-width="1.1" d="M8 34 C8 20 13 12 27 9"/>' +
+            '<path stroke-width=".9" d="M8 22 C11 22 14 19 14 14 C14 10 16 8 21 8"/>' +
+            '<path stroke-width=".8" d="M15 18 c3 -1 6 1 5 4 c-1 2 -4 2 -4 -.5"/>' +
+            '<path stroke-width=".8" d="M19 14 q5 -1 8 -6"/><path stroke-width=".7" d="M24 15 q4 0 7 -3"/>' +
+            '<path stroke-width=".8" fill="url(#' + g + ')" fill-opacity=".35" d="M22 12 q5 -2 7 -6 q-6 1 -7 6 z"/>' +
+            '<circle cx="11" cy="11" r="1.6" fill="url(#' + g + ')" stroke="none"/></g>';
+        const svg = '<svg class="idc-frame" viewBox="0 0 100 140" aria-hidden="true" focusable="false"><defs>' +
+            '<linearGradient id="' + g + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0d48c"/>' +
+            '<stop offset=".35" stop-color="#b58a3e"/><stop offset=".6" stop-color="#6b4c22"/><stop offset="1" stop-color="#d2ad62"/></linearGradient>' +
+            '<pattern id="' + cl + '" width="24" height="16" patternUnits="userSpaceOnUse">' +
+            '<path d="M2 12 q4 -7 9 -2 q3 -5 7 0 q3 -2 5 1" fill="none" stroke="#d9b35e" stroke-opacity=".10" stroke-width=".8"/></pattern>' +
+            corner + '</defs>' +
+            '<rect x="6" y="6" width="88" height="128" rx="3" fill="url(#' + cl + ')"/>' +
+            '<rect x="2.5" y="2.5" width="95" height="135" rx="7" fill="none" stroke="url(#' + g + ')" stroke-width="1.8"/>' +
+            '<rect x="6.5" y="6.5" width="87" height="127" rx="3.5" fill="none" stroke="url(#' + g + ')" stroke-width=".6" stroke-opacity=".8"/>' +
+            // 内圈一串金珠：0 长度虚线 + 圆头 = 等距小圆点
+            '<rect x="9.5" y="9.5" width="81" height="121" rx="2" fill="none" stroke="url(#' + g + ')" stroke-width="1.1" stroke-linecap="round" stroke-dasharray="0 3.2" stroke-opacity=".75"/>' +
+            '<use href="#' + c + '" transform="scale(1.22)"/><use href="#' + c + '" transform="translate(100 0) scale(-1.22 1.22)"/>' +
+            '<use href="#' + c + '" transform="translate(0 140) scale(1.22 -1.22)"/><use href="#' + c + '" transform="translate(100 140) scale(-1.22 -1.22)"/>' +
+            '<path d="M50 3.2 l2.6 3.3 l-2.6 3.3 l-2.6 -3.3 z M50 130.2 l2.6 3.3 l-2.6 3.3 l-2.6 -3.3 z M3.2 70 l3.3 -2.6 l3.3 2.6 l-3.3 2.6 z M90.2 70 l3.3 -2.6 l3.3 2.6 l-3.3 2.6 z" fill="url(#' + g + ')"/>' +
+            '<circle cx="50" cy="62" r="25" fill="rgba(0,0,0,.28)" stroke="url(#' + g + ')" stroke-width="1.2"/>' +
+            '<circle cx="50" cy="62" r="21" fill="none" stroke="url(#' + g + ')" stroke-width=".5" stroke-dasharray="1.6 1.8"/>' +
+            '<path d="M24 62 h-8 M76 62 h8 M50 36 v-6 M50 88 v6" stroke="url(#' + g + ')" stroke-width=".7"/>' +
+            '<path d="M26 108 h48 l-4 5 l4 5 h-48 l4 -5 z" fill="rgba(0,0,0,.35)" stroke="url(#' + g + ')" stroke-width=".7"/>' +
+            '</svg>';
+        return '<div class="id-card' + (info ? ' chosen id-' + opts.identity : '') + '" role="img" aria-label="身份卡' + (info ? '：' + info.name : '') + '">' +
+            svg + '<span class="idc-face">' + (info ? info.short : '令') + '</span>' +
+            '<span class="idc-label">' + (info ? info.name : '身份卡') + '</span>' +
+            (Number.isFinite(opts.count) ? '<span class="idc-count">×' + opts.count + '</span>' : '') +
+            '<span class="idc-sheen" aria-hidden="true"></span></div>';
+    }
+
     // ------------------------------------------------------------------ 导出与初始化
     const SGS = {
         SUIT, CARD_ART, CARD_INFO, DELAYED, EQUIP_SLOT, EQUIP_ORDER, IDENTITY, WINNER, PHASE, PHASE_ORDER, PHASE_SHORT, SKILL_TAG,
         esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs,
         identitySeal, factionSeal, heroImageURL, heroImgHTML, imgFallback, icon, hydrateIcons,
-        applyTheme, toggleTheme, Detail, cardDetailHTML, skillDetailHTML, store, toast, fetchJSON, attachModelPicker
+        applyTheme, toggleTheme, Detail, cardDetailHTML, skillDetailHTML, store, toast, fetchJSON, attachModelPicker, identityCardHTML
     };
     global.SGS = SGS;
 

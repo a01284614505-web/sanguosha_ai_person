@@ -39,7 +39,19 @@
 
             document.getElementById('useIdentityCard').addEventListener('change', (e) => {
                 document.getElementById('identitySelect').disabled = !e.target.checked;
+                this.renderIdentityCard();
             });
+            document.getElementById('identitySelect').addEventListener('change', () => this.renderIdentityCard());
+            // 身份卡：点右侧身份印选择/取消；点卡面本身在已选时取消。
+            document.getElementById('idCardChoices').addEventListener('click', (e) => {
+                const b = e.target.closest('[data-identity]');
+                if (b) this.pickIdentity(b.dataset.identity);
+            });
+            document.getElementById('idCardArt').addEventListener('click', () => {
+                if (document.getElementById('useIdentityCard').checked) this.pickIdentity(null);
+                else toast('点右边的身份印，本局就以该身份入席');
+            });
+            this.cardCount = 0;
             document.getElementById('startGameBtn').addEventListener('click', () => this.startGame());
             document.getElementById('openGlobalSettings').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
             document.getElementById('deckSelect').addEventListener('change', (e) => {
@@ -315,6 +327,37 @@
             return id;
         }
 
+        /** 选中某个身份（再点一次同一个则取消）；name 为 null 表示取消使用身份卡。 */
+        pickIdentity(name) {
+            const use = document.getElementById('useIdentityCard');
+            const sel = document.getElementById('identitySelect');
+            const same = use.checked && sel.value === name;
+            if (!name || same) {
+                use.checked = false;
+                sel.value = '';
+                sel.disabled = true;
+            } else {
+                use.checked = true;
+                sel.disabled = false;
+                sel.value = name;
+            }
+            this.renderIdentityCard();
+        }
+
+        /** 按当前选择重绘身份卡牌面、身份印状态与提示。 */
+        renderIdentityCard() {
+            const KEY = { '主公': 'lord', '忠臣': 'loyalist', '反贼': 'rebel', '内奸': 'spy' };
+            const use = document.getElementById('useIdentityCard').checked;
+            const name = document.getElementById('identitySelect').value;
+            const chosen = use && KEY[name] ? KEY[name] : null;
+            document.getElementById('idCardArt').innerHTML = SGS.identityCardHTML({ identity: chosen, count: this.cardCount });
+            document.querySelectorAll('#idCardChoices [data-identity]').forEach(b =>
+                b.setAttribute('aria-checked', String(!!chosen && b.dataset.identity === name)));
+            document.getElementById('idCardHint').innerHTML = chosen
+                ? '本局以 <b>' + esc(name) + '</b> 入席，开局时消耗 1 张'
+                : '点一个身份，本局就用身份卡指定';
+        }
+
         // 战绩与身份卡以服务端档案为准；旧 userData 只显示迁移提示。
         loadUserData() {
             const legacy = store.get('userData', null);
@@ -329,6 +372,8 @@
                     document.getElementById('totalGames').textContent = profile.total_games || 0;
                     document.getElementById('cardCount').textContent = profile.identity_cards || 0;
                     document.getElementById('identityCardSection').hidden = !(profile.identity_cards > 0);
+                    this.cardCount = profile.identity_cards || 0;
+                    this.renderIdentityCard();
                     const status = document.getElementById('recordStatus');
                     if (status) status.textContent = '已同步服务端战绩';
                 })

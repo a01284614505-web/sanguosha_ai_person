@@ -32,6 +32,25 @@ def _empty_profile():
     return {"win_streak": 0, "total_games": 0, "identity_cards": 0, "history": []}
 
 
+# 见面礼：每个档案第一次出现时送一张身份卡（老档案在下次读取时补发一次）。
+WELCOME_CARDS = 1
+
+
+def _grant_welcome(profile):
+    """未领过见面礼的档案补一张身份卡；返回是否发生了变化。"""
+    if profile.get("welcome_card"):
+        return False
+    profile["identity_cards"] = int(profile.get("identity_cards", 0)) + WELCOME_CARDS
+    profile["welcome_card"] = True
+    return True
+
+
+def _profile_entry(data, profile_id):
+    profile = data["profiles"].setdefault(profile_id, _empty_profile())
+    _grant_welcome(profile)
+    return profile
+
+
 class GameHistoryStore:
     """One writer per process; replace the whole JSON file after each committed result."""
 
@@ -76,7 +95,15 @@ class GameHistoryStore:
         profile_id = validate_profile_id(profile_id)
         with self._lock:
             data = self._load()
-            return dict(data["profiles"].get(profile_id, _empty_profile()))
+            profile = data["profiles"].get(profile_id)
+            if profile is None:
+                # 新档案还没写过盘：直接按“已领见面礼”展示，第一次写入时才真正落盘。
+                fresh = _empty_profile()
+                _grant_welcome(fresh)
+                return fresh
+            if _grant_welcome(profile):
+                self._save(data)
+            return dict(profile)
 
     def reserve_identity_card(self, profile_id, game_id):
         profile_id = validate_profile_id(profile_id)
@@ -85,7 +112,7 @@ class GameHistoryStore:
             data = self._load()
             if game_id in data["card_uses"]:
                 return data["card_uses"][game_id] == profile_id
-            profile = data["profiles"].setdefault(profile_id, _empty_profile())
+            profile = _profile_entry(data, profile_id)
             if profile["identity_cards"] < 1:
                 raise ValueError("身份卡不足")
             profile["identity_cards"] -= 1
@@ -101,7 +128,7 @@ class GameHistoryStore:
             data = self._load()
             if data["card_uses"].get(game_id) != profile_id or game_id in data["games"]:
                 return False
-            profile = data["profiles"].setdefault(profile_id, _empty_profile())
+            profile = _profile_entry(data, profile_id)
             profile["identity_cards"] += 1
             del data["card_uses"][game_id]
             self._save(data)
@@ -132,7 +159,7 @@ class GameHistoryStore:
             player_won = None
             if winner in ("lord", "rebel", "spy"):
                 player_won = (winner == "lord" and identity in ("lord", "loyalist")) or winner == identity
-            profile = data["profiles"].setdefault(profile_id, _empty_profile())
+            profile = _profile_entry(data, profile_id)
             profile["total_games"] += 1
             reward = None
             cheat = payload.get("cheat") is True

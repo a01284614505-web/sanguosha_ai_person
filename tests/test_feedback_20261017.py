@@ -134,7 +134,8 @@ def test_cheat_games_do_not_change_streak_or_identity_cards(tmp_path):
     store.record_result("p1", "g1", {"winner": "lord", "state": state})
     receipt = store.record_result("p1", "g2", {"winner": "lord", "state": state, "cheat": True})
     assert receipt["cheat"] is True
-    assert receipt["profile"]["win_streak"] == 1 and receipt["profile"]["identity_cards"] == 0
+    # 第二局若不是作弊局会连胜 2 并奖励一张；作弊局不变（只剩见面礼那一张）
+    assert receipt["profile"]["win_streak"] == 1 and receipt["profile"]["identity_cards"] == 1
     assert store.profile("p1")["history"][0]["cheat"] is True
 
 
