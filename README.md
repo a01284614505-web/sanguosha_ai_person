@@ -14,6 +14,8 @@
 
 ## 快速开始
 
+> 常用命令（安装、启动、更新、停止、排错）都整理在 **[COMMANDS.md](COMMANDS.md)**，可直接复制粘贴。
+
 ### Windows（开发）
 
 ```powershell
