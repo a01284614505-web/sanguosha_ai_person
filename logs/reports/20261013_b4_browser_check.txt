@@ -1,0 +1,23 @@
+{
+  "url": "http://127.0.0.1:8888/game.html",
+  "art_loaded": 42,
+  "art_min_width": 120,
+  "targetCheck": {
+    "selection": [
+      101,
+      102,
+      103
+    ],
+    "pending": {
+      "type": "play_card",
+      "card_index": 0,
+      "target_ids": [
+        101,
+        102,
+        103
+      ]
+    }
+  },
+  "page_errors": [],
+  "viewport": "1280x800"
+}

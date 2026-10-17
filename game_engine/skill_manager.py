@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """54技能统一注册、合法操作和事件分发。"""
 
+import inspect
 import logging
 from importlib import import_module
 from typing import Dict, List
@@ -21,6 +22,7 @@ class SkillManager:
         self.handlers = []
         self.activation_log: List[Dict] = []
         self.skill_state = SkillStateStore()
+        self._loss_batches = {}
         if engine is not None:
             self.bind_engine(engine)
 
@@ -28,6 +30,7 @@ class SkillManager:
         self.engine = engine
         self.registered_skills.clear()
         self.skill_state = SkillStateStore()
+        self._loss_batches.clear()
         for player in engine.game_state.players:
             self.registered_skills[player.id] = get_hero_skills(hero_id(player))
             for skill in self.registered_skills[player.id]:
@@ -266,6 +269,12 @@ class SkillManager:
             return None
         card = state.deck.pop(0)
         card = await self.before_judge(player, card, {"reason": reason})
+        # 技能判定（洛神、刚烈、雷击等）也走判定框；是否“生效”由各技能自行解读，这里不下结论。
+        announce = getattr(self.engine, "announce_judge", None)
+        if announce is not None:
+            pending = announce(player, card, reason)
+            if inspect.isawaitable(pending):
+                await pending
         claimed = await self.after_judge(player, card, {"reason": reason})
         if not claimed:
             state.discard_pile.append(card)
@@ -275,26 +284,14 @@ class SkillManager:
     async def duel(self, source, target, reason="决斗"):
         if self.target_error(source, target, "决斗"):
             return False
-        current, other = target, source
-        while source.alive and target.alive:
-            required = 2 if self.has_skill(other, "无双") else 1
-            responded = True
-            for _ in range(required):
-                direct = next((c for c in current.hand if c.name == "杀"), None)
-                option = None if direct else next(iter(self.response_options(current, "杀")), None)
-                response = direct or (option or {}).get("card")
-                owner = (option or {}).get("owner") or current
-                if not response or response not in owner.hand:
-                    responded = False
-                    break
-                await self.discard_card(owner, response, f"响应{reason}")
-                record_stat(self.engine, owner, "cards_played")
-                await self.on_card_responded(current, response, (option or {}).get("as_name", "杀"), {"source": other, "owner": owner})
-            if not responded:
-                await self.engine.card_system.damage(other, current, 1, card=None, context={"reason": reason})
-                return True
-            current, other = other, current
-        return True
+        from .state_manager import Card
+        card = Card(f"virtual_duel:{source.id}:{target.id}:{reason}", "决斗", "spade", 1, "trick")
+        context = self.engine._new_effect_context(
+            source, card, skill_source=reason, card_cost_ids=[], target=target,
+        )
+        return await self.engine.card_system.resolve_duel(
+            source, target, card, effect_context=context, reason=reason,
+        )
 
     async def announce(self, player, skill_name, message=None):
         self.record(player, skill_name, "activate")
@@ -373,6 +370,13 @@ class SkillManager:
             options.extend(handler.response_options(player, requested_name))
         return options
 
+    async def request_lord_sha(self, player, first_donor):
+        for handler in self.handlers:
+            request = getattr(handler, "request_jijiang_response", None)
+            if request is not None:
+                return await request(player, first_donor)
+        return None
+
     def target_error(self, source, target, card_name):
         for handler in self.handlers:
             error = handler.can_target(source, target, card_name)
@@ -426,9 +430,23 @@ class SkillManager:
         """Record an already committed move before any awaited event publication."""
         player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
         if event.reason == "use_card":
-            record_stat(self.engine, player, "cards_played")
+            # 终结对局的杀仍是已提交用牌；投影不能被 game_over 拦掉。
+            self.engine.stats.add(player, "cards_played")
         if self._is_counted_loss(event):
-            record_stat(self.engine, player, "cards_lost")
+            self.engine.stats.add(player, "cards_lost")
+
+    def begin_loss_batch(self, player, reason):
+        """Group cards lost in one declared action for X-card skill triggers."""
+        if player.id in self._loss_batches:
+            raise RuntimeError(f"loss batch already active for player {player.id}")
+        self._loss_batches[player.id] = {"reason": reason, "cards": []}
+
+    async def finish_loss_batch(self, player):
+        batch = self._loss_batches.pop(player.id, None)
+        if batch and batch["cards"]:
+            await self.on_cards_lost(
+                player, batch["cards"], batch["reason"], record=False,
+            )
 
     async def on_card_move(self, card, event, *, stats_recorded=False):
         """Project statistics and skill hooks from one committed movement fact."""
@@ -442,6 +460,10 @@ class SkillManager:
             return
         player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
         if player is None:
+            return
+        batch = self._loss_batches.get(player.id)
+        if batch is not None and event.reason == batch["reason"]:
+            batch["cards"].append(card)
             return
         await self.on_cards_lost(player, [card], event.reason, record=False, event=event)
 

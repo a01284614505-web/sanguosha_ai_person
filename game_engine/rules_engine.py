@@ -30,10 +30,13 @@ class RulesEngine:
         if player != self.game_state.current_player:
             return False, "不是你的回合"
         
-        # 3. 检查卡牌是否在手牌中
-        if card not in player.hand:
-            return False, "卡牌不在手中"
-        if getattr(player, "flags", {}).get("cannot_use_hand"):
+        # 宝物扣置牌可如手牌使用，但仍保留独立牌区，不计手牌数。
+        in_hand = card in player.hand
+        in_treasure = (card in player.treasure_cards and
+                       getattr(player.equipment.get("treasure"), "name", None) == "木牛流马")
+        if not in_hand and not in_treasure:
+            return False, "卡牌不在可用牌区"
+        if in_hand and getattr(player, "flags", {}).get("cannot_use_hand"):
             return False, "受技能影响，本回合不能使用或打出手牌"
         
         # 4. 根据卡牌类型检查（单一来源：CARD_TABLE 的 card_type/usage/resolver）
@@ -52,7 +55,9 @@ class RulesEngine:
     def can_play_sha(self, player, card, targets: List) -> Tuple[bool, str]:
         """检查是否可以出杀"""
         # 1. 检查出杀次数
-        if player.sha_count >= player.max_sha:
+        # 连弩仅放宽当前装备者的出杀次数；卸下后立即回到原限额。
+        unlimited = getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
+        if not unlimited and player.sha_count >= player.max_sha:
             return False, f"本回合已使用{player.sha_count}次杀"
         
         # 2. 检查目标
@@ -60,7 +65,16 @@ class RulesEngine:
             return False, "杀需要指定目标"
         
         if len(targets) > 1:
-            return False, "杀只能指定1个目标"
+            # 方天画戟只在使用最后一张手牌时扩至三人；逐目标仍过常规合法性。
+            fangtian = getattr(player.equipment.get("weapon"), "name", None) == "方天画戟"
+            if (not fangtian or len(targets) > 3 or len(player.hand) != 1
+                    or player.hand[0] is not card or len({p.id for p in targets}) != len(targets)):
+                return False, "方天画戟需要最后一张手牌且至多三名不同目标"
+            for target in targets:
+                legal, reason = self.can_play_sha(player, card, [target])
+                if not legal:
+                    return False, reason
+            return True, "OK"
         
         target = targets[0]
         
@@ -90,6 +104,50 @@ class RulesEngine:
         """检查是否可以用桃"""
         if player.hp >= player.max_hp:
             return False, "体力已满"
+        return True, "OK"
+
+    def can_play_jiu(self, player, card) -> Tuple[bool, str]:
+        """出牌阶段的酒限一次，避免先弃实体牌后结算失败。"""
+        if getattr(player, "jiu_used_this_turn", False):
+            return False, "本回合已经使用过酒"
+        return True, "OK"
+
+    def _can_play_delayed_trick(self, player, card, targets: List) -> Tuple[bool, str]:
+        if not targets or len(targets) != 1:
+            return False, "延时锦囊需要指定一名目标"
+        target = targets[0]
+        if target is player or not target.alive:
+            return False, "延时锦囊目标必须是存活的其他角色"
+        if any(existing.name == card.name for existing in target.judge_area):
+            return False, "目标判定区已有同名延时锦囊"
+        return True, "OK"
+
+    def can_play_lebu(self, player, card, targets: List) -> Tuple[bool, str]:
+        return self._can_play_delayed_trick(player, card, targets)
+
+    def can_play_bingliang(self, player, card, targets: List) -> Tuple[bool, str]:
+        legal, reason = self._can_play_delayed_trick(player, card, targets)
+        if not legal:
+            return legal, reason
+        distance = self.get_distance(player, targets[0])
+        if self.skill_manager:
+            distance = self.skill_manager.modify_distance(player, targets[0], distance)
+        has_qicai = bool(self.skill_manager and self.skill_manager.has_skill(player, "奇才"))
+        if distance > 1 and not has_qicai:
+            return False, f"兵粮寸断目标距离太远：{distance} > 1"
+        return True, "OK"
+
+    def can_play_shandian(self, player, card) -> Tuple[bool, str]:
+        if any(existing.name == "闪电" for existing in player.judge_area):
+            return False, "判定区已有闪电"
+        return True, "OK"
+
+    def can_play_huogong(self, player, card, targets: List) -> Tuple[bool, str]:
+        if not targets or len(targets) != 1:
+            return False, "火攻需要指定一名目标"
+        target = targets[0]
+        if not target.alive or target is player or not target.hand:
+            return False, "火攻目标必须是有手牌的其他角色"
         return True, "OK"
     
     def can_play_guohe(self, player, card, targets: List) -> Tuple[bool, str]:

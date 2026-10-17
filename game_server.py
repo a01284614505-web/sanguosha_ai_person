@@ -3,18 +3,23 @@
 import asyncio
 import json
 import logging
+import os
 import sys
 import traceback
+import uuid
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from threading import Thread
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from websockets.exceptions import ConnectionClosedOK
 from game_engine import MainEngine
+from game_engine.game_history import GameHistoryStore, validate_profile_id
+from game_engine.identity_system import IdentitySystem
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
+HISTORY_PATH = Path(os.environ.get("SANGUOSHA_HISTORY_PATH") or BASE_DIR / "logs/runtime/game_history.json")
 
 
 def configure_logging():
@@ -31,11 +36,11 @@ def configure_logging():
 
 
 class GameServer:
-    def __init__(self):
+    def __init__(self, history_path=None):
         self.engines = {}
         self.tasks = {}
         self.ws_map = {}
-        self.next_game_id = 1
+        self.history = GameHistoryStore(history_path or HISTORY_PATH)
         self.animation_waiters = {}
         self.animation_seq = 0
     async def handle(self, ws):
@@ -54,7 +59,14 @@ class GameServer:
         except Exception as exc:
             print(f"[连接关闭] {exc}")
         finally:
-            gid = self.ws_map.pop(ws, None)
+            gid = self.ws_map.get(ws)
+            engine = self.engines.get(gid)
+            if engine is not None and not engine.game_aborted:
+                try:
+                    await engine.request_end_game("连接断开，对局中止")
+                except Exception as exc:
+                    logging.getLogger(__name__).error("断线收摊失败: %s", exc)
+            self.ws_map.pop(ws, None)
             task = self.tasks.get(gid)
             if task and not task.done():
                 task.cancel()
@@ -79,6 +91,7 @@ class GameServer:
             INBOUND.CARD_ANIMATION_DONE: lambda: self.do_animation_done(data),
             INBOUND.END_GAME: lambda: self.do_end_game(ws, data),
             INBOUND.UPDATE_AI_CONFIG: lambda: self.do_update_ai_config(ws, data),
+            INBOUND.SET_TRUSTEE: lambda: self.do_set_trustee(ws, data),
             INBOUND.PING: lambda: self.send(ws, {"type": OUTBOUND.PONG}),
             INBOUND.SERVER_INFO: lambda: self.send(
                 ws, {"type": OUTBOUND.SERVER_INFO, **MainEngine.server_info()}
@@ -100,17 +113,28 @@ class GameServer:
             self.tasks.pop(old_gid, None)
             self.engines.pop(old_gid, None)
         cfg = MainEngine.normalize_config(raw_config, BASE_DIR)
-        gid = str(self.next_game_id)
-        self.next_game_id += 1
+        gid = uuid.uuid4().hex
+        cfg["profile_id"] = validate_profile_id(cfg.get("profile_id") or f"guest_{gid}")
         print(f"\n[创建] game_{gid} | 模式: {cfg['mode']} | 玩家: {cfg['player']['name']}")
         engine = MainEngine(cfg)
         engine.game_id = gid
+        identity_card = cfg.get("identity_card") or {}
+        if identity_card.get("use"):
+            if IdentitySystem.IDENTITY_ALIASES.get(identity_card.get("identity")) not in IdentitySystem.IDENTITY_5:
+                await self.send_error(ws, "身份卡指定了无效身份")
+                return
+            try:
+                self.history.reserve_identity_card(cfg["profile_id"], gid)
+            except (ValueError, OSError, RuntimeError) as exc:
+                await self.send_error(ws, f"身份卡使用失败: {exc}")
+                return
         self.engines[gid] = engine
         self.ws_map[ws] = gid
         for event in ENGINE_EVENTS:
             engine.on(event, self._forward(ws, event))
         engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(ws, gid))
-        await self.send(ws, {"type": OUTBOUND.GAME_CREATED, "game_id": gid})
+        await self.send(ws, {"type": OUTBOUND.GAME_CREATED, "game_id": gid,
+                             "profile_id": cfg["profile_id"]})
         self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine, ws))
     async def _run_engine(self, gid, engine, ws):
         try:
@@ -120,6 +144,11 @@ class GameServer:
         except Exception as exc:
             print(f"[引擎错误] game_{gid}: {exc}")
             traceback.print_exc()
+            if (engine.game_config.get("identity_card") or {}).get("use"):
+                try:
+                    self.history.refund_identity_card(engine.game_config["profile_id"], gid)
+                except (OSError, ValueError, RuntimeError) as refund_exc:
+                    logging.getLogger(__name__).error("身份卡退款失败: %s", type(refund_exc).__name__)
             await self.send_error(ws, f"游戏引擎异常: {exc}", fatal=True)
     async def do_action(self, ws, data):
         engine = self.engine_for(ws)
@@ -131,8 +160,15 @@ class GameServer:
             await self.send(ws, {"type": OUTBOUND.ACTION_RESULT, **receipt})
     async def do_chat(self, ws, data):
         message = str(data.get("message", "")).strip()[:200]
-        if message:
-            await self.send(ws, {"type": OUTBOUND.CHAT, "from": "玩家", "message": message})
+        if not message:
+            return
+        payload = {"type": OUTBOUND.CHAT, "from": "玩家", "message": message, "is_self": True}
+        engine = self.engine_for(ws)
+        human = engine.human_player() if engine else None
+        if human is not None:
+            payload["from"] = human.name
+            payload["from_id"] = human.id
+        await self.send(ws, payload)
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
         if waiter and not waiter.done():
@@ -160,8 +196,34 @@ class GameServer:
             await self.send(ws, {"type": OUTBOUND.AI_CONFIG_UPDATED, "config": updated})
         except Exception as exc:
             await self.send_error(ws, f"AI配置更新失败: {exc}")
+    async def do_set_trustee(self, ws, data):
+        engine = self.engine_for(ws)
+        if engine is None:
+            await self.send_error(ws, "当前连接没有游戏")
+            return
+        try:
+            status = engine.set_trustee(
+                data.get("enabled") is True,
+                source=data.get("source", "rules"),
+                player_id=data.get("player_id"),
+                config=data.get("config"),
+            )
+            await engine.emit(ENGINE_EVENT.TRUSTEE_STATUS, **status)
+            await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
+        except ValueError as exc:
+            await self.send_error(ws, str(exc))
     def _forward(self, ws, event):
         async def handler(**data):
+            if event == ENGINE_EVENT.GAME_END:
+                engine = self.engine_for(ws)
+                if engine is not None:
+                    try:
+                        data.update(self.history.record_result(
+                            engine.game_config["profile_id"], engine.game_id, data
+                        ))
+                    except (OSError, ValueError, RuntimeError) as exc:
+                        logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
+                        data["history_error"] = "战绩保存失败，请检查服务器日志"
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
             if event == ENGINE_EVENT.CARD_MOVE and isinstance(data.get("move"), dict):
@@ -226,7 +288,19 @@ class CustomHandler(SimpleHTTPRequestHandler):
         data = json.loads(self.rfile.read(length))
         return data if isinstance(data, dict) else {}
     def do_GET(self):
-        request_path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        request_path = parsed.path
+        if request_path == "/api/history":
+            try:
+                profile_id = validate_profile_id(parse_qs(parsed.query).get("profile_id", [None])[0])
+                profile = GameHistoryStore(HISTORY_PATH).profile(profile_id)
+                self._send_json(200, {"success": True, "profile": profile})
+            except ValueError as exc:
+                self._send_json(400, {"success": False, "message": str(exc)})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("读取战绩失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "战绩读取失败，请检查服务器日志"})
+            return
         if request_path == "/api/decks":
             try:
                 info = MainEngine.deck_list(BASE_DIR)

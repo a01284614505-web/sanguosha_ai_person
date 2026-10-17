@@ -12,6 +12,45 @@ from .skill_runtime_core import (
 class WuSkillHandler(FactionSkillHandler):
     faction = "wu"
 
+    def _finished(self):
+        return bool(self.engine.game_aborted or self.state.game_over)
+
+    async def _choose_region_card(self, chooser, owner, skill_name, prompt, *, cancelable=True):
+        places = [(owner, "hand", card) for card in list(owner.hand)]
+        places.extend((owner, "equipment", card) for card in list(owner.equipment.values()))
+        if not places:
+            return None
+        result = await self.manager.ask_choose_cards_result(
+            chooser, prompt, [card for _player, _zone, card in places],
+            min_n=1, max_n=1, zone="mixed", skill_name=skill_name,
+            cancelable=cancelable,
+            hidden_indices=[i for i, (_player, zone, _card) in enumerate(places)
+                            if zone == "hand" and chooser is not owner],
+            places=[(player, zone) for player, zone, _card in places],
+        )
+        if self._finished() or result.get("status") not in ("resolved", "timeout"):
+            return None
+        card = next(iter(result.get("cards") or []), None)
+        return next(((card, zone) for player, zone, candidate in places
+                     if player is owner and candidate is card), None)
+
+    async def _discard_region_card(self, owner, card, zone, reason, actor):
+        if self._finished():
+            return False
+        index = owner.hand.index(card) if zone == "hand" and card in owner.hand else None
+        move = await self.engine.move_card(
+            card, zone, "discard", from_owner=owner,
+            reason=reason, actor_id=actor.id,
+        )
+        if move is None:
+            return False
+        await self.engine.card_system.notify_card_to_discard(
+            owner, card, "discard", index,
+            f"{owner.name}因【{reason}】弃置【{card.name}】",
+        )
+        await self.manager.on_card_discarded(owner, card, reason)
+        return True
+
     @staticmethod
     def _action(name, variant, indices=None, targets=None, text=""):
         targets = targets or []
@@ -81,11 +120,15 @@ class WuSkillHandler(FactionSkillHandler):
             if not self.manager.consume_skill_use(player, "制衡", phase=Phase.PLAY, charges=0):
                 return False
             await self.manager.announce(player, "制衡", f"{player.name}发动【制衡】弃置{len(cards)}张牌")
-            for card in list(cards):
-                if not await self.manager.discard_card(player, card, "制衡"):
-                    return False
-                if self.engine.game_aborted:
-                    return False
+            self.manager.begin_loss_batch(player, "制衡")
+            try:
+                for card in list(cards):
+                    if not await self.manager.discard_card(player, card, "制衡"):
+                        return False
+                    if self.engine.game_aborted:
+                        return False
+            finally:
+                await self.manager.finish_loss_batch(player)
             await self.manager.draw_cards(player, len(cards) + (1 if all_hand else 0), "制衡")
             return True
 
@@ -157,11 +200,28 @@ class WuSkillHandler(FactionSkillHandler):
             return True
 
         if name == "攻心" and target:
-            heart = next((c for c in target.hand if c.suit == "heart"), None)
-            if not heart:
+            hearts = [c for c in target.hand if c.suit == "heart"]
+            if not hearts:
+                return False
+            result = await self.manager.ask_choose_cards_result(
+                player, f"【攻心】：请选择获得{target.name}的一张红桃手牌",
+                hearts, min_n=1, max_n=1, zone="hand", skill_name="攻心",
+                context={"target": target}, cancelable=True,
+                places=[(target, "hand")] * len(hearts),
+            )
+            if self._finished() or result.get("status") not in ("resolved", "timeout"):
+                return False
+            heart = next(iter(result.get("cards") or []), None)
+            if not heart or heart not in target.hand:
+                return False
+            move = await self.engine.move_card(
+                heart, "hand", "hand", from_owner=target, to_owner=player,
+                reason="攻心", actor_id=player.id, visibility="owner",
+            )
+            if move is None:
                 return False
             mark_once_per_turn(player, "攻心")
-            await self.manager.transfer_card(target, player, heart, "攻心")
+            await self.manager.on_card_gained(player, [heart], "攻心")
             await self.manager.announce(player, "攻心", f"{player.name}发动【攻心】获得{target.name}一张红桃牌")
             return True
         return False
@@ -191,8 +251,10 @@ class WuSkillHandler(FactionSkillHandler):
             return {"skip_default": True}
 
         if phase == Phase.DISCARD and self.has(player, "克己") and not ensure_flags(player).get("sha_used_this_turn"):
-            await self.manager.announce(player, "克己", f"{player.name}发动【克己】跳过弃牌阶段")
-            return {"skip_default": True}
+            use = await self.manager.ask_confirm(player, "是否发动【克己】跳过弃牌阶段？", skill_name="克己", default=False)
+            if use and not self._finished():
+                await self.manager.announce(player, "克己", f"{player.name}发动【克己】跳过弃牌阶段")
+                return {"skip_default": True}
         return None
 
     async def after_phase(self, player, phase):
@@ -206,9 +268,11 @@ class WuSkillHandler(FactionSkillHandler):
             used = ensure_flags(player).get(round_key, 0)
             limit = min(3, len([p for p in self.state.players if p.alive]))
             if len(suits) >= 4 and used < limit:
-                ensure_flags(player)[round_key] = used + 1
-                ensure_flags(player)["extra_turn"] = True
-                await self.manager.announce(player, "博图", f"{player.name}发动【博图】获得额外回合")
+                use = await self.manager.ask_confirm(player, "是否发动【博图】获得额外回合？", skill_name="博图", default=False)
+                if use and not self._finished():
+                    ensure_flags(player)[round_key] = used + 1
+                    ensure_flags(player)["extra_turn"] = True
+                    await self.manager.announce(player, "博图", f"{player.name}发动【博图】获得额外回合")
         # 谦逊暂存牌在当前回合结束时归还。
         for owner in self.state.players:
             stored = list(owner.temporary)
@@ -233,9 +297,17 @@ class WuSkillHandler(FactionSkillHandler):
         flags["qinxue_awakened"] = True
         player.max_hp = max(1, player.max_hp - 1)
         player.hp = min(player.hp, player.max_hp)
-        if player.hp < player.max_hp:
+        choice = await self.manager.ask_choose_option(
+            player, "勤学觉醒后选择一项",
+            [{"key": "recover", "label": "回复1点体力"}, {"key": "draw", "label": "摸两张牌"}],
+            skill_name="勤学",
+        )
+        if self._finished():
+            return
+        key = choice.get("key") if isinstance(choice, dict) else choice
+        if key == "recover" and player.hp < player.max_hp:
             await self.manager.recover(player, 1, player, "勤学")
-        else:
+        elif key == "draw":
             await self.manager.draw_cards(player, 2, "勤学")
         flags["gongxin"] = True
         await self.manager.announce(player, "勤学", f"{player.name}觉醒【勤学】，获得【攻心】")
@@ -244,23 +316,64 @@ class WuSkillHandler(FactionSkillHandler):
         owner = next((p for p in self.state.players if p.alive and self.has(p, "奋威") and "奋威" not in ensure_flags(p).setdefault("limited_skills", set())), None)
         if not owner or len(targets) < 2:
             return targets
-        ensure_flags(owner)["limited_skills"].add("奋威")
-        protected = [p for p in targets if p is owner or p.identity == owner.identity]
+        use = await self.manager.ask_confirm(
+            owner, "是否发动限定技【奋威】令此锦囊对目标角色无效？",
+            skill_name="奋威", context={"source": source, "card_name": card.name,
+                                         "target_ids": [p.id for p in targets]},
+            default=False,
+        )
+        if self._finished() or not use:
+            return targets
+        chosen = await self.manager.ask_choose_players(
+            owner, "【奋威】：选择令此锦囊对其无效的目标",
+            [p for p in targets if p.alive], min_n=1, max_n=len(targets),
+            skill_name="奋威", context={"card_name": card.name}, cancelable=True,
+        )
+        if self._finished() or not chosen:
+            return targets
+        protected = [p for p in chosen if p in targets and p.alive]
         if not protected:
-            protected = [owner] if owner in targets else []
-        result = [p for p in targets if p not in protected]
+            return targets
+        ensure_flags(owner)["limited_skills"].add("奋威")
         await self.manager.announce(owner, "奋威", f"{owner.name}发动【奋威】，令{len(protected)}名角色不受锦囊影响")
-        return result
+        return [p for p in targets if p not in protected]
 
     async def before_card_target(self, source, target, card):
-        # 流离：弃一张牌，将杀转给攻击范围内另一名角色。
-        if card and card.name == "杀" and self.has(target, "流离") and target.hand:
-            alternatives = [p for p in self.state.players if p.alive and p not in (source, target) and self.state.get_distance(target, p) <= target.get_equipment_range()]
+        # 流离：先确认，再由目标本人选成本和新目标；所有选择完成前不移动牌。
+        if card and card.name == "杀" and self.has(target, "流离") and (target.hand or target.equipment):
+            alternatives = [
+                p for p in self.state.players
+                if p.alive and p not in (source, target)
+                and self.manager.modify_distance(target, p, self.state.get_distance(target, p))
+                    <= target.get_equipment_range()
+            ]
             if alternatives:
-                await self.manager.discard_card(target, target.hand[0], "流离")
-                new_target = sorted(alternatives, key=lambda p: (p.hp, p.id))[0]
-                await self.manager.announce(target, "流离", f"{target.name}发动【流离】，将【杀】转移给{new_target.name}")
-                return new_target
+                use = await self.manager.ask_confirm(
+                    target, "是否发动【流离】弃置一张牌并转移此【杀】？",
+                    skill_name="流离", context={"source": source}, default=False,
+                )
+                if self._finished():
+                    return None
+                if use:
+                    cost = await self._choose_region_card(
+                        target, target, "流离", "【流离】：选择一张手牌或装备作为弃置牌",
+                    )
+                    if self._finished():
+                        return None
+                    new_targets = [p for p in alternatives if p.alive]
+                    chosen_targets = await self.manager.ask_choose_players(
+                        target, "【流离】：选择此【杀】的新目标", new_targets,
+                        min_n=1, max_n=1, skill_name="流离",
+                        context={"source": source}, cancelable=True,
+                    ) if cost and new_targets else []
+                    if self._finished():
+                        return None
+                    new_target = chosen_targets[0] if chosen_targets else None
+                    if cost and new_target in new_targets:
+                        cost_card, zone = cost
+                        if await self._discard_region_card(target, cost_card, zone, "流离", target):
+                            await self.manager.announce(target, "流离", f"{target.name}发动【流离】，将【杀】转移给{new_target.name}")
+                            return new_target
         # 谦逊：成为其他角色普通锦囊唯一目标时暂存所有手牌。
         if card and card.card_type == "trick" and source is not target and self.has(target, "谦逊") and target.hand:
             use = await self.manager.ask_confirm(
@@ -281,23 +394,24 @@ class WuSkillHandler(FactionSkillHandler):
         return target
 
     async def on_cards_lost(self, player, cards, reason="unknown", *, event=None):
-        # Committed moves are handled with their source zone below. Legacy
-        # direct writes still use this callback until their B3/B5 migration.
-        if event is not None:
+        if event is not None and (event.from_zone != "hand" or event.to_zone == "temporary"):
             return
         if self.has(player, "连营") and not player.hand and cards:
             recipients = [player] + [p for p in self.state.players if p.alive and p is not player]
             count = min(len(cards), len(recipients))
-            for target in recipients[:count]:
+            use = await self.manager.ask_confirm(player, "是否发动【连营】令角色摸牌？", skill_name="连营", default=False)
+            if not use or self._finished():
+                return
+            selected = await self.manager.ask_choose_players(
+                player, "选择因【连营】摸牌的角色", recipients,
+                min_n=1, max_n=count, skill_name="连营", cancelable=False,
+            )
+            if self._finished():
+                return
+            for target in selected:
                 await self.manager.draw_cards(target, 1, "连营")
-            await self.manager.announce(player, "连营", f"{player.name}发动【连营】，令{count}名角色各摸一张牌")
-
-    async def on_card_move(self, card, event):
-        if event.from_zone != "hand" or event.to_zone == "temporary":
-            return
-        player = next((p for p in self.state.players if p.id == event.from_owner), None)
-        if player is not None:
-            await self.on_cards_lost(player, [card], event.reason)
+            if selected:
+                await self.manager.announce(player, "连营", f"{player.name}发动【连营】，令{len(selected)}名角色各摸一张牌")
 
     async def on_hp_lost(self, player, amount, reason="unknown", source=None):
         if not self.has(player, "诈降"):
@@ -319,6 +433,9 @@ class WuSkillHandler(FactionSkillHandler):
             return
         lord = next((p for p in self.state.players if p.alive and p.identity == "lord" and self.has(p, "救援")), None)
         if not lord or player.hp < lord.hp or lord.hp >= lord.max_hp:
+            return
+        use = await self.manager.ask_confirm(player, f"是否发动【救援】改为令主公{lord.name}回复？", skill_name="救援", default=False)
+        if not use or self._finished():
             return
         before_player = player.hp
         player.hp = max(0, player.hp - amount)

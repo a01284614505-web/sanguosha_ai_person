@@ -5,6 +5,7 @@ __pycache__/
 logs/runtime/*.log
 logs/runtime/*.err
 logs/runtime/*.jsonl
+logs/runtime/game_history.json
 logs/*.pid
 data/deck_settings.json
 *.backup*

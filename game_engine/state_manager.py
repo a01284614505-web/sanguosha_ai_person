@@ -85,6 +85,8 @@ class Player:
     hp: int = 4
     max_hp: int = 4
     status: PlayerStatus = PlayerStatus.NORMAL
+    # 横置与翻面是两个独立状态，不能用一个互斥枚举同时表示。
+    chained: bool = False
     alive: bool = True
     is_ai: bool = False
     ai_config: Dict[str, Any] = field(default_factory=dict)
@@ -96,6 +98,7 @@ class Player:
     judge_area: List[Card] = field(default_factory=list)
     shown: List[Card] = field(default_factory=list)
     temporary: List[Card] = field(default_factory=list)
+    treasure_cards: List[Card] = field(default_factory=list)  # 木牛流马扣置区，不计手牌
     
     # 统计
     sha_count: int = 0         # 本回合已出杀的次数
@@ -279,7 +282,7 @@ class GameState:
         deck/discard 为全局牌区，owner 必须为 None。装备目标槽位由 to_slot 或
         card.sub_type 指定。牌堆目标默认放到牌堆顶，其他列表目标默认追加。
         """
-        player_zones = {"hand", "equipment", "judge", "shown", "temporary"}
+        player_zones = {"hand", "equipment", "judge", "shown", "temporary", "treasure"}
         global_zones = {"deck", "discard"}
         valid_zones = player_zones | global_zones
         if (
@@ -332,6 +335,8 @@ class GameState:
                 return owner.shown
             if zone == "temporary":
                 return owner.temporary
+            if zone == "treasure":
+                return owner.treasure_cards
             if zone == "equipment":
                 if slot is not None:
                     return owner.equipment if owner.equipment.get(slot) is card else None
@@ -357,7 +362,8 @@ class GameState:
         for stored in (self.deck, self.discard_pile):
             stored_cards.extend(stored)
         for player in self.players:
-            for stored in (player.hand, player.judge_area, player.shown, player.temporary):
+            for stored in (player.hand, player.judge_area, player.shown,
+                           player.temporary, player.treasure_cards):
                 stored_cards.extend(stored)
             stored_cards.extend(player.equipment.values())
         if (
@@ -417,6 +423,9 @@ class GameState:
         """下一回合"""
         # 重置当前玩家状态
         self.current_player.sha_count = 0
+        self.current_player.jiu_used_this_turn = False
+        self.current_player.jiu_buff = False
+        self.current_player.flags.pop("muniu_stored_this_turn", None)
         
         # 下一个玩家
         self.current_player_index = (self.current_player_index + 1) % len(self.players)

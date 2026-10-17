@@ -10,7 +10,7 @@ PROTOCOL_VERSION = "1.0"
 
 
 class INBOUND:
-    """前端 → 服务器（WebSocket 入站消息类型，8 种）。"""
+    """前端 → 服务器（WebSocket 入站消息类型，9 种）。"""
 
     CREATE_GAME = "create_game"
     PLAYER_ACTION = "player_action"
@@ -18,12 +18,13 @@ class INBOUND:
     CARD_ANIMATION_DONE = "card_animation_done"
     END_GAME = "end_game"
     UPDATE_AI_CONFIG = "update_ai_config"
+    SET_TRUSTEE = "set_trustee"
     PING = "ping"
     SERVER_INFO = "server_info"
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，16 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，18 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -38,6 +39,8 @@ class OUTBOUND:
     CHAT = "chat"
     EVENT_NOTIFICATION = "event_notification"
     AI_CONFIG_UPDATED = "ai_config_updated"
+    TRUSTEE_STATUS = "trustee_status"
+    DECISION_TRACE = "decision_trace"
     END_GAME_ACCEPTED = "end_game_accepted"
     GAME_END = "game_end"
     ERROR = "error"
@@ -56,6 +59,8 @@ class ENGINE_EVENT:
     SELECTION_RESULT = "selection_result"
     CARD_MOVE = "card_move"
     GAME_END = "game_end"
+    TRUSTEE_STATUS = "trustee_status"
+    DECISION_TRACE = "decision_trace"
     # 特化事件：卡牌动画，经专用 handler 转发（await_ui ACK 机制），不在 ENGINE_EVENTS 循环注册。
     CARD_ANIMATION = "card_animation"
 
@@ -80,6 +85,8 @@ ENGINE_EVENTS = (
     ENGINE_EVENT.SELECTION_RESULT,
     ENGINE_EVENT.CARD_MOVE,
     ENGINE_EVENT.GAME_END,
+    ENGINE_EVENT.TRUSTEE_STATUS,
+    ENGINE_EVENT.DECISION_TRACE,
 )
 
 # Provider 清单（8 家）。default_url 均为 OpenAI 兼容端点；

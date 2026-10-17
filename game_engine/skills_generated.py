@@ -172,9 +172,9 @@ class Skill_guanyu_16(RuntimeSkill):
     def __init__(self):
         super().__init__(
             skill_id='guanyu_义绝', name='义绝',
-            owner_hero_id='guanyu', skill_type='locked',
+            owner_hero_id='guanyu', skill_type='active',
             trigger_event='PLAY_PHASE',
-            forced=True, limited=False,
+            forced=False, limited=False,
             description='出牌阶段限一次，你可以弃置一张牌并令一名有手牌的其他角色展示一张手牌。若此牌为黑色，则该角色不能使用或打出手牌，非锁定技失效且受到来自你的红桃【杀】的伤害+1直到回合结束。若此牌为红色，则你可以获得此牌，并可以令其回复1点体力。', faction='shu',
             implementation_status='active',
         )
@@ -260,9 +260,9 @@ class Skill_machao_24(RuntimeSkill):
     def __init__(self):
         super().__init__(
             skill_id='machao_铁骑', name='铁骑',
-            owner_hero_id='machao', skill_type='locked',
+            owner_hero_id='machao', skill_type='trigger',
             trigger_event='JUDGE',
-            forced=True, limited=False,
+            forced=False, limited=False,
             description='当你使用【杀】指定一名角色为目标后，你可以进行一次判定并令该角色的非锁定技失效直到回合结束，除非该角色交给你一张与判定结果花色相同的牌，否则不能使用【闪】抵消此【杀】且此【杀】伤害+1。', faction='shu',
             implementation_status='active',
         )

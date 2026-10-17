@@ -70,9 +70,6 @@ def reset_turn_flags(player):
     flags["trick_used_this_turn"] = False
     flags["turn_discard_suits"] = set()
     flags["hand_limit_bonus"] = 0
-    flags.pop("cannot_use_hand", None)
-    flags.pop("nonlocked_disabled", None)
-    flags.pop("yijue_heart_source", None)
     flags.pop("pao_tokens", None)
 
 
@@ -121,7 +118,8 @@ class FactionSkillHandler:
         self.state = manager.engine.game_state if manager.engine else None
 
     def has(self, player, name: str) -> bool:
-        return self.manager.has_skill(player, name)
+        # 闪电等无伤害来源的事件仍会广播给技能钩子。
+        return player is not None and self.manager.has_skill(player, name)
 
     def get_actions(self, player) -> List[Dict]:
         return []
@@ -158,6 +156,16 @@ class FactionSkillHandler:
 
     def response_options(self, player, requested_name: str) -> List[Dict]:
         return []
+
+    def response_card_entries(self, player):
+        """列出本人可用于响应转化的实体牌及真实牌区。"""
+        # 禁用手牌只限制 hand；木牛扣置牌拥有独立牌区和公开的响应入口。
+        if not player.flags.get("cannot_use_hand"):
+            for index, card in enumerate(player.hand):
+                yield card, index, "hand"
+        if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+            for index, card in enumerate(player.treasure_cards):
+                yield card, len(player.hand) + index, "treasure"
 
     def can_target(self, source, target, card_name: str) -> Optional[str]:
         return None

@@ -30,7 +30,7 @@ class ShuSkillHandler(FactionSkillHandler):
         flags = ensure_flags(player)
 
         # 仁德：每次交一张牌，同一阶段不能重复同一目标；累计两张后可视为基本牌。
-        if self.has(player, "仁德") and player.hand:
+        if self.has(player, "仁德"):
             used_targets = set(flags.get("rende_targets", []))
             valid = [pid for pid in self._target_ids(player) if pid not in used_targets]
             for index in range(len(player.hand)):
@@ -45,29 +45,29 @@ class ShuSkillHandler(FactionSkillHandler):
 
         # 激将：主公向其他蜀势力角色征用一张杀。
         if self.has(player, "激将") and player.identity == "lord":
-            donors = [p for p in alive_others(self.state, player) if hero_faction(p) == "shu" and any(c.name == "杀" for c in p.hand)]
+            donors = [p for p in alive_others(self.state, player) if hero_faction(p) == "shu"
+                      and any(card.name == "杀" for card, _index, _zone in self.response_card_entries(p))]
             targets = self._sha_targets(player)
             if donors and targets and player.sha_count < player.max_sha:
                 actions.append(self._action("激将", "borrow_sha", [], targets, True, "令蜀势力角色打出【杀】"))
 
         # 武圣：红色牌当杀；方片无距离限制。
         if self.has(player, "武圣") and player.sha_count < player.max_sha:
-            for index, card in enumerate(player.hand):
+            for card, index, _zone in self.response_card_entries(player):
                 if card_color(card) == "red" and card.name != "杀":
                     targets = self._sha_targets(player, ignore_distance=card.suit == "diamond")
                     if targets:
                         actions.append(self._action("武圣", "as_sha", [index], targets, True, f"将{card.name}当【杀】"))
 
         # 义绝：弃一张牌，令目标展示一张手牌。
-        if self.has(player, "义绝") and player.hand and not once_per_turn(player, "义绝"):
+        if self.has(player, "义绝") and (player.hand or player.equipment) and not once_per_turn(player, "义绝"):
             valid = self._target_ids(player, require_hand=True)
-            for index in range(len(player.hand)):
-                if valid:
-                    actions.append(self._action("义绝", "reveal", [index], valid, True, "弃牌并令目标展示手牌"))
+            if valid:
+                actions.append(self._action("义绝", "reveal", [], valid, True, "弃牌并令目标展示手牌"))
 
         # 龙胆：闪当杀（酒/桃互换在当前牌堆出现酒后自动由同一分支扩展）。
         if self.has(player, "龙胆") and player.sha_count < player.max_sha:
-            for index, card in enumerate(player.hand):
+            for card, index, _zone in self.response_card_entries(player):
                 if card.name == "闪":
                     targets = self._sha_targets(player)
                     if targets:
@@ -107,28 +107,58 @@ class ShuSkillHandler(FactionSkillHandler):
             flags = ensure_flags(player)
             if not flags.get("rende_basic_available"):
                 return False
+            virtual = None
+            if variant == "basic_tao" and player.hp >= player.max_hp:
+                return False
+            if variant == "basic_sha":
+                if target is None:
+                    return False
+                virtual = Card(f"skill_rende_sha_{player.id}", "杀", "heart", 1, "basic")
+                if not self.engine.rules.can_play_sha(player, virtual, [target])[0]:
+                    return False
             flags["rende_basic_available"] = False
             flags["rende_basic_used"] = True
             await self.manager.announce(player, "仁德", f"{player.name}以【仁德】视为使用基本牌")
             if variant == "basic_tao":
-                if player.hp >= player.max_hp:
-                    return False
                 await self.manager.recover(player, 1, player, "仁德")
                 return True
-            virtual = Card(f"skill_rende_sha_{player.id}", "杀", "heart", 1, "basic")
             return await self.engine.card_system.use_sha(player, virtual, target)
 
         if name == "激将" and variant == "borrow_sha":
-            donor = next((p for p in alive_others(self.state, player) if hero_faction(p) == "shu" and any(c.name == "杀" for c in p.hand)), None)
-            if not donor or not target:
+            if not target:
                 return False
-            card = next(c for c in donor.hand if c.name == "杀")
+            donor_entry = None
+            for donor in alive_others(self.state, player):
+                if hero_faction(donor) != "shu":
+                    continue
+                options = [(card, zone) for card, _index, zone in self.response_card_entries(donor)
+                           if card.name == "杀"]
+                if not options:
+                    continue
+                if not await self.manager.ask_confirm(
+                    donor, f"是否响应{player.name}的【激将】，打出一张【杀】？",
+                    skill_name="激将", default=False,
+                ) or self.engine.game_aborted:
+                    continue
+                cards = await self.manager.ask_choose_cards(
+                    donor, "请选择交给【激将】的一张【杀】", [item[0] for item in options],
+                    skill_name="激将", cancelable=True,
+                    places=[(donor, zone) for _card, zone in options],
+                )
+                if cards and not self.engine.game_aborted:
+                    card = cards[0]
+                    source_zone = next(zone for candidate, zone in options if candidate is card)
+                    donor_entry = (donor, card, source_zone)
+                    break
+            if donor_entry is None:
+                return False
+            donor, card, source_zone = donor_entry
             virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic")
             context = self.engine._new_effect_context(
                 player, virtual, skill_source="激将", card_cost_ids=[card.id], target=target,
             )
             move = await self.engine.move_card(
-                card, "hand", "discard", from_owner=donor,
+                card, source_zone, "discard", from_owner=donor,
                 reason="激将", actor_id=player.id, effect_id=context.effect_id,
             )
             if move is None:
@@ -139,10 +169,15 @@ class ShuSkillHandler(FactionSkillHandler):
             return await self.engine.card_system.use_sha(player, virtual, target, effect_context=context)
 
         if name in ("武圣", "龙胆") and variant in ("as_sha", "shan_as_sha"):
-            if not indices or not target or not 0 <= indices[0] < len(player.hand):
+            if not indices or not target:
                 return False
-            source = player.hand[indices[0]]
-            expected = name == "武圣" and card_color(source) == "red" or name == "龙胆" and source.name == "闪"
+            candidate = next(((card, zone) for card, index, zone in self.response_card_entries(player)
+                              if index == indices[0]), None)
+            if candidate is None:
+                return False
+            source, _source_zone = candidate
+            expected = (name == "武圣" and card_color(source) == "red" and source.name != "杀"
+                        or name == "龙胆" and source.name == "闪")
             if not expected:
                 return False
             virtual = Card(f"skill_{name}_{source.id}", "杀", source.suit, source.rank, "basic")
@@ -156,22 +191,63 @@ class ShuSkillHandler(FactionSkillHandler):
             return await self.engine.card_system.use_sha(player, virtual, target, effect_context=context)
 
         if name == "义绝" and variant == "reveal":
-            if not indices or not target or not target.hand or not 0 <= indices[0] < len(player.hand):
+            if not target or not target.hand or once_per_turn(player, "义绝"):
                 return False
-            cost = player.hand[indices[0]]
-            await self._discard_cost(player, cost, "义绝")
+            costs = [(card, "hand") for card in player.hand]
+            costs.extend((card, "equipment") for card in player.equipment.values())
+            if not costs:
+                return False
+            selected_cost = await self.manager.ask_choose_cards(
+                player, "【义绝】：选择弃置的一张手牌或装备牌",
+                [card for card, _zone in costs], skill_name="义绝", cancelable=True,
+                places=[(player, zone) for _card, zone in costs],
+            )
+            if self.engine.game_aborted or not selected_cost:
+                return False
+            cost = selected_cost[0]
+            cost_zone = next((zone for card, zone in costs if card is cost), None)
+            if cost_zone is None or await self.engine.move_card(
+                cost, cost_zone, "discard", from_owner=player,
+                reason="义绝", actor_id=player.id,
+            ) is None:
+                return False
             mark_once_per_turn(player, "义绝")
-            shown = target.hand[0]
+            await self.engine.card_system.notify_card_to_discard(
+                player, cost, "discard", message=f"{player.name}发动【义绝】弃置【{cost.name}】",
+            )
+            if not self.engine.game_aborted:
+                await self.manager.on_card_discarded(player, cost, "义绝")
+            if self.engine.game_aborted or not target.hand:
+                return True
+            shown_cards = await self.manager.ask_choose_cards(
+                target, "【义绝】：请选择展示的一张手牌", list(target.hand),
+                skill_name="义绝", cancelable=False,
+            )
+            if self.engine.game_aborted or not shown_cards:
+                return True
+            shown = shown_cards[0]
+            if shown not in target.hand:
+                return True
             await self.manager.announce(player, "义绝", f"{target.name}因【义绝】展示{shown.suit}{shown.rank}【{shown.name}】")
             if card_color(shown) == "black":
                 flags = ensure_flags(target)
                 flags["cannot_use_hand"] = True
                 flags["nonlocked_disabled"] = True
-                flags["yijue_heart_source"] = player.id
+                sources = flags.setdefault("yijue_sources", [])
+                if player.id not in sources:
+                    sources.append(player.id)
                 ensure_flags(player).setdefault("yijue_targets", []).append(target.id)
             else:
-                await self.manager.transfer_card(target, player, shown, "义绝")
-                if target.hp < target.max_hp:
+                if await self.manager.ask_confirm(
+                    player, f"是否获得{target.name}展示的【{shown.name}】？",
+                    skill_name="义绝", default=False,
+                ) and not self.engine.game_aborted and shown in target.hand:
+                    await self.manager.transfer_card(target, player, shown, "义绝")
+                if (not self.engine.game_aborted and target.hp < target.max_hp
+                        and await self.manager.ask_confirm(
+                            player, f"是否令{target.name}回复1点体力？",
+                            skill_name="义绝", default=False,
+                        ) and not self.engine.game_aborted):
                     await self.manager.recover(target, 1, player, "义绝")
             return True
 
@@ -187,7 +263,12 @@ class ShuSkillHandler(FactionSkillHandler):
         )
 
     async def _consume_conversion(self, player, card, skill_name, as_name, *, effect_id=None):
-        index = player.hand.index(card)
+        # 木牛扣置牌使用与手牌相同的技能入口，但移动必须来自真实 treasure 牌区。
+        entry = next(((index, zone) for candidate, index, zone in self.response_card_entries(player)
+                      if candidate is card), None)
+        if entry is None:
+            return False
+        index, source_zone = entry
         await self.manager.announce(player, skill_name, f"{player.name}发动【{skill_name}】，将【{card.name}】当【{as_name}】")
         await self.engine._notify_card_ui(
             message=f"{player.name}以【{skill_name}】将【{card.name}】当【{as_name}】",
@@ -198,7 +279,7 @@ class ShuSkillHandler(FactionSkillHandler):
             reason="skill_conversion", discard_count=len(self.state.discard_pile) + 1,
         )
         move = await self.engine.move_card(
-            card, "hand", "discard", from_owner=player,
+            card, source_zone, "discard", from_owner=player,
             reason=skill_name, actor_id=player.id, effect_id=effect_id,
         )
         if move is None:
@@ -208,6 +289,7 @@ class ShuSkillHandler(FactionSkillHandler):
 
     async def on_turn_start(self, player):
         flags = ensure_flags(player)
+        flags.pop("guanxing_bottomed", None)
         flags.pop("rende_targets", None)
         flags.pop("rende_count", None)
         flags.pop("rende_basic_available", None)
@@ -218,50 +300,113 @@ class ShuSkillHandler(FactionSkillHandler):
 
     async def before_phase(self, player, phase):
         if phase == Phase.PREPARE:
-            # 替身限定技：受伤时自动发动，回复值等量摸牌。
+            # 限定技先由拥有者决定，确认后才消耗整局次数。
             if (self.has(player, "替身") and player.hp < player.max_hp
                     and self.manager.skill_available(player, "替身")
+                    and await self.manager.ask_confirm(
+                        player, "是否发动限定技【替身】？", skill_name="替身", default=False,
+                    ) and not self.engine.game_aborted
                     and self.manager.consume_skill_use(player, "替身", charges=1)):
                 recovered = player.max_hp - player.hp
-                flags = ensure_flags(player)
-                flags.setdefault("limited_skills", set()).add("替身")
                 await self.manager.recover(player, recovered, player, "替身")
-                self.state.draw_card(player, recovered)
+                if self.engine.game_aborted:
+                    return None
+                await self.manager.draw_cards(player, recovered, "替身")
                 await self.manager.announce(player, "替身", f"{player.name}发动【替身】，回复{recovered}点体力并摸{recovered}张牌")
-                # 观星：自动把当前最需要的牌置于牌堆顶。
-                # 评分保留现值（桃在掉血时100否则40，闪80，杀60，过河拆桥55，其余20）——
-                # 观星是"预测下一张可用牌"的战术评分，与弃牌托管保留分（phase_controller
-                # KEEP_SCORE，防弃牌）目的不同，刻意不与 CARD_TABLE 共用一套分值。
-                if self.has(player, "观星") and self.state.deck:
-                    count = 3 if len([p for p in self.state.players if p.alive]) < 4 else 5
-                    cards = self.state.deck[:count]
-                    score = {"桃": 100 if player.hp < player.max_hp else 40, "闪": 80, "杀": 60, "过河拆桥": 55}
-                cards.sort(key=lambda c: (score.get(c.name, 20), -c.rank), reverse=True)
-                self.state.deck[:count] = cards
-                await self.manager.announce(player, "观星", f"{player.name}发动【观星】，调整牌堆顶{len(cards)}张牌")
+            if self.has(player, "观星") and self.state.deck:
+                await self._guanxing(player)
+        elif phase == Phase.END and ensure_flags(player).pop("guanxing_bottomed", False) and self.state.deck:
+            if self.has(player, "观星"):
+                await self._guanxing(player)
         return None
+
+    async def _guanxing(self, player):
+        if not await self.manager.ask_confirm(
+            player, "是否发动【观星】？", skill_name="观星", default=False,
+        ) or self.engine.game_aborted:
+            return
+        count = min(len(self.state.deck), 3 if sum(p.alive for p in self.state.players) < 4 else 5)
+        revealed = list(self.state.deck[:count])
+        if count == 1:
+            choice = await self.manager.ask_choose_option(
+                player, "将这张观星牌置于哪里？",
+                [{"key": "top", "label": "牌堆顶"}, {"key": "bottom", "label": "牌堆底"}],
+                skill_name="观星",
+            )
+            if self.engine.game_aborted or choice is None:
+                return
+            top_cards = revealed if choice.get("key") == "top" else []
+        else:
+            top = await self.manager.ask_choose_cards_result(
+                player, "按点击顺序选择置于牌堆顶的牌；未选牌将置于牌堆底",
+                revealed, min_n=0, max_n=count, zone="deck", skill_name="观星",
+                cancelable=False, places=[(None, "deck")] * count,
+            )
+            if self.engine.game_aborted or not top.get("bool"):
+                return
+            top_cards = top["cards"]
+        bottom = [card for card in revealed if card not in top_cards]
+        if len(bottom) > 1:
+            ordered = await self.manager.ask_choose_cards_result(
+                player, "按点击顺序排列置于牌堆底的牌", bottom,
+                min_n=len(bottom), max_n=len(bottom), zone="deck", skill_name="观星",
+                cancelable=False, places=[(None, "deck")] * len(bottom),
+            )
+            if self.engine.game_aborted or not ordered.get("bool"):
+                return
+            bottom = ordered["cards"]
+        if self.state.deck[:count] != revealed:
+            return
+        self.state.deck[:] = top_cards + self.state.deck[count:] + bottom
+        if self.state.current_phase == Phase.PREPARE:
+            ensure_flags(player)["guanxing_bottomed"] = not top_cards
+        await self.manager.announce(player, "观星", f"{player.name}发动【观星】，调整牌堆顶{count}张牌")
 
     async def after_phase(self, player, phase):
         if phase != Phase.END:
             return
         flags = ensure_flags(player)
-        for key in ("yijue_targets", "tieqi_targets"):
+        for key, source_key in (("yijue_targets", "yijue_sources"),
+                                ("tieqi_targets", "tieqi_sources")):
             for target_id in flags.pop(key, []):
                 target = player_by_id(self.state, target_id)
                 if target:
                     tflags = ensure_flags(target)
-                    tflags.pop("cannot_use_hand", None)
-                    tflags.pop("nonlocked_disabled", None)
-                    tflags.pop("yijue_heart_source", None)
+                    remaining = [source_id for source_id in tflags.get(source_key, [])
+                                 if source_id != player.id]
+                    if remaining:
+                        tflags[source_key] = remaining
+                    else:
+                        tflags.pop(source_key, None)
+                    if not tflags.get("yijue_sources"):
+                        tflags.pop("cannot_use_hand", None)
+                    if not (tflags.get("yijue_sources") or tflags.get("tieqi_sources")):
+                        tflags.pop("nonlocked_disabled", None)
         flags.pop("pao_tokens", None)
 
     async def before_sha(self, source, target, card, event):
         # 铁骑：判定；目标若不能交同花色牌，则不可闪且伤害+1。
-        if self.has(source, "铁骑") and self.state.deck:
-            judge = self.state.deck.pop(0)
-            self.state.discard_pile.append(judge)
-            ensure_flags(target)["nonlocked_disabled"] = True
-            matching = next((c for c in target.hand if c.suit == judge.suit), None)
+        if (self.has(source, "铁骑") and self.state.deck
+                and await self.manager.ask_confirm(
+                    source, f"是否对{target.name}发动【铁骑】？", skill_name="铁骑", default=False,
+                ) and not self.engine.game_aborted):
+            judge = await self.manager.judge(target, "铁骑")
+            if judge is None or self.engine.game_aborted:
+                return
+            target_flags = ensure_flags(target)
+            target_flags["nonlocked_disabled"] = True
+            sources = target_flags.setdefault("tieqi_sources", [])
+            if source.id not in sources:
+                sources.append(source.id)
+            ensure_flags(source).setdefault("tieqi_targets", []).append(target.id)
+            candidates = [c for c in target.hand if c.suit == judge.suit]
+            selected = await self.manager.ask_choose_cards(
+                target, "可交给铁骑使用者一张与判定牌同花色的手牌",
+                candidates, skill_name="铁骑", cancelable=True,
+            ) if candidates else []
+            if self.engine.game_aborted:
+                return
+            matching = selected[0] if selected else None
             if matching:
                 await self.manager.transfer_card(target, source, matching, "铁骑")
                 await self.manager.announce(source, "铁骑", f"{target.name}交出同花色牌响应【铁骑】")
@@ -283,7 +428,8 @@ class ShuSkillHandler(FactionSkillHandler):
             if tokens:
                 amount += tokens
                 await self.manager.announce(source, "咆哮", f"{source.name}弃置{tokens}枚“咆”，伤害+{tokens}")
-        if source and target and ensure_flags(target).get("yijue_heart_source") == source.id and card and card.name == "杀" and card.suit == "heart":
+        if (source and target and source.id in ensure_flags(target).get("yijue_sources", [])
+                and card and card.name == "杀" and card.suit == "heart"):
             amount += 1
         return amount
 
@@ -295,49 +441,86 @@ class ShuSkillHandler(FactionSkillHandler):
             flags["sha_used_this_turn"] = True
         if card_type_group(card) == "trick":
             flags["trick_used_this_turn"] = True
-            if self.has(player, "集智"):
-                drawn = self.state.draw_card(player, 1)
+            if (self.has(player, "集智") and await self.manager.ask_confirm(
+                    player, "是否发动【集智】摸一张牌？", skill_name="集智", default=False,
+                ) and not self.engine.game_aborted):
+                drawn = await self.manager.draw_cards(player, 1, "集智")
                 if drawn:
                     await self.manager.announce(player, "集智", f"{player.name}发动【集智】摸一张牌")
                     card_drawn = drawn[0]
-                    if card_type_group(card_drawn) == "basic" and len(player.hand) > player.hp:
-                        player.hand.remove(card_drawn)
-                        self.state.discard_pile.append(card_drawn)
-                        await self.manager.on_cards_lost(player, [card_drawn], "集智")
+                    if (card_type_group(card_drawn) == "basic"
+                            and await self.manager.ask_confirm(
+                                player, f"是否弃置摸到的【{card_drawn.name}】使手牌上限+1？",
+                                skill_name="集智", default=False,
+                            ) and not self.engine.game_aborted
+                            and await self.manager.discard_card(player, card_drawn, "集智")):
                         flags["hand_limit_bonus"] = flags.get("hand_limit_bonus", 0) + 1
-                        await self.engine.card_system.notify_card_to_discard(player, card_drawn, "discard", message=f"{player.name}因【集智】弃置摸到的基本牌")
 
     def response_options(self, player, requested_name):
-        if ensure_flags(player).get("cannot_use_hand"):
-            return []
         options = []
         if requested_name == "闪" and self.has(player, "龙胆"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card.name == "杀":
-                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "龙胆", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         if requested_name == "杀":
             if self.has(player, "武圣"):
-                for index, card in enumerate(player.hand):
+                for card, index, zone in self.response_card_entries(player):
                     if card.name != "杀" and card_color(card) == "red":
-                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "武圣", "owner": player})
+                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "武圣", "owner": player, "source_zone": zone})
             if self.has(player, "龙胆"):
-                for index, card in enumerate(player.hand):
+                for card, index, zone in self.response_card_entries(player):
                     if card.name == "闪":
-                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "龙胆", "owner": player})
+                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "龙胆", "owner": player, "source_zone": zone})
             if self.has(player, "激将") and player.identity == "lord":
-                donor = next((p for p in alive_others(self.state, player) if hero_faction(p) == "shu" and any(c.name == "杀" for c in p.hand)), None)
-                if donor:
-                    card = next(c for c in donor.hand if c.name == "杀")
-                    options.append({"card": card, "card_index": donor.hand.index(card), "as_name": "杀", "skill_name": "激将", "owner": donor})
+                for donor in alive_others(self.state, player):
+                    if hero_faction(donor) != "shu":
+                        continue
+                    candidate = next(((card, index, zone) for card, index, zone in self.response_card_entries(donor)
+                                      if card.name == "杀"), None)
+                    if candidate:
+                        card, index, zone = candidate
+                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "激将", "owner": donor, "source_zone": zone})
         if requested_name == "桃" and self.has(player, "龙胆"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card.name == "酒":
-                    options.append({"card": card, "card_index": index, "as_name": "桃", "skill_name": "龙胆", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "桃", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         if requested_name == "酒" and self.has(player, "龙胆"):
-            for index, card in enumerate(player.hand):
+            for card, index, zone in self.response_card_entries(player):
                 if card.name == "桃":
-                    options.append({"card": card, "card_index": index, "as_name": "酒", "skill_name": "龙胆", "owner": player})
+                    options.append({"card": card, "card_index": index, "as_name": "酒", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         return options
+
+    async def request_jijiang_response(self, lord, first_donor):
+        """主公提出激将后，由蜀势力角色逐个自行决定是否供牌。"""
+        if not self.has(lord, "激将") or lord.identity != "lord":
+            return None
+        donors = [p for p in alive_others(self.state, lord) if hero_faction(p) == "shu"]
+        if first_donor in donors:
+            donors = donors[donors.index(first_donor):] + donors[:donors.index(first_donor)]
+        for donor in donors:
+            entries = [(card, zone) for card, _index, zone in self.response_card_entries(donor)
+                       if card.name == "杀"]
+            if not entries:
+                continue
+            if not await self.manager.ask_confirm(
+                donor, f"是否响应{lord.name}的【激将】打出【杀】？",
+                skill_name="激将", default=False,
+            ) or self.engine.game_aborted:
+                continue
+            selected = await self.manager.ask_choose_cards(
+                donor, "【激将】：选择打出的一张【杀】", [card for card, _zone in entries],
+                places=[(donor, zone) for _card, zone in entries],
+                skill_name="激将", cancelable=True,
+            )
+            if self.engine.game_aborted:
+                return None
+            if selected:
+                card = selected[0]
+                zone = next((source_zone for candidate, source_zone in entries if candidate is card), None)
+                if zone is not None:
+                    return {"bool": True, "card": card, "owner": donor,
+                            "source_zone": zone, "as_name": "杀", "skill_name": "激将"}
+        return None
 
     async def on_card_responded(self, player, card, as_name, context=None):
         owner = (context or {}).get("owner")
@@ -350,24 +533,70 @@ class ShuSkillHandler(FactionSkillHandler):
         responder = owner or player
         if hero_faction(responder) == "shu" and responder is not self.state.current_player and as_name == "杀":
             lord = next((p for p in self.state.players if p.alive and p.identity == "lord" and self.has(p, "激将") and not once_per_turn(p, "激将摸牌")), None)
-            if lord:
+            if lord and await self.manager.ask_confirm(
+                responder, f"是否令{lord.name}因【激将】摸一张牌？",
+                skill_name="激将", default=False,
+            ) and not self.engine.game_aborted:
                 mark_once_per_turn(lord, "激将摸牌")
                 await self.manager.draw_cards(lord, 1, "激将")
                 await self.manager.announce(lord, "激将", f"{responder.name}于回合外打出【杀】，{lord.name}因【激将】摸一张牌")
-        if self.has(player, "涯角") and player is not self.state.current_player and self.state.deck:
-            revealed = self.state.deck.pop(0)
-            if card_type_group(revealed) == card_type_group(card):
-                player.hand.append(revealed)
-                await self.manager.announce(player, "涯角", f"{player.name}发动【涯角】并获得展示牌【{revealed.name}】")
-            else:
-                self.state.discard_pile.append(revealed)
-                source = (context or {}).get("source")
-                if source and source.hand:
-                    removed = source.hand[0]
-                    source.hand.remove(removed)
-                    self.state.discard_pile.append(removed)
-                    await self.manager.on_cards_lost(source, [removed], "涯角")
-                    await self.manager.announce(player, "涯角", f"{player.name}发动【涯角】弃置{source.name}一张牌")
+
+    async def on_cards_lost(self, player, cards, reason="unknown", *, event=None):
+        if (not self.has(player, "涯角") or player is self.state.current_player
+                or not self.state.deck or event is None or event.from_zone != "hand"
+                or reason not in {"use_card", "respond", "武圣", "龙胆"}):
+            return
+        if not await self.manager.ask_confirm(
+            player, "是否发动【涯角】展示牌堆顶一张牌？",
+            skill_name="涯角", default=False,
+        ) or self.engine.game_aborted:
+            return
+        revealed = self.state.deck[0]
+        moved = await self.engine.move_card(
+            revealed, "deck", "discard", reason="涯角展示",
+            actor_id=player.id, visibility="public",
+        )
+        if moved is None or self.engine.game_aborted:
+            return
+        await self.manager.announce(player, "涯角", f"{player.name}展示【{revealed.name}】")
+        if card_type_group(revealed) == card_type_group(cards[0]):
+            recipients = [p for p in self.state.players if p.alive]
+            chosen = await self.manager.ask_choose_players(
+                player, "【涯角】：选择获得展示牌的角色；可取消",
+                recipients, skill_name="涯角", cancelable=True,
+            )
+            if chosen and not self.engine.game_aborted and revealed in self.state.discard_pile:
+                receiver = chosen[0]
+                gained = await self.engine.move_card(
+                    revealed, "discard", "hand", to_owner=receiver,
+                    reason="涯角", actor_id=player.id, visibility="public",
+                )
+                if gained is not None:
+                    await self.manager.on_card_gained(receiver, [revealed], "涯角")
+                    await self.manager.announce(player, "涯角", f"{receiver.name}获得【{revealed.name}】")
+            return
+        candidates = [p for p in self.state.players if p.alive and (p.hand or p.equipment or p.judge_area)
+                      and self.manager.modify_distance(p, player, self.state.get_distance(p, player))
+                      <= p.get_equipment_range()]
+        if not candidates:
+            return
+        chosen = await self.manager.ask_choose_players(
+            player, "【涯角】：选择弃置区域牌的角色；可取消",
+            candidates, skill_name="涯角", cancelable=True,
+        )
+        if self.engine.game_aborted or not chosen:
+            return
+        target = chosen[0]
+        selected = await self.engine.card_system._choose_region_card(
+            player, target, f"【涯角】：选择弃置{target.name}区域内的一张牌",
+            reason="涯角", exclude_protected=True,
+        )
+        if self.engine.game_aborted or selected is None:
+            return
+        card, zone = selected
+        if await self.engine.move_card(card, zone, "discard", from_owner=target,
+                                       reason="涯角", actor_id=player.id):
+            await self.manager.announce(player, "涯角", f"{player.name}弃置{target.name}区域内一张牌")
 
     def can_target(self, source, target, card_name):
         if self.has(target, "空城") and not target.hand and card_name in ("杀", "决斗"):

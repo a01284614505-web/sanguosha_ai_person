@@ -1,203 +1,95 @@
-// 结算页面逻辑
-class ResultController {
-    constructor() {
-        this.resultData = null;
-        
-        this.init();
+// 结算页：只展示 game_end 下发的真实统计（口径见 game_engine/game_stats.py），不在 UI 层计算。
+// 数据来自对局页写入的 localStorage['gameResult']；没有数据时提示去大厅开局。
+(function () {
+    'use strict';
+    const { esc, store } = SGS;
+
+    function identityName(id) {
+        return (SGS.IDENTITY[id] || {}).name || ({ aborted: '主动终止', draw: '平局' }[id]) || id || '未知';
     }
-
-    init() {
-        // 加载结算数据
-        this.resultData = JSON.parse(localStorage.getItem('gameResult') || '{}');
-        
-        if (!this.resultData.winner) {
-            alert('未找到游戏结果');
-            window.location.href = 'index.html';
-            return;
-        }
-
-        // 渲染结算页面
-        this.render();
-
-        // 绑定按钮
-        document.getElementById('playAgainBtn').addEventListener('click', () => {
-            // 保留配置，重新开始
-            window.location.href = 'index.html';
-        });
-
-        document.getElementById('backToLobbyBtn').addEventListener('click', () => {
-            window.location.href = 'index.html';
-        });
-    }
-
-    identityText(identity) {
-        const map = {lord:'主公', loyalist:'忠臣', rebel:'反贼', spy:'内奸', aborted:'主动终止', draw:'平局'};
-        return map[identity] || identity || '未知';
-    }
-
-    // 渲染结算页面
-    render() {
-        // 标题
-        const isVictory = this.resultData.player_won;
-        document.getElementById('resultTitle').textContent = isVictory ? '胜利！' : '失败';
-        document.getElementById('resultTitle').style.color = isVictory ? 'var(--success)' : 'var(--danger)';
-        document.getElementById('resultSubtitle').textContent = this.resultData.winner === 'aborted' ? (this.resultData.message || '本局已主动结束') : `${this.identityText(this.resultData.winner)}阵营获胜`;
-
-        // 统计信息
-        document.getElementById('totalRounds').textContent = this.resultData.total_rounds || 0;
-        document.getElementById('gameDuration').textContent = this.formatDuration(this.resultData.duration || 0);
-        document.getElementById('yourIdentity').textContent = this.identityText(this.resultData.player_identity);
-
-        // MVP信息（真实统计来自引擎 game_end payload）
-        const mvpCard = document.getElementById('mvpCard');
-        if (this.resultData.mvp) {
-            mvpCard.style.display = '';
-            this.renderMVP(this.resultData.mvp);
-        } else {
-            mvpCard.style.display = 'none';
-        }
-
-        // 玩家数据
-        this.renderStats();
-
-        // 身份揭示
-        this.renderIdentities();
-
-        // 奖励
-        this.renderRewards();
-    }
-
-    // 格式化时长
-    formatDuration(seconds) {
+    function formatDuration(seconds) {
         const total = Math.max(0, Number(seconds) || 0);
-        const minutes = Math.floor(total / 60);
-        const secs = Math.floor(total % 60);
-        return `${minutes}分${secs}秒`;
+        const m = Math.floor(total / 60);
+        const s = Math.floor(total % 60);
+        return m ? m + ' 分 ' + s + ' 秒' : s + ' 秒';
     }
 
-    // 渲染MVP
-    renderMVP(mvp) {
-        const mvpInfo = document.getElementById('mvpInfo');
-        const heroName = mvp.hero_name ? ` (${mvp.hero_name})` : '';
-        mvpInfo.innerHTML = `
-            <div class="mvp-hero">
-                <img src="assets/heroes/${mvp.hero_id}.jpg" alt="${mvp.hero_name}" onerror="this.style.display='none'">
-                <div class="mvp-name">${mvp.player_name}${heroName}</div>
-            </div>
-            <div class="mvp-stats">
-                <div>击杀：${mvp.kills || 0}</div>
-                <div>伤害：${mvp.damage_dealt || 0}</div>
-                <div>治疗：${mvp.healing || 0}</div>
-                <div>出牌：${mvp.cards_played || 0}</div>
-            </div>
-        `;
+    // 胜负印 + 标题 + 轮数/用时/身份 + MVP + 统计表 + 身份卡奖励。
+    function render(r) {
+        const decided = ['lord', 'rebel', 'spy'].includes(r.winner);
+        const verdict = document.getElementById('resultVerdict');
+        verdict.className = 'verdict ' + (decided ? (r.player_won ? 'win' : 'lose') : 'neutral');
+        verdict.textContent = decided ? (r.player_won ? '胜' : '败') : (r.winner === 'draw' ? '和' : '终');
+        document.getElementById('resultTitle').textContent = decided ? (r.player_won ? '旗开得胜' : '惜败一局') : (r.winner === 'draw' ? '握手言和' : '对局终止');
+        document.getElementById('resultSubtitle').textContent = decided
+            ? SGS.WINNER[r.winner] + '获胜'
+            : (r.message || '本局已结束');
+        document.getElementById('totalRounds').textContent = r.total_rounds || 0;
+        document.getElementById('gameDuration').textContent = formatDuration(r.duration);
+        document.getElementById('yourIdentity').textContent = identityName(r.player_identity);
+        if (r.profile) {
+            const profile = document.getElementById('profileSummary');
+            profile.hidden = false;
+            profile.textContent = '服务端档案：连胜 ' + (r.profile.win_streak || 0) + ' 局 · 总对局 ' +
+                (r.profile.total_games || 0) + ' 局 · 身份卡 ' + (r.profile.identity_cards || 0) + ' 张';
+        }
+        if (r.history_error) {
+            const error = document.getElementById('historySaveError');
+            error.hidden = false;
+            error.textContent = r.history_error + '；本局结果仍可查看，请稍后在大厅检查历史。';
+        }
+
+        if (r.mvp) {
+            const m = r.mvp;
+            document.getElementById('mvpCard').hidden = false;
+            document.getElementById('mvpInfo').innerHTML =
+                '<div class="mvp-portrait">' + SGS.heroImgHTML(m.hero_id, m.hero_name) + '</div>' +
+                '<h3>' + esc(m.player_name) + '</h3><div class="muted">' + esc(m.hero_name || '') + '</div>' +
+                '<div class="mvp-nums">' +
+                '<div>伤害 <b>' + (m.damage_dealt || 0) + '</b></div><div>击杀 <b>' + (m.kills || 0) + '</b></div>' +
+                '<div>治疗 <b>' + (m.healing || 0) + '</b></div><div>出牌 <b>' + (m.cards_played || 0) + '</b></div></div>';
+        }
+        renderStats(r);
+        if (r.reward === 'identity_card') document.getElementById('rewardSection').hidden = false;
     }
 
-    // 渲染每名玩家的真实对局统计
-    renderStats() {
-        const list = document.getElementById('statsList');
-        list.innerHTML = '';
-        const players = this.resultData.players || [];
-        if (!players.length) return;
-
-        const hasStats = players.some(player => player && player.stats);
-        if (!hasStats) {
-            const empty = document.createElement('div');
-            empty.className = 'stats-empty';
-            empty.textContent = '本局无统计数据（旧存档或对局未完成结算）';
-            list.appendChild(empty);
+    // 每名玩家一行：头像、身份印与七项统计；自己的一行高亮，阵亡的变灰。
+    function renderStats(r) {
+        const box = document.getElementById('statsList');
+        const players = r.players || [];
+        if (!players.some(p => p && p.stats)) {
+            box.innerHTML = '<p class="muted">本局没有统计数据（对局未完成结算或为旧版存档）。</p>';
             return;
         }
-
-        const headers = ['玩家', '伤害', '承伤', '治疗', '击杀', '出牌', '失牌', '技能'];
-        const head = document.createElement('div');
-        head.className = 'stats-row stats-head';
-        headers.forEach(label => {
-            const cell = document.createElement('div');
-            cell.textContent = label;
-            head.appendChild(cell);
-        });
-        list.appendChild(head);
-
-        players.forEach(player => {
-            const stats = player.stats || {};
-            const values = [
-                player.name + (player.hero_name ? `（${player.hero_name}）` : ''),
-                stats.damage_dealt || 0,
-                stats.damage_taken || 0,
-                stats.healing || 0,
-                stats.kills || 0,
-                stats.cards_played || 0,
-                stats.cards_lost || 0,
-                stats.skill_activations || 0
-            ];
-            const row = document.createElement('div');
-            row.className = 'stats-row' + (player.alive ? '' : ' dead');
-            values.forEach(value => {
-                const cell = document.createElement('div');
-                cell.textContent = value;
-                row.appendChild(cell);
-            });
-            list.appendChild(row);
-        });
+        const cols = [['damage_dealt', '伤害'], ['damage_taken', '承伤'], ['healing', '治疗'], ['kills', '击杀'], ['cards_played', '出牌'], ['cards_lost', '失牌'], ['skill_activations', '技能']];
+        const mvpId = r.mvp ? r.mvp.player_id : null;
+        box.innerHTML = '<table class="stats-table"><thead><tr><th>角色</th><th>身份</th>' + cols.map(c => '<th>' + c[1] + '</th>').join('') + '</tr></thead><tbody>' +
+            players.map(p => {
+                const s = p.stats || {};
+                const hero = p.hero || {};
+                const isMe = p.id === r.player_id || (r.player_id == null && !p.is_ai);
+                return '<tr class="' + (isMe ? 'me ' : '') + (p.alive ? '' : 'dead') + '">' +
+                    '<td><div class="who"><div class="mini-portrait">' + SGS.heroImgHTML(hero.id, hero.name || p.hero_name) + '</div>' +
+                    '<div><b>' + esc(p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b><small>' + esc(p.hero_name || '') + (p.alive ? '' : ' · 阵亡') + '</small></div></div></td>' +
+                    '<td>' + SGS.identitySeal(p.identity) + '</td>' +
+                    cols.map(c => '<td>' + (s[c[0]] || 0) + '</td>').join('') + '</tr>';
+            }).join('') + '</tbody></table>';
     }
 
-    // 渲染身份揭示
-    renderIdentities() {
-        const identityList = document.getElementById('identityList');
-        identityList.innerHTML = '';
-
-        if (!this.resultData.players) return;
-
-        this.resultData.players.forEach(player => {
-            const item = document.createElement('div');
-            item.className = 'identity-item';
-            
-            const identityClass = this.getIdentityClass(player.identity);
-            
-            item.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 5px;">${player.name}</div>
-                <div style="color: var(--text-muted); font-size: 12px;">${player.hero_name}</div>
-                <div class="identity-badge identity-${identityClass}">${this.identityText(player.identity)}</div>
-                <div style="margin-top: 5px; font-size: 12px;">
-                    ${player.alive ? '存活' : '阵亡'}
-                </div>
-            `;
-            
-            identityList.appendChild(item);
-        });
+    const result = store.get('gameResult', null);
+    if (!result || !result.winner) {
+        document.getElementById('resultMain').innerHTML =
+            '<div class="frame" style="padding:40px 20px;text-align:center;margin-top:30px">' +
+            '<h1 class="brush gold-text" style="margin:0 0 10px">暂无战绩</h1>' +
+            '<p class="muted">还没有完成的对局。去大厅开一局吧。</p>' +
+            '<a class="btn primary" href="index.html" style="text-decoration:none;margin-top:12px">去大厅</a></div>';
+        return;
     }
-
-    // 获取身份CSS类
-    getIdentityClass(identity) {
-        const classMap = {
-            '主公': 'lord',
-            'lord': 'lord',
-            '忠臣': 'loyalist',
-            'loyalist': 'loyalist',
-            '反贼': 'rebel',
-            'rebel': 'rebel',
-            '内奸': 'spy',
-            'spy': 'spy',
-            '地主': 'lord',
-            '农民': 'farmer'
-        };
-        return classMap[identity] || '';
-    }
-
-    // 渲染奖励
-    renderRewards() {
-        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-        const winStreak = userData.winStreak || 0;
-
-        // 如果刚获得身份卡（连胜2的倍数）
-        if (this.resultData.player_won && winStreak > 0 && winStreak % 2 === 0) {
-            document.getElementById('rewardSection').style.display = 'block';
-        }
-    }
-}
-
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    new ResultController();
-});
+    render(result);
+    // 再来一局：沿用上局配置（Key 仅在本标签页 sessionStorage 中），直接回到选将。
+    document.getElementById('playAgainBtn').addEventListener('click', () => {
+        const cfg = store.sget('gameConfig', null);
+        location.href = cfg && Array.isArray(cfg.ais) ? 'select_hero.html' : 'index.html';
+    });
+    document.getElementById('backToLobbyBtn').addEventListener('click', () => { location.href = 'index.html'; });
+})();

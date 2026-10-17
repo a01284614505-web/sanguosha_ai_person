@@ -1,0 +1,85 @@
+$ /root/sanguosha_ai_person/.venv/bin/python -m pytest -q --tb=short -p no:cacheprovider
+........................................................................ [ 37%]
+................................................................... [ 71%]
+........................... [ 85%]
+............................                                             [100%]
+=============================== warnings summary ===============================
+scripts/manual/test_integration.py::test_worldbook_data
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_worldbook_data returned <class 'dict'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+scripts/manual/test_integration.py::test_ai_integration
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_ai_integration returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+scripts/manual/test_integration.py::test_skill_generation
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_skill_generation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+scripts/manual/test_integration.py::test_damage_system_integration
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_damage_system_integration returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+194 passed, 4 warnings, 50 subtests passed in 4.56s
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/check_frontend_js.py
+game.html: 无内联脚本
+hero_manager.html: 第180行起的脚本块 语法通过
+index.html: 无内联脚本
+result.html: 无内联脚本
+select_hero.html: 第197行起的脚本块 语法通过
+settings.html: 第76行起的脚本块 语法通过
+/root/sanguosha_ai_person/frontend/js/audio.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/game_main.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/global_settings.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/lobby.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/protocol.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/result.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/ws_client.js: 语法通过
+全部通过
+$ /root/sanguosha_ai_person/.venv/bin/python -c from scripts.gen_protocol_js import generate_js, OUTPUT_PATH; import sys; ok = OUTPUT_PATH.read_text(encoding='utf-8') == generate_js(); print('protocol sync:', 'OK' if ok else 'MISMATCH'); sys.exit(0 if ok else 1)
+protocol sync: OK
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_diag_smoke.py
+[step 330] winner=rebel 用时=5.8s
+duration=5 mvp=AI1 kills=2 damage_dealt=10 healing=0 cards_played=7
+  player 0: {'damage_dealt': 0, 'damage_taken': 4, 'healing': 0, 'kills': 0, 'cards_played': 2, 'cards_lost': 14, 'skill_activations': 4}
+  player 1: {'damage_dealt': 3, 'damage_taken': 0, 'healing': 0, 'kills': 1, 'cards_played': 9, 'cards_lost': 12, 'skill_activations': 3}
+  player 2: {'damage_dealt': 10, 'damage_taken': 0, 'healing': 0, 'kills': 2, 'cards_played': 7, 'cards_lost': 8, 'skill_activations': 4}
+  player 3: {'damage_dealt': 1, 'damage_taken': 5, 'healing': 1, 'kills': 0, 'cards_played': 5, 'cards_lost': 7, 'skill_activations': 0}
+  player 4: {'damage_dealt': 2, 'damage_taken': 7, 'healing': 1, 'kills': 0, 'cards_played': 13, 'cards_lost': 19, 'skill_activations': 7}
+SMOKE_OK
+
+--- 消息类型统计 ---
+ai_action                110
+event_notification       74
+game_state               67
+_ack_sent                55
+card_moved               48
+selection_result         16
+require_response         5
+action_result            5
+your_turn                3
+game_created             1
+game_end                 1
+
+--- require_response 共 5 次 ---
+{'rid': '1:resp2', 'n_opts': 6, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '1:resp3', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp6', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp9', 'n_opts': 6, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '1:resp12', 'n_opts': 7, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_engine_smoke.py
+[msg 988] game_end: {"type": "game_end", "winner": "spy", "message": "spy方获胜！", "state": {"mode": "5人身份局", "round": 19, "completed_turns": 61, "phase": "end", "current_player_id": 1, "current_name": "AI0", "players": [{"id": 0, "name": "真人替身", "hp": 0, "max_hp": 5, "hand_count": 3, "alive": false, "hero_name": "界曹操", "
+[step 988] winner=spy | remain=None
+SMOKE_OK: 规则AI跑到非aborted胜者
+VERIFY_OK
+................................                                         [100%]
+32 passed in 0.34s

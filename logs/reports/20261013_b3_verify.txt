@@ -1,0 +1,85 @@
+$ /root/sanguosha_ai_person/.venv/bin/python -m pytest -q --tb=short -p no:cacheprovider
+........................................................................ [ 35%]
+................................................................... [ 69%]
+........................... [ 82%]
+...................................                                      [100%]
+=============================== warnings summary ===============================
+scripts/manual/test_integration.py::test_worldbook_data
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_worldbook_data returned <class 'dict'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+scripts/manual/test_integration.py::test_ai_integration
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_ai_integration returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+scripts/manual/test_integration.py::test_skill_generation
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_skill_generation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+scripts/manual/test_integration.py::test_damage_system_integration
+  /root/sanguosha_ai_person/.venv/lib/python3.12/site-packages/_pytest/python.py:171: PytestReturnNotNoneWarning: Test functions should return None, but scripts/manual/test_integration.py::test_damage_system_integration returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+201 passed, 4 warnings, 50 subtests passed in 5.67s
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/check_frontend_js.py
+game.html: 无内联脚本
+hero_manager.html: 第180行起的脚本块 语法通过
+index.html: 无内联脚本
+result.html: 无内联脚本
+select_hero.html: 第197行起的脚本块 语法通过
+settings.html: 第76行起的脚本块 语法通过
+/root/sanguosha_ai_person/frontend/js/audio.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/game_main.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/global_settings.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/lobby.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/protocol.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/result.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/ws_client.js: 语法通过
+全部通过
+$ /root/sanguosha_ai_person/.venv/bin/python -c from scripts.gen_protocol_js import generate_js, OUTPUT_PATH; import sys; ok = OUTPUT_PATH.read_text(encoding='utf-8') == generate_js(); print('protocol sync:', 'OK' if ok else 'MISMATCH'); sys.exit(0 if ok else 1)
+protocol sync: OK
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_diag_smoke.py
+[step 687] winner=rebel 用时=11.1s
+duration=11 mvp=AI0 kills=1 damage_dealt=10 healing=4 cards_played=22
+  player 0: {'damage_dealt': 0, 'damage_taken': 5, 'healing': 0, 'kills': 0, 'cards_played': 5, 'cards_lost': 19, 'skill_activations': 5}
+  player 1: {'damage_dealt': 10, 'damage_taken': 9, 'healing': 4, 'kills': 1, 'cards_played': 22, 'cards_lost': 28, 'skill_activations': 11}
+  player 2: {'damage_dealt': 6, 'damage_taken': 6, 'healing': 2, 'kills': 0, 'cards_played': 12, 'cards_lost': 15, 'skill_activations': 5}
+  player 3: {'damage_dealt': 3, 'damage_taken': 4, 'healing': 1, 'kills': 0, 'cards_played': 25, 'cards_lost': 36, 'skill_activations': 5}
+  player 4: {'damage_dealt': 8, 'damage_taken': 3, 'healing': 2, 'kills': 2, 'cards_played': 17, 'cards_lost': 24, 'skill_activations': 8}
+SMOKE_OK
+
+--- 消息类型统计 ---
+ai_action                246
+event_notification       154
+_ack_sent                118
+card_moved               117
+game_state               109
+selection_result         43
+require_response         7
+action_result            7
+your_turn                2
+game_created             1
+game_end                 1
+
+--- require_response 共 7 次 ---
+{'rid': '1:resp2', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp8', 'n_opts': 7, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '1:resp9', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp16', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp18', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp20', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '1:resp22', 'n_opts': 6, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_engine_smoke.py
+[msg 827] game_end: {"type": "game_end", "winner": "rebel", "message": "反贼获胜！", "state": {"mode": "5人身份局", "round": 11, "completed_turns": 38, "phase": "play", "current_player_id": 3, "current_name": "AI2", "players": [{"id": 0, "name": "真人替身", "hp": 0, "max_hp": 4, "hand_count": 0, "alive": false, "hero_name": "界曹操",
+[step 827] winner=rebel | remain=None
+SMOKE_OK: 规则AI跑到非aborted胜者
+VERIFY_OK

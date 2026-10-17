@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import re
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -164,6 +165,9 @@ class AIDecision:
         self.worldbook_manager = WorldbookManager()
         # 每个AI玩家整局一个会话窗口，只追加不重排，出牌/响应/聊天共用。
         self._sessions: Dict[int, Dict] = {}
+        self.last_failure: Dict[int, Optional[str]] = {}
+        self.last_reasoning: Dict[int, str] = {}
+        self.last_meta: Dict[int, Dict] = {}
         config = getattr(game_engine, "game_config", {}) or {}
         self.session_max_l2 = int(config.get("session_max_l2", 24))
         self.session_max_chars = int(config.get("session_max_chars", 12000))
@@ -308,23 +312,50 @@ class AIDecision:
     async def _call_with_session(self, player, kind: str, content: str) -> str:
         """统一的带会话窗口调用：追加L2 → 调API → 追加assistant → 记账。"""
         messages = self.push_user(player, content)
-        reply, usage = await self.gateway.call_ai(
-            provider=player.ai_config.get("provider", "deepseek"),
-            model=player.ai_config.get("model", "deepseek-chat"),
-            api_key=player.ai_config.get("api_key", ""),
-            messages=messages,
-            temperature=player.ai_config.get("temperature", 0.8),
-            base_url=player.ai_config.get("api_url") or player.ai_config.get("base_url"),
-            return_usage=True,
-            cache_prefix_len=self.get_session(player)["prefix_len"],
-        )
+        started = time.perf_counter()
+        usage = {}
+        try:
+            reply, usage = await self.gateway.call_ai(
+                provider=player.ai_config.get("provider", "deepseek"),
+                model=player.ai_config.get("model", "deepseek-chat"),
+                api_key=player.ai_config.get("api_key", ""),
+                messages=messages,
+                temperature=player.ai_config.get("temperature", 0.8),
+                base_url=player.ai_config.get("api_url") or player.ai_config.get("base_url"),
+                return_usage=True,
+                cache_prefix_len=self.get_session(player)["prefix_len"],
+            )
+        finally:
+            self.last_meta[player.id] = {
+                "model": player.ai_config.get("model"),
+                "elapsed_ms": round((time.perf_counter() - started) * 1000),
+                "prompt_tokens": (usage or {}).get("prompt_tokens"),
+                "completion_tokens": (usage or {}).get("completion_tokens"),
+                "worldbook_hits": self._public_worldbook_hits(player),
+            }
         self.push_assistant(player, reply)
         self._log_cache_stats(player, kind, usage)
         return reply
 
+    def _public_worldbook_hits(self, player):
+        """Only name public source layers; private custom rules stay in the model session."""
+        hits = ["全局规则"]
+        hero = player.hero or {}
+        if hero.get("name"):
+            hits.append(f"武将规则：{hero['name']}")
+        settings = self.engine.game_config.get("global_settings") or {}
+        if settings.get("worldbook_enabled", True):
+            phase = getattr(self.engine.game_state.current_phase, "value", None)
+            if phase:
+                hits.append(f"阶段规则：{phase}")
+        return hits
+
     async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
         api_key = player.ai_config.get("api_key", "")
         if not api_key or api_key == "test_key":
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = ""
+            self.last_meta[player.id] = {}
             return self.simple_ai_decision(player, available_actions)
 
         try:
@@ -333,7 +364,9 @@ class AIDecision:
             )
             return self.parse_ai_response(response, player, available_actions)
         except Exception as exc:
-            logger.warning(f"  ⚠️ AI调用失败，切换规则AI: {type(exc).__name__}: {exc}")
+            self.last_failure[player.id] = type(exc).__name__
+            self.last_reasoning[player.id] = ""
+            logger.warning("  ⚠️ AI调用失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_ai_decision(player, available_actions)
 
     def _custom_worldbook_text(self, player) -> str:
@@ -429,6 +462,8 @@ class AIDecision:
 
             action = dict(available_actions[index])
             target_ids = self._normalize_targets(action, payload.get("target_ids", []), player)
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:200]
             return {
                 "action": action,
                 "target_ids": target_ids,
@@ -436,12 +471,20 @@ class AIDecision:
                 "reasoning": str(payload.get("reasoning", ""))[:200],
             }
         except Exception as exc:
-            logger.warning(f"  ⚠️ AI响应解析失败，切换规则AI: {type(exc).__name__}: {exc}")
+            self.last_failure[player.id] = type(exc).__name__
+            self.last_reasoning[player.id] = ""
+            logger.warning("  ⚠️ AI响应解析失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_ai_decision(player, available_actions)
 
     def _normalize_targets(self, action: Dict, requested: Any, player) -> List[int]:
         if not action.get("requires_target"):
             return []
+        if action.get("valid_target_groups"):
+            # 方天画戟的整个有序目标组必须来自引擎候选，不接受自行拼接。
+            groups = [list(group) for group in action["valid_target_groups"]]
+            if isinstance(requested, list) and requested in groups:
+                return requested
+            return groups[0]
         if action.get("target_count") == 2:
             pairs = [list(pair) for pair in action.get("valid_target_pairs", [])]
             if isinstance(requested, list):
@@ -603,8 +646,14 @@ class AIDecision:
         """回合外响应的AI真决策。返回候选索引；None 表示不响应。"""
         api_key = player.ai_config.get("api_key", "")
         if not api_key or api_key == "test_key":
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = ""
+            self.last_meta[player.id] = {}
             return self.simple_response_decision(player, request)
         if not (self.engine.game_config.get("global_settings") or {}).get("response_ai_enabled", True):
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = ""
+            self.last_meta[player.id] = {}
             return self.simple_response_decision(player, request)
 
         try:
@@ -613,7 +662,9 @@ class AIDecision:
             )
             return self.parse_response_choice(response, player, request)
         except Exception as exc:
-            logger.warning(f"  ⚠️ 响应AI调用失败，切换规则AI: {type(exc).__name__}: {exc}")
+            self.last_failure[player.id] = type(exc).__name__
+            self.last_reasoning[player.id] = ""
+            logger.warning("  ⚠️ 响应AI调用失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_response_decision(player, request)
 
     def parse_response_choice(self, response: str, player, request: Dict) -> Optional[int]:
@@ -627,9 +678,13 @@ class AIDecision:
             reasoning = str(payload.get("reasoning", ""))[:200]
             if reasoning:
                 logger.info(f"  💭 {player.name} 响应理由: {reasoning}")
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = reasoning
             return index
         except Exception as exc:
-            logger.warning(f"  ⚠️ 响应解析失败，切换规则AI: {type(exc).__name__}: {exc}")
+            self.last_failure[player.id] = type(exc).__name__
+            self.last_reasoning[player.id] = ""
+            logger.warning("  ⚠️ 响应解析失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_response_decision(player, request)
 
     # ---------- 场外响应的规则决策（同时用作真人托管兜底） ----------
@@ -688,17 +743,34 @@ class AIDecision:
         if kind == "choose_players":
             cand_ids = request.get("candidate_ids") or []
             all_players = (request.get("context") or {}).get("all_players") or []
+            intent = (request.get("context") or {}).get("intent", "harm")
             def public_field(candidate, key):
-                return candidate[key] if isinstance(candidate, dict) else getattr(candidate, key)
+                return candidate.get(key) if isinstance(candidate, dict) else getattr(candidate, key, None)
 
             players_map = {public_field(p, "id"): p for p in all_players}
             min_n = request.get("min_n", 1)
             max_n = request.get("max_n", 1)
-            enemies = [i for i, pid in enumerate(cand_ids)
-                       if pid in players_map and public_field(players_map[pid], "alive")
-                       and public_field(players_map[pid], "is_ai") != getattr(player, "is_ai", False)]
-            enemies.sort(key=lambda i: public_field(players_map[cand_ids[i]], "hp"))
-            selected = enemies[:max_n]
+            known_friendly = {"lord", "loyalist"} if player.identity in ("lord", "loyalist") else {player.identity}
+            known_enemy = ({"rebel", "spy"} if player.identity in ("lord", "loyalist")
+                           else {"lord", "loyalist"} if player.identity == "rebel" else set())
+            ranked = []
+            for i, pid in enumerate(cand_ids):
+                candidate = players_map.get(pid)
+                if candidate is None or not public_field(candidate, "alive"):
+                    continue
+                identity = public_field(candidate, "identity")
+                friendly = pid == player.id or identity in known_friendly
+                enemy = identity in known_enemy
+                if intent in ("benefit", "heal", "gain"):
+                    priority = 0 if friendly else 2 if enemy else 1
+                    hp = public_field(candidate, "hp") or 0
+                    ranked.append((priority, hp, i))
+                else:
+                    priority = 0 if enemy else 2 if friendly else 1
+                    hp = public_field(candidate, "hp") or 0
+                    ranked.append((priority, hp, i))
+            ranked.sort()
+            selected = [item[2] for item in ranked[:max_n]]
             if len(selected) < min_n:
                 extras = [i for i in range(len(cand_ids)) if i not in selected
                           and cand_ids[i] in players_map
@@ -711,14 +783,16 @@ class AIDecision:
             min_n = request.get("min_n", 1)
             max_n = request.get("max_n", 1)
             hidden = set(request.get("hidden_indices") or [])
+            intent = (request.get("context") or {}).get("intent", "discard")
 
             def card_rank(item):
                 index, card = item
                 if index in hidden:
-                    # 隐藏候选（如他人手牌）无法评估：不按牌面分值挑，按候选顺序取。
-                    return (0, 0, index)
-                score = CARD_TABLE[card.name].discard_keep_score if card.name in CARD_TABLE else 20
-                return (1, score, index)
+                    # 不读取暗牌实体。未知牌按中等价值排序，不固定压过所有明牌。
+                    score = 20
+                else:
+                    score = CARD_TABLE[card.name].discard_keep_score if card and card.name in CARD_TABLE else 20
+                return (-score if intent in ("gain", "obtain", "benefit") else score, index)
 
             indexed = sorted(enumerate(cand_cards), key=card_rank)
             return [i for i, _ in indexed[:max_n]] if len(indexed) >= min_n else list(range(len(indexed)))
@@ -729,8 +803,14 @@ class AIDecision:
         """Choose only server-issued indices; MainEngine validates the live snapshot."""
         api_key = player.ai_config.get("api_key", "")
         if not api_key or api_key == "test_key":
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = ""
+            self.last_meta[player.id] = {}
             return self.simple_choice_decision(player, request)
         if not (self.engine.game_config.get("global_settings") or {}).get("choice_ai_enabled", True):
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = ""
+            self.last_meta[player.id] = {}
             return self.simple_choice_decision(player, request)
 
         options = request.get("options") or []
@@ -759,14 +839,20 @@ class AIDecision:
                     for i in indices) or len(set(indices)) != len(indices)):
                 raise ValueError("invalid option indices")
             if not indices and request.get("cancelable", True):
+                self.last_failure[player.id] = None
+                self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:200]
                 return []
             minimum = max(0, int(request.get("min_n", 1)))
             maximum = max(minimum, int(request.get("max_n", 1)))
             if not minimum <= len(indices) <= maximum:
                 raise ValueError("invalid option count")
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:200]
             return indices
         except Exception as exc:
-            logger.warning(f"  ⚠️ 选择模型失败，切换规则AI: {type(exc).__name__}: {exc}")
+            self.last_failure[player.id] = type(exc).__name__
+            self.last_reasoning[player.id] = ""
+            logger.warning("  ⚠️ 选择模型失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_choice_decision(player, request)
 
 

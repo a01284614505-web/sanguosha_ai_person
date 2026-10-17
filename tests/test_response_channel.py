@@ -153,7 +153,7 @@ class ResponseChannelTest(unittest.TestCase):
             self.assertIs(result["card"], shan)
             self.assertTrue(self.engine._trustee_active)
             self.assertEqual(self.engine._pending_requests, {})
-            self.assertIsNotNone(self.engine._human_idle_since, "单次超时后不得清零离席计时")
+            self.assertIsNone(self.engine._human_idle_since, "持续托管期间不再计真人离席时间")
             trustee_logs = [e for e in self.engine.game_log if e.get("trustee")]
             self.assertEqual(len(trustee_logs), 1)
             print(f"timeout->trustee: {trustee_logs[0]['message']} 且通道已清理 OK")
@@ -279,10 +279,21 @@ class IdleWatchdogTest(unittest.TestCase):
     def test_human_input_resets_timer(self):
         self.engine._mark_waiting_for_human()
         self.clock.advance(280)
-        self.engine.submit_action({"type": "end_phase"}, [])
+        self.engine._waiting_for_action = True
+        receipt = self.engine.submit_action({"type": "end_phase"}, [])
+        self.assertEqual(receipt["status"], "accepted")
         self.assertIsNone(self.engine._human_idle_since)
         self.assertEqual(self.engine.idle_seconds(), 0.0)
         print("watchdog: 真人一操作 -> 计时清零 OK")
+
+    def test_stale_play_input_does_not_wake_next_turn_or_disable_trustee(self):
+        stale = self.engine.submit_action({"type": "end_phase"}, [])
+        self.assertEqual(stale["status"], "stale")
+        self.assertFalse(self.engine._player_event.is_set())
+        self.engine.set_trustee(True, source="rules")
+        released = self.engine.submit_action({"type": "end_phase"}, [])
+        self.assertEqual(released["status"], "stale")
+        self.assertFalse(self.engine.trustee_status()["enabled"])
 
     def test_ai_turn_never_counts_as_idle(self):
         """R11 防误杀：AI 回合期间绝不计时。"""

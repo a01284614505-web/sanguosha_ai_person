@@ -120,8 +120,13 @@ class DeckApiTest(unittest.TestCase):
         with urllib.request.urlopen(self.base_url + "/settings.html", timeout=10) as response:
             self.assertEqual(response.status, 200)
             body = response.read().decode("utf-8")
-        self.assertIn("/api/decks", body)
-        self.assertNotIn('value="test_deck"', body)
+        # 牌堆逻辑在外部脚本 settings_page.js 中：页面必须引用它，脚本必须走 /api/decks 而非硬编码牌堆。
+        self.assertIn("js/settings_page.js", body)
+        with urllib.request.urlopen(self.base_url + "/js/settings_page.js", timeout=10) as response:
+            self.assertEqual(response.status, 200)
+            script = response.read().decode("utf-8")
+        self.assertIn("/api/decks", script)
+        self.assertNotIn('value="test_deck"', body + script)
 
 
 class ConfigDeckTest(unittest.TestCase):

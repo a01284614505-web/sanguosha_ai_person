@@ -13,7 +13,8 @@ class GameClient {
     }
     
     connect() {
-        const wsUrl = `ws://${window.location.hostname}:8889`;
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:8889`;
         console.log('[WS] 连接:', wsUrl);
         this.ws = new WebSocket(wsUrl);
         
@@ -32,10 +33,11 @@ class GameClient {
             }
         };
         
-        this.ws.onclose = () => {
+        this.ws.onclose = (event) => {
+            const wasConnected = this.connected;
             this.connected = false;
             console.log('[WS] 断开');
-            if (this.onDisconnect) this.onDisconnect();
+            if (this.onDisconnect) this.onDisconnect({ wasConnected: wasConnected, code: event && event.code });
         };
         
         this.ws.onerror = (e) => {
@@ -48,6 +50,7 @@ class GameClient {
             case Protocol.OUTBOUND.GAME_CREATED:
                 this.gameId = data.game_id;
                 console.log('[游戏] 已创建:', this.gameId);
+                if (this.onGameCreated) this.onGameCreated(data);
                 break;
 
             case Protocol.OUTBOUND.GAME_STATE:
@@ -91,6 +94,12 @@ class GameClient {
             case Protocol.OUTBOUND.AI_CONFIG_UPDATED:
                 if (this.onAIConfigUpdated) this.onAIConfigUpdated(data.config);
                 break;
+            case Protocol.OUTBOUND.TRUSTEE_STATUS:
+                if (this.onTrusteeStatus) this.onTrusteeStatus(data);
+                break;
+            case 'decision_trace':
+                if (this.onDecisionTrace) this.onDecisionTrace(data);
+                break;
             case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
                 break;
@@ -123,6 +132,12 @@ class GameClient {
         if (!this.connected || !this.gameId) return;
         this.send({ type: Protocol.INBOUND.CHAT, message: msg });
     }
+
+    setTrustee(enabled, source, playerId, config) {
+        if (!this.connected || !this.gameId) return;
+        this.send({ type: Protocol.INBOUND.SET_TRUSTEE, enabled: !!enabled,
+            source: source || 'rules', player_id: playerId, config: config });
+    }
     
     send(data) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -144,9 +159,12 @@ GameClient.prototype.onRequireResponse = null;
 GameClient.prototype.onEventNotification = null;
 GameClient.prototype.onError = null;
 GameClient.prototype.onAIConfigUpdated = null;
+GameClient.prototype.onTrusteeStatus = null;
+GameClient.prototype.onDecisionTrace = null;
 GameClient.prototype.onEndGameAccepted = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;
+GameClient.prototype.onGameCreated = null;
 
 // 全局实例
 const gameClient = new GameClient();

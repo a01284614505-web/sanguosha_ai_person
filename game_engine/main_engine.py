@@ -2,6 +2,7 @@
 """主游戏引擎 v2：引擎生成合法操作，玩家或AI只能从中选择。"""
 
 import asyncio
+from itertools import combinations, permutations
 import logging
 import random
 import time
@@ -18,7 +19,7 @@ from .rules_engine import RulesEngine
 from .ai_decision import AIDecision
 from .identity_system import IdentitySystem
 from .chat_engine import ChatEngine
-from .config_validator import normalize_config
+from .config_validator import normalize_ai, normalize_config
 from .deck_manager import DeckManager
 from .game_stats import GameStats, record_stat
 from .effect_context import EffectContext
@@ -27,6 +28,17 @@ from .effect_context import EffectContext
 logger = logging.getLogger(__name__)
 from .hero_registry import HeroRegistry
 from .protocol import ENGINE_EVENT, PROVIDERS
+
+
+class _TrusteePlayerView:
+    """Use the human's exact game perspective with a separate model connection."""
+
+    def __init__(self, player, ai_config):
+        self._player = player
+        self.ai_config = ai_config
+
+    def __getattr__(self, name):
+        return getattr(self._player, name)
 
 
 class MainEngine:
@@ -112,10 +124,20 @@ class MainEngine:
         self.time_source: Callable[[], float] = time.monotonic  # 测试可注入假时钟
         self._human_idle_since: Any = None
         self._trustee_active = False
+        self._trustee_source = "rules"
+        self._trustee_config: Dict = {}
+        self._trustee_failures = 0
+        self._trustee_degraded = False
+        self._trustee_degrade_reason = None
+        self._trustee_generation = 0
+        self._waiting_for_action = False
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
         self._game_end_emitted = False
         self._started_at: Any = None
+        # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
+        chat_cfg = game_config.get("chat")
+        self.chat_enabled = not (isinstance(chat_cfg, dict) and chat_cfg.get("enabled") is False)
 
         logger.info(f"\n{'=' * 60}")
         logger.info("  🎮 引擎v2初始化")
@@ -165,7 +187,35 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.CARD_MOVE, move=event_data)
         if project:
             await self.skill_manager.on_card_move(card, event, stats_recorded=True)
+        if from_zone == "equipment" and from_owner is not None:
+            # 防具/宝物失去装备区的效果观察同一条已提交移动事实。
+            await self.card_system.on_equipment_left(from_owner, card, event)
         return event
+
+    async def announce_judge(self, player: Player, card, judge_for: str, effective=None, result_text: str = ""):
+        """判定结果通知：前端在牌桌中央展示判定牌与“生效/失效”，并等待动画 ACK 后再继续结算。
+
+        effective 为 None 表示该判定没有统一的生效/失效语义（如技能判定），前端只展示判定牌。
+        """
+        suit_text = {"spade": "♠", "heart": "♥", "club": "♣", "diamond": "♦"}.get(card.suit, "")
+        verdict = "" if effective is None else ("生效" if effective else "失效")
+        message = f"{player.name}的【{judge_for}】判定：{suit_text}{card.rank}{card.name}"
+        if verdict:
+            message += f"，{verdict}"
+        if result_text:
+            message += f"（{result_text}）"
+        await self._notify_card_ui(
+            event_kind="judge",
+            actor_id=player.id,
+            actor_name=player.name,
+            card=card_to_dict(card),
+            card_name=card.name,
+            judge_for=judge_for,
+            effective=effective,
+            result_text=result_text,
+            message=message,
+            reason="judge",
+        )
 
     async def _notify_card_ui(self, **data):
         """卡牌UI统一通知（弃牌/出牌/技能转化共用）：等待浏览器确认动画完成后才继续结算。"""
@@ -227,6 +277,7 @@ class MainEngine:
                     "hp": p.hp,
                     "max_hp": p.max_hp,
                     "hand_count": len(p.hand),
+                    "treasure_count": len(p.treasure_cards),
                     "alive": p.alive,
                     "hero_name": self._hero_name(p),
                     "hero": {
@@ -248,14 +299,26 @@ class MainEngine:
                     "identity": p.identity if identity_visible else None,
                     "identity_revealed": identity_visible,
                     "equipment": {slot: card.name for slot, card in p.equipment.items()},
+                    # 判定区是公开信息（乐不思蜀/兵粮寸断/闪电），前端按牌名显示标记。
+                    "judge_area": [card.name for card in getattr(p, "judge_area", [])],
                     "stats": self.stats.row(p),
                     "skill_state": [
                         instance.to_dict()
                         for instance in self.skill_manager.skill_state.for_owner(p.id)
                     ],
+                    "marks": {
+                        key: p.flags[key]
+                        for key in ("pao_tokens", "hand_limit_bonus", "rende_count",
+                                    "cannot_use_hand", "nonlocked_disabled")
+                        if isinstance(p.flags.get(key), (bool, int)) and p.flags[key]
+                    },
                 }
             )
+        # serialize() 只发给真人自己的连接（AI 决策不读它），因此可以附带真人自己的手牌，
+        # 让前端在非出牌阶段也能看到手牌。他人手牌仍只有 hand_count。
+        human = self.human_player()
         return {
+            "self_hand": self.get_player_hand(human) if human else [],
             "mode": gs.mode,
             "round": gs.round_number,
             "completed_turns": self.completed_turns,
@@ -267,13 +330,21 @@ class MainEngine:
             "discard_count": len(gs.discard_pile),
             "game_over": gs.game_over,
             "winner": gs.winner,
+            "trustee": self.trustee_status(),
         }
 
+    def human_player(self):
+        """本局的真人玩家（无则返回 None）。"""
+        return next((p for p in self.game_state.players if not p.is_ai), None)
+
     def get_player_hand(self, player: Player) -> List[Dict]:
-        return [
-            {**card_to_dict(c), "index": i, "target_rule": c.target_rule or {}}
-            for i, c in enumerate(player.hand)
-        ]
+        # 扣置牌仅向当前宝物拥有者开放，按独立牌区标记，不增加手牌数。
+        cards = [(card, "hand") for card in player.hand]
+        if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+            cards.extend((card, "treasure") for card in player.treasure_cards)
+        return [{**card_to_dict(card), "index": index, "zone": zone,
+                 "target_rule": card.target_rule or {}}
+                for index, (card, zone) in enumerate(cards)]
 
     # ---------- 主流程 ----------
 
@@ -335,6 +406,10 @@ class MainEngine:
                     break
 
                 if getattr(player, "flags", {}).pop("extra_turn", False):
+                    # 额外回合未调用 next_turn，也必须开启新的酒/出杀次数作用域。
+                    player.sha_count = 0
+                    player.jiu_used_this_turn = False
+                    player.jiu_buff = False
                     self.game_state.current_player = player
                     self.game_state.current_player_index = self.game_state.players.index(player)
                     self.game_state.current_phase = Phase.PREPARE
@@ -357,12 +432,12 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
 
-        if random.random() < 0.3:
+        if self.chat_enabled and random.random() < 0.3:
             msg = await self.chat_engine.trigger_event_chat(
                 "turn_start", player, {"round": self.game_state.round_number}
             )
             if msg:
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg)
+                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg, from_id=player.id)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     async def _human_turn(self, player: Player):
@@ -372,19 +447,44 @@ class MainEngine:
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
             if self.game_aborted:
                 return
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
+            if self.game_aborted:
+                return
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        self.game_state.current_phase = Phase.PLAY
+        await self._enter_phase(player, Phase.PLAY)
         player.sha_count = 0
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        while player.alive and not self.game_state.game_over:
+        # 乐不思蜀等效果会把出牌阶段加入跳过集合：此时不向真人下发 your_turn。
+        play_skipped = await self._skip_play_phase_if_needed(player)
+
+        while not play_skipped and player.alive and not self.game_state.game_over:
             actions = self.get_available_actions(player)
+            if self._trustee_active:
+                generation = self._trustee_generation
+                decision = await self._trustee_make_decision(player, actions)
+                if decision is None or generation != self._trustee_generation:
+                    continue
+                action = decision.get("action") or {"type": "end_phase"}
+                if action.get("type") == "end_phase":
+                    await self._emit_decision_trace(player, "play", len(actions), action, "accepted")
+                    break
+                target_ids = decision.get("target_ids") or []
+                ok = await self.execute_action(player, action, target_ids)
+                await self._emit_decision_trace(player, "play", len(actions), action,
+                                                "accepted" if ok else "invalid")
+                if not self.game_aborted:
+                    await self.emit(ENGINE_EVENT.ACTION_RESULT, success=ok, trustee=True)
+                    await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+                if not ok:
+                    break
+                continue
             # 必须先创建等待器再广播，避免WebSocket客户端立即响应造成丢操作。
             self._player_event = asyncio.Event()
             self._player_input = None
+            self._waiting_for_action = True
             # 出牌阶段引擎同样在等真人，纳入离席计时。
             self._mark_waiting_for_human()
             await self.emit(
@@ -392,12 +492,16 @@ class MainEngine:
                 player_name=player.name,
                 hand=self.get_player_hand(player),
                 actions=[dict(action) for action in actions],
+                timeout=self.human_action_timeout,
             )
             data = await self._wait_player_input()
+            self._waiting_for_action = False
             if self.game_state.game_over:
                 break
             action = data["action"]
             target_ids = data["target_ids"]
+            if action.get("type") == "trustee":
+                continue
             if action.get("type") == "end_phase":
                 break
 
@@ -411,19 +515,51 @@ class MainEngine:
         for phase in [Phase.DISCARD, Phase.END]:
             if self.game_aborted:
                 return
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
+            if self.game_aborted:
+                return
             await self._execute_phase_with_ui(phase)
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    async def _enter_phase(self, player: Player, phase: Phase):
+        """切换到新阶段，并给前端阶段栏发一条轻量通知（不附整份状态）。
+
+        skipped=True 表示该阶段已被判定/技能标记为跳过（如兵粮寸断跳过摸牌、乐不思蜀跳过出牌），
+        前端据此把阶段栏对应格子显示为“跳过”。
+        """
+        self.game_state.current_phase = phase
+        skipped = phase in self.phase_controller.skip_phases
+        await self.emit(
+            ENGINE_EVENT.EVENT_NOTIFICATION,
+            event_kind="phase",
+            player_id=player.id,
+            player_name=player.name,
+            phase=phase.value,
+            skipped=skipped,
+        )
+
+    async def _skip_play_phase_if_needed(self, player: Player) -> bool:
+        """出牌阶段不经 PhaseController.execute_phase，因此在这里单独消费“跳过出牌阶段”标记。
+
+        修复：此前人类与 AI 的出牌阶段都不检查跳过集合，导致乐不思蜀判定生效后仍可出牌，
+        且标记残留到之后的回合。
+        """
+        if Phase.PLAY not in self.phase_controller.skip_phases:
+            return False
+        self.phase_controller.skip_phases.discard(Phase.PLAY)
+        await self.log_event(f"{player.name}跳过出牌阶段", player_id=player.id)
+        return True
 
     async def _run_phases(self, player: Player):
         for phase in Phase:
             if self.game_state.game_over:
                 break
-            self.game_state.current_phase = phase
+            await self._enter_phase(player, phase)
             logger.info(f"\n[{phase.value}阶段]")
             if phase == Phase.PLAY:
                 player.sha_count = 0
-                await self._auto_play_phase(player)
+                if not await self._skip_play_phase_if_needed(player):
+                    await self._auto_play_phase(player)
             else:
                 await self._execute_phase_with_ui(phase)
             if not player.alive:
@@ -443,14 +579,16 @@ class MainEngine:
             decision = await self.ai_decision.make_decision(player, actions)
             await self.emit(
                 ENGINE_EVENT.AI_ACTION, player_name=player.name, action="thinking_end",
-                reasoning=decision.get("reasoning", "")
+                reasoning=""
             )
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
 
-            if decision.get("chat"):
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"])
+            if decision.get("chat") and self.chat_enabled:
+                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"], from_id=player.id)
             if action.get("type") == "end_phase":
+                await self._emit_decision_trace(player, "play", len(actions), action,
+                                                "accepted")
                 break
 
             if action.get("type") == "play_card":
@@ -465,6 +603,8 @@ class MainEngine:
 
             ok = await self.execute_action(player, action, target_ids)
             self._record_ai_outcome(player, action, target_ids, ok)
+            await self._emit_decision_trace(player, "play", len(actions), action,
+                                            "accepted" if ok else "invalid")
             if not ok:
                 logger.info("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
                 break
@@ -480,13 +620,44 @@ class MainEngine:
         verdict = "已生效" if ok else "被引擎判定为非法，未生效"
         recorder(player, f"【引擎执行结果】你的操作 {action.get('type')}{target_text} {verdict}。")
 
+    async def _emit_decision_trace(self, player, kind, candidate_count, choice, validation):
+        """Publish only information already visible to the human client."""
+        own_decision = player is self.human_player()
+        meta = getattr(self.ai_decision, "last_meta", {}).get(player.id) or {}
+        if own_decision and (self._trustee_source == "rules" or self._trustee_degraded):
+            meta = {}
+        failure = getattr(self.ai_decision, "last_failure", {}).get(player.id)
+        reason = (getattr(self.ai_decision, "last_reasoning", {}).get(player.id, "")
+                  if own_decision and meta else "")
+        if not reason:
+            reason = "模型结果已由引擎复核" if meta.get("model") and not failure else "按规则选择合法候选"
+        if own_decision:
+            if isinstance(choice, dict):
+                final_choice = self.ai_decision.format_action(choice) if hasattr(self.ai_decision, "format_action") else choice.get("type", "")
+            else:
+                final_choice = str(choice)[:100]
+        else:
+            final_choice = choice.get("type", "已选择") if isinstance(choice, dict) else "已选择" if choice is not None else "放弃"
+        await self.emit(
+            ENGINE_EVENT.DECISION_TRACE,
+            player_id=player.id, player_name=player.name, kind=kind,
+            source="trustee" if own_decision else "rules" if failure or not meta.get("model") else "model",
+            model=meta.get("model"), elapsed_ms=meta.get("elapsed_ms"),
+            prompt_tokens=meta.get("prompt_tokens"), completion_tokens=meta.get("completion_tokens"),
+            candidate_count=int(candidate_count),
+            candidate_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
+            worldbook_hits=meta.get("worldbook_hits") or [], reason=reason[:200],
+            final_choice=final_choice, validation=validation,
+        )
+
     # ---------- 玩家输入 ----------
 
     async def _wait_player_input(self) -> Dict:
         try:
             await asyncio.wait_for(self._player_event.wait(), timeout=self.human_action_timeout)
         except asyncio.TimeoutError:
-            return {"action": {"type": "end_phase"}, "target_ids": []}
+            self.set_trustee(True, source="rules")
+            return {"action": {"type": "trustee"}, "target_ids": []}
         return self._player_input or {"action": {"type": "end_phase"}, "target_ids": []}
 
     def submit_action(self, action: Dict, target_ids: List[int]):
@@ -501,10 +672,19 @@ class MainEngine:
             return self.submit_response_status(action.get("request_id"), selection)
         if self.game_aborted:
             return {"status": "game_ended", "success": False, "message": "对局已结束"}
+        if self._trustee_active:
+            self._note_human_input()
+            return {"status": "stale", "success": False,
+                    "message": "已解除托管，请等待新的出牌提示后重试"}
+        if (not self._waiting_for_action or self._player_event.is_set()
+                or self.game_state.current_player is not self.human_player()):
+            return {"status": "stale", "success": False,
+                    "message": "当前没有等待中的出牌操作，请等待新的出牌提示"}
         self._note_human_input()
         self._player_input = {"action": action, "target_ids": target_ids or action.get("target_ids", []) or []}
         if self._player_event and not self._player_event.is_set():
             self._player_event.set()
+        return {"status": "accepted", "success": True, "message": "已接收操作"}
 
     # ---------- 场外响应通道 ----------
 
@@ -633,8 +813,11 @@ class MainEngine:
         if not getattr(owner, "alive", True):
             logger.info(f"  ❌ 响应复核失败：{getattr(owner, 'name', '?')} 已阵亡")
             return {"bool": False}
-        if card not in owner.hand:
-            logger.info(f"  ❌ 响应复核失败：【{card.name}】已不在 {owner.name} 手上")
+        source_zone = option.get("source_zone", "hand")
+        source_cards = owner.treasure_cards if source_zone == "treasure" else owner.hand
+        if card not in source_cards or (source_zone == "treasure" and getattr(
+                owner.equipment.get("treasure"), "name", None) != "木牛流马"):
+            logger.info(f"  ❌ 响应复核失败：【{card.name}】已不在 {owner.name} 的合法牌区")
             return {"bool": False}
         as_name = option.get("as_name") or card.name
         requested = request.get("requested_name")
@@ -647,6 +830,7 @@ class MainEngine:
             "owner": owner,
             "as_name": as_name,
             "skill_name": option.get("skill_name"),
+            "source_zone": source_zone,
         }
 
     @staticmethod
@@ -657,7 +841,8 @@ class MainEngine:
         chosen = options[index] if isinstance(index, int) and 0 <= index < len(options) else None
         card = (chosen or {}).get("card")
         owner = (chosen or {}).get("owner") or player
-        return "stale" if card is not None and card not in owner.hand else "resolved"
+        source_cards = owner.treasure_cards if (chosen or {}).get("source_zone") == "treasure" else owner.hand
+        return "stale" if card is not None and card not in source_cards else "resolved"
 
     async def _ask_index(self, player: Player, request: Dict, resolver) -> Any:
         """共用询问机制：人/AI分派 + 超时托管 + 回灌。resolver 决定如何验证原始索引。"""
@@ -665,8 +850,23 @@ class MainEngine:
             return {"bool": False}
         request_id = self._next_request_id()
         request = self._prepare_request(player, request, request_id)
-        if player.is_ai:
+        trustee_request = self._trustee_active and player is self.human_player()
+        generation = self._trustee_generation
+        if player.is_ai or trustee_request:
             index = await self._ai_choose_option(player, request)
+            if self.game_aborted:
+                await self._emit_selection_result(player, request, "game_ended")
+                return {"bool": False}
+            if trustee_request and generation != self._trustee_generation:
+                if self._trustee_active:
+                    index = await self._ai_choose_option(player, request)
+                else:
+                    index, input_status = await self._human_choose_option(player, request, request_id)
+                    if input_status in {"timeout", "trustee"} and not self.game_aborted:
+                        index = await self._trustee_choose(player, request)
+                    elif input_status != "accepted":
+                        await self._emit_selection_result(player, request, input_status)
+                        return {"bool": False}
             if self.game_aborted:
                 await self._emit_selection_result(player, request, "game_ended")
                 return {"bool": False}
@@ -675,23 +875,33 @@ class MainEngine:
             await self._emit_selection_result(
                 player, request, self._response_resolution_status(player, request, index, result)
             )
+            if player.is_ai or self._trustee_active:
+                await self._emit_decision_trace(
+                    player, request.get("kind", "respond"), len(request.get("options") or []),
+                    index, "accepted" if result.get("bool") else "pass",
+                )
             return result
         index, input_status = await self._human_choose_option(player, request, request_id)
         if input_status == "accepted":
             result = resolver(player, request, index)
             status = self._response_resolution_status(player, request, index, result)
-        elif input_status == "timeout" and not self.game_aborted:
+        elif input_status in {"timeout", "trustee"} and not self.game_aborted:
             index = await self._trustee_choose(player, request)
             if self.game_aborted:
                 result, status = {"bool": False}, "game_ended"
             else:
                 result = resolver(player, request, index)
-                status = "timeout"
+                status = "timeout" if input_status == "timeout" else "resolved"
         elif input_status == "cancelled":
             result, status = {"bool": False}, "cancelled"
         else:
             result, status = {"bool": False}, "game_ended"
         await self._emit_selection_result(player, request, status)
+        if input_status in {"timeout", "trustee"} and not self.game_aborted:
+            await self._emit_decision_trace(
+                player, request.get("kind", "respond"), len(request.get("options") or []),
+                index, status,
+            )
         return result
 
     async def request_response(self, player: Player, request: Dict) -> Dict:
@@ -736,10 +946,17 @@ class MainEngine:
 
     def _card_in_zone(self, card, owner, zone: str) -> bool:
         """复核单张牌是否仍在声明的牌区内（兼容装备字典与判定区）。"""
-        if owner is None or card is None:
+        if card is None:
+            return False
+        if zone == "deck":
+            return card in self.game_state.deck
+        if owner is None:
             return False
         if zone == "hand":
             return card in owner.hand
+        if zone == "treasure":
+            return card in owner.treasure_cards and getattr(
+                owner.equipment.get("treasure"), "name", None) == "木牛流马"
         if zone == "equipment":
             return card in owner.equipment.values()
         if zone == "judge":
@@ -858,7 +1075,7 @@ class MainEngine:
                     player, self._mask_hidden_candidates(request)
                 )
             except Exception as exc:
-                logger.info(f"  ⚠️ 兜底决策失败: {type(exc).__name__}: {exc}")
+                logger.info("  ⚠️ 兜底决策失败: %s", type(exc).__name__)
                 fallback_raw = []
             result = self._resolve_choice(player, request, fallback_raw, _allow_rule_fallback=False)
             if result.get("bool"):
@@ -898,8 +1115,11 @@ class MainEngine:
     def _public_decision_value(value):
         """Remove live player and card objects from advisory decision context."""
         if isinstance(value, Player):
-            return {"id": value.id, "name": value.name, "hp": value.hp,
-                    "alive": value.alive, "is_ai": value.is_ai}
+            public = {"id": value.id, "name": value.name, "hp": value.hp,
+                      "alive": value.alive, "is_ai": value.is_ai}
+            if value.identity_revealed:
+                public["identity"] = value.identity
+            return public
         if isinstance(value, Card):
             return None
         if isinstance(value, dict):
@@ -935,25 +1155,30 @@ class MainEngine:
     async def _ai_choose_choice(self, player: Player, request: Dict):
         """AI dispatch for four new primitives. Returns List[int]."""
         request = self._mask_hidden_candidates(request)
+        trustee = self._trustee_active and player is self.human_player()
+        if trustee and (self._trustee_source == "rules" or self._trustee_degraded):
+            return self.ai_decision.simple_choice_decision(player, request)
+        decision_player = self._trustee_view(player) if trustee else player
         handler = getattr(self.ai_decision, "make_choice_decision", None)
         if handler is not None:
             try:
-                return await handler(player, request)
+                result = await handler(decision_player, request)
+                if trustee:
+                    self._update_trustee_failure(player)
+                return result
             except Exception as exc:
-                logger.info(f"  ⚠️ 选择AI失败，切换规则AI: {type(exc).__name__}: {exc}")
+                logger.info("  ⚠️ 选择AI失败，切换规则AI: %s", type(exc).__name__)
+                if trustee:
+                    self._trustee_failures += 1
+                    self._trustee_degraded = self._trustee_failures >= 3
         return self.ai_decision.simple_choice_decision(player, request)
 
     async def _trustee_choose_choice(self, player: Player, request: Dict):
         if self._abort_reason:
             return []
-        self._trustee_active = True
-        try:
-            indices = self.ai_decision.simple_choice_decision(
-                player, self._mask_hidden_candidates(request)
-            )
-        except Exception as exc:
-            logger.info(f"  ⚠️ 托管选择决策失败: {type(exc).__name__}: {exc}")
-            indices = []
+        if not self._trustee_active:
+            self.set_trustee(True, source="rules")
+        indices = await self._ai_choose_choice(player, request)
         await self.log_event("[托管] 已代为选择", trustee=True, player_id=player.id)
         return indices
 
@@ -987,6 +1212,8 @@ class MainEngine:
                 selection=selection_block,
             )
             raw = await asyncio.wait_for(future, timeout=self.response_timeout)
+            if isinstance(raw, dict) and raw.get("trustee"):
+                return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
                 return None, "cancelled"
             if self.game_aborted:
@@ -1030,9 +1257,18 @@ class MainEngine:
             return {**self._empty_choice_result(request.get("kind", "confirm")), "status": "game_ended"}
         request_id = self._next_request_id()
         request = self._prepare_request(player, request, request_id)
-        if player.is_ai:
+        trustee_request = self._trustee_active and player is self.human_player()
+        generation = self._trustee_generation
+        if player.is_ai or trustee_request:
             raw = await self._ai_choose_choice(player, request)
-            input_status = "accepted"
+            if trustee_request and generation != self._trustee_generation:
+                if self._trustee_active:
+                    raw = await self._ai_choose_choice(player, request)
+                    input_status = "accepted"
+                else:
+                    raw, input_status = await self._human_choose_choice(player, request, request_id)
+            else:
+                input_status = "accepted"
         else:
             raw, input_status = await self._human_choose_choice(player, request, request_id)
 
@@ -1040,7 +1276,7 @@ class MainEngine:
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
         elif input_status == "cancelled":
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "cancelled"
-        elif input_status == "timeout":
+        elif input_status in {"timeout", "trustee"}:
             if self.game_aborted:
                 result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
             else:
@@ -1049,7 +1285,7 @@ class MainEngine:
                     result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
                 else:
                     result = self._resolve_choice(player, request, raw)
-                    status = "timeout"
+                    status = "timeout" if input_status == "timeout" else "resolved"
         elif self._choice_has_stale_candidates(request, raw):
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "stale"
         else:
@@ -1066,6 +1302,11 @@ class MainEngine:
             "candidate_version": request.get("candidate_version"),
         })
         await self._emit_selection_result(player, request, status)
+        if (player.is_ai or trustee_request or input_status in {"timeout", "trustee"}) and not self.game_aborted:
+            await self._emit_decision_trace(
+                player, request.get("kind", "confirm"), len(request.get("options") or []),
+                raw, status,
+            )
         return result
 
     async def ask_confirm(self, player: Player, prompt: str, *,
@@ -1177,12 +1418,22 @@ class MainEngine:
 
     async def _ai_choose_option(self, player: Player, request: Dict):
         decision_request = self._response_decision_view(request)
+        trustee = self._trustee_active and player is self.human_player()
+        if trustee and (self._trustee_source == "rules" or self._trustee_degraded):
+            return self.ai_decision.simple_response_decision(player, decision_request)
+        decision_player = self._trustee_view(player) if trustee else player
         handler = getattr(self.ai_decision, "make_response_decision", None)
         if handler is not None:
             try:
-                return await handler(player, decision_request)
+                result = await handler(decision_player, decision_request)
+                if trustee:
+                    self._update_trustee_failure(player)
+                return result
             except Exception as exc:
-                logger.info(f"  ⚠️ 响应AI失败，切换规则AI: {type(exc).__name__}: {exc}")
+                logger.info("  ⚠️ 响应AI失败，切换规则AI: %s", type(exc).__name__)
+                if trustee:
+                    self._trustee_failures += 1
+                    self._trustee_degraded = self._trustee_failures >= 3
         return self.ai_decision.simple_response_decision(player, decision_request)
 
     async def _human_choose_option(self, player: Player, request: Dict, request_id: str):
@@ -1209,6 +1460,8 @@ class MainEngine:
                 context=self._serialize_response_context(request.get("context") or {}),
             )
             raw = await asyncio.wait_for(future, timeout=self.response_timeout)
+            if isinstance(raw, dict) and raw.get("trustee"):
+                return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
                 return None, "cancelled"
             if self.game_aborted:
@@ -1282,15 +1535,90 @@ class MainEngine:
 
     # ---------- 托管兜底与离席看门狗 ----------
 
+    def trustee_status(self) -> Dict:
+        return {
+            "enabled": self._trustee_active,
+            "source": self._trustee_source if self._trustee_active else None,
+            "model": self._trustee_config.get("model") if self._trustee_active and not self._trustee_degraded else None,
+            "failures": self._trustee_failures if self._trustee_active else 0,
+            "degraded": bool(self._trustee_active and self._trustee_degraded),
+            "degrade_reason": self._trustee_degrade_reason if self._trustee_active else None,
+        }
+
+    def set_trustee(self, enabled: bool, *, source="rules", player_id=None, config=None) -> Dict:
+        """Set one human's takeover source without changing their cards or identity."""
+        if self.game_aborted:
+            raise ValueError("对局已结束")
+        if not enabled:
+            self._trustee_active = False
+            self._trustee_generation += 1
+            self._human_idle_since = None
+            return self.trustee_status()
+        if source not in {"default", "copy_ai", "custom", "rules"}:
+            raise ValueError("未知托管来源")
+        connection = {}
+        if source == "default":
+            connection = normalize_ai(self.game_config.get("trustee_default") or {}, use_default=True)
+        elif source == "copy_ai":
+            candidate = next((p for p in self.game_state.players
+                              if p.id == player_id and p.is_ai), None)
+            if candidate is None:
+                raise ValueError("复制来源不是场上 AI")
+            connection = dict(candidate.ai_config or {})
+        elif source == "custom":
+            if not isinstance(config, dict):
+                raise ValueError("托管配置必须是对象")
+            connection = normalize_ai(config, use_default=False)
+        allowed = {"provider", "model", "api_url", "base_url", "temperature", "thinking", "api_key"}
+        self._trustee_config = {key: value for key, value in connection.items() if key in allowed}
+        self._trustee_source = source
+        self._trustee_active = True
+        self._trustee_failures = 0
+        self._trustee_degraded = source != "rules" and not bool(self._trustee_config.get("api_key"))
+        self._trustee_degrade_reason = "missing_api_key" if self._trustee_degraded else None
+        self._trustee_generation += 1
+        self._human_idle_since = None
+        # Wake a pending turn/selection so the takeover starts immediately.
+        for future in self._pending_requests.values():
+            if not future.done():
+                future.set_result({"trustee": True})
+        self._player_input = {"action": {"type": "trustee"}, "target_ids": []}
+        if self._player_event is not None and not self._player_event.is_set():
+            self._player_event.set()
+        return self.trustee_status()
+
+    def _trustee_view(self, player):
+        return _TrusteePlayerView(player, self._trustee_config)
+
+    async def _trustee_make_decision(self, player, actions):
+        generation = self._trustee_generation
+        if self._trustee_source == "rules" or self._trustee_degraded:
+            decision = self.ai_decision.simple_ai_decision(player, actions)
+        else:
+            decision = await self.ai_decision.make_decision(self._trustee_view(player), actions)
+            self._update_trustee_failure(player)
+        return decision if self._trustee_active and generation == self._trustee_generation else None
+
+    def _update_trustee_failure(self, player):
+        failure = getattr(self.ai_decision, "last_failure", {}).get(player.id)
+        if failure:
+            self._trustee_failures += 1
+            if self._trustee_failures >= 3:
+                self._trustee_degraded = True
+                self._trustee_degrade_reason = "three_failures"
+        else:
+            self._trustee_failures = 0
+
     def _mark_waiting_for_human(self):
         """引擎开始等真人。已经在计时就不重新打点，保证是累计而不是每次重置。"""
-        if self._human_idle_since is None:
+        if not self._trustee_active and self._human_idle_since is None:
             self._human_idle_since = self.time_source()
 
     def _note_human_input(self):
         """收到任何真人输入即清零，并解除托管状态。"""
         self._human_idle_since = None
         self._trustee_active = False
+        self._trustee_generation += 1
 
     def idle_seconds(self) -> float:
         if self._human_idle_since is None:
@@ -1298,16 +1626,12 @@ class MainEngine:
         return float(self.time_source() - self._human_idle_since)
 
     async def _trustee_choose(self, player: Player, request: Dict):
-        """单次请求超时后的规则脚本托管。不调用任何 API。"""
+        """Resolve a timed out response through the configured takeover source."""
         if self._abort_reason:
             return None
-        self._trustee_active = True
-        try:
-            decision_request = self._response_decision_view(request)
-            index = self.ai_decision.simple_response_decision(player, decision_request)
-        except Exception as exc:
-            logger.info(f"  ⚠️ 托管决策失败: {type(exc).__name__}: {exc}")
-            index = None
+        if not self._trustee_active:
+            self.set_trustee(True, source="rules")
+        index = await self._ai_choose_option(player, request)
         options = request.get("options") or []
         label = "不响应"
         if isinstance(index, int) and 0 <= index < len(options):
@@ -1370,7 +1694,10 @@ class MainEngine:
         if self.game_state.current_phase != Phase.PLAY or player != self.game_state.current_player or not player.alive:
             return [{"type": "end_phase"}]
 
-        for i, card in enumerate(player.hand):
+        playable_cards = list(player.hand)
+        if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+            playable_cards.extend(player.treasure_cards)
+        for i, card in enumerate(playable_cards):
             spec = CARD_TABLE.get(card.name)
             # 只能响应/未实现的牌不作为合法操作暴露（闪、无懈、未实现锦囊、装备）。
             if spec and spec.usage in ("response", "unimplemented"):
@@ -1412,6 +1739,18 @@ class MainEngine:
                     if can_play:
                         valid.append(target.id)
                 if valid:
+                    if (card.name == "杀" and i < len(player.hand)
+                            and len(player.hand) == 1
+                            and getattr(player.equipment.get("weapon"), "name", None) == "方天画戟"):
+                        groups = [list(group) for count in range(1, min(3, len(valid)) + 1)
+                                  for group in permutations(valid, count)]
+                        actions.append({"type": "play_card", "card_index": i,
+                                        "card": card_to_dict(card, include_id=False),
+                                        "requires_target": True, "target_count": 3,
+                                        "min_target_count": 1,
+                                        "valid_target_groups": groups,
+                                        "valid_targets": valid})
+                        continue
                     actions.append(
                         {
                             "type": "play_card",
@@ -1435,6 +1774,28 @@ class MainEngine:
                     }
                 )
 
+        # 木牛流马存牌是装备主动操作，输入索引始终指向真正手牌。
+        if (getattr(player.equipment.get("treasure"), "name", None) == "木牛流马"
+                and not player.flags.get("muniu_stored_this_turn")):
+            for i in range(len(player.hand)):
+                actions.append({"type": "use_skill", "skill_name": "木牛流马",
+                                "variant": "store", "card_indices": [i],
+                                "requires_target": False, "valid_targets": [],
+                                "text": "将一张手牌扣置于木牛流马"})
+        if (getattr(player.equipment.get("weapon"), "name", None) == "丈八蛇矛"
+                and player.sha_count < player.max_sha):
+            # 每组双牌代价都用同一合法杀目标校验，避免技能按钮绕过射程。
+            for first, second in combinations(range(len(player.hand)), 2):
+                virtual = Card(f"zhangba:{player.hand[first].id}:{player.hand[second].id}",
+                               "杀", "none", 1, "basic")
+                valid = [target.id for target in self.game_state.players
+                         if target.alive and target is not player
+                         and self.rules.can_play_sha(player, virtual, [target])[0]]
+                if valid:
+                    actions.append({"type": "use_skill", "skill_name": "丈八蛇矛",
+                                    "variant": "as_sha", "card_indices": [first, second],
+                                    "requires_target": True, "valid_targets": valid,
+                                    "text": "将两张手牌当【杀】使用"})
         # 只有运行状态为active且满足当前条件的技能才作为合法操作暴露。
         actions.extend(self.skill_manager.get_actions(player))
         actions.append({"type": "end_phase"})
@@ -1449,9 +1810,14 @@ class MainEngine:
         try:
             if action_type == "play_card":
                 card_index = action.get("card_index")
-                if not isinstance(card_index, int) or not 0 <= card_index < len(player.hand):
+                playable_cards = list(player.hand)
+                if getattr(player.equipment.get("treasure"), "name", None) == "木牛流马":
+                    playable_cards.extend(player.treasure_cards)
+                if not isinstance(card_index, int) or not 0 <= card_index < len(playable_cards):
                     return False
-                card = player.hand[card_index]
+                card = playable_cards[card_index]
+                source_zone = "hand" if card_index < len(player.hand) else "treasure"
+                source_index = card_index if source_zone == "hand" else card_index - len(player.hand)
                 target_ids = target_ids or []
                 players_by_id = {p.id: p for p in self.game_state.players}
                 targets = [players_by_id[pid] for pid in target_ids if pid in players_by_id]
@@ -1464,6 +1830,7 @@ class MainEngine:
                 effect_context = self._new_effect_context(
                     player, card, target=targets[0] if targets else None,
                 )
+                effect_context.last_hand_card = source_zone == "hand" and len(player.hand) == 1
                 await self._notify_card_ui(
                     message=f"{player.name}使用【{card.name}】"
                     + (f"，目标：{'、'.join(t.name for t in targets)}" if targets else ""),
@@ -1482,7 +1849,7 @@ class MainEngine:
                 if self.game_aborted:
                     return False
                 move = await self.move_card(
-                    card, "hand", "discard", from_owner=player,
+                    card, source_zone, "discard", from_owner=player,
                     reason="use_card", actor_id=player.id,
                     effect_id=effect_context.effect_id, project=False,
                 )
@@ -1491,19 +1858,23 @@ class MainEngine:
                 success = await self.card_system.use_card(
                     player, card, targets, effect_context=effect_context,
                 )
-                if self.game_aborted:
+                # 正常击杀可在此处结束对局；已提交的用牌仍应计入统计并回报成功。
+                if self._abort_reason:
                     return False
                 if not success:
                     await self.move_card(
-                        card, "discard", "hand", to_owner=player,
+                        card, "discard", source_zone, to_owner=player,
                         reason="use_card_failed", actor_id=player.id,
                         effect_id=effect_context.effect_id, project=False,
-                        to_index=card_index,
+                        to_index=source_index,
                     )
                 if success:
                     await self.skill_manager.on_card_move(card, move)
-                    await self.skill_manager.on_card_discarded(player, card, "use_card")
-                await self.skill_manager.after_card_used(player, card, targets, success)
+                    # 延时锦囊与装备已离开弃牌区，不触发“被弃置”技能。
+                    if not self.game_state.game_over and card in self.game_state.discard_pile:
+                        await self.skill_manager.on_card_discarded(player, card, "use_card")
+                if not self.game_state.game_over:
+                    await self.skill_manager.after_card_used(player, card, targets, success)
                 return success
 
             if action_type == "use_skill":
@@ -1525,6 +1896,11 @@ class MainEngine:
                 else:
                     target_ids = []
                 targets = [p for p in self.game_state.players if p.id in target_ids]
+                if legal.get("skill_name") == "木牛流马" and legal.get("variant") == "store":
+                    return await self.card_system.store_muniu(player, legal["card_indices"][0])
+                if legal.get("skill_name") == "丈八蛇矛" and legal.get("variant") == "as_sha":
+                    return await self.card_system.use_zhangba(player, legal["card_indices"],
+                                                              targets[0] if targets else None)
                 return await self.skill_manager.execute(player, legal, targets)
 
             if action_type == "end_phase":

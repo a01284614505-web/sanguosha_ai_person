@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17110c">
+    <title>三国杀酒馆 · 历史</title>
+    <link rel="stylesheet" href="css/sgs.css?v=20261017a">
+    <link rel="stylesheet" href="css/pages.css?v=20261017a">
+    <script src="js/card_info.js?v=20261017a"></script>
+    <script src="js/sgs_common.js?v=20261017a"></script>
+</head>
+<body>
+<div class="page">
+    <header class="topbar">
+        <a class="logo" href="index.html" aria-label="返回大厅"><span class="logo-seal">杀</span><span class="logo-text gold-text">三国杀酒馆</span></a>
+        <nav aria-label="主导航"><a href="index.html">大厅</a><a href="handbook.html">图鉴</a><a href="settings.html">设置</a><button class="icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button></nav>
+    </header>
+    <main>
+        <section class="result-hero"><h1 class="brush gold-text">对局历史</h1><p>此浏览器档案中的服务端记录</p></section>
+        <section class="frame" style="padding:18px">
+            <p id="historySummary" class="record-line">正在读取服务端记录…</p>
+            <div class="table-wrap" id="historyList"></div>
+            <p id="historyMessage" class="muted" hidden></p>
+        </section>
+        <p class="muted" style="margin-top:14px">档案 ID 保存在此浏览器，仅用于区分本地战绩。清除浏览器数据后会创建新档案。</p>
+    </main>
+</div>
+<script src="js/history.js?v=20261017a"></script>
+</body>
+</html>
