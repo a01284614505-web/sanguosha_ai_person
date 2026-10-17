@@ -263,9 +263,7 @@ class SkillManager:
 
     async def judge(self, player, reason="skill"):
         state = self.engine.game_state
-        if not state.deck:
-            state.draw_card(player, 0)
-        if not state.deck:
+        if not state.refill_deck_if_empty():
             return None
         card = state.deck.pop(0)
         card = await self.before_judge(player, card, {"reason": reason})

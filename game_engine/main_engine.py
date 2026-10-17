@@ -131,6 +131,8 @@ class MainEngine:
         self._trustee_degrade_reason = None
         self._trustee_generation = 0
         self._waiting_for_action = False
+        # 正在等待真人的提示（出牌回合 / 选择请求），断线重连时据此重发；键为 "your_turn" 或 request_id。
+        self._open_prompts: Dict[str, Dict] = {}
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
         self._game_end_emitted = False
@@ -277,6 +279,9 @@ class MainEngine:
                     "hp": p.hp,
                     "max_hp": p.max_hp,
                     "hand_count": len(p.hand),
+                    # 手牌上限由引擎按技能（英姿、血裔、清俭等）算好下发，前端不自行推算。
+                    "hand_limit": self.skill_manager.hand_limit(p, max(0, p.hp)),
+                    "chained": bool(getattr(p, "chained", False)),
                     "treasure_count": len(p.treasure_cards),
                     "alive": p.alive,
                     "hero_name": self._hero_name(p),
@@ -290,6 +295,8 @@ class MainEngine:
                     },
                     "is_ai": p.is_ai,
                     "ai_config": {
+                        # 没填 Key 的座位实际由规则 AI 代打，界面据此显示“规则 AI”而不是模型名。
+                        "rule_ai": not self._has_model_key(p),
                         "provider": p.ai_config.get("provider", "deepseek"),
                         "model": p.ai_config.get("model", "deepseek-chat"),
                         "api_url": p.ai_config.get("api_url", ""),
@@ -332,6 +339,11 @@ class MainEngine:
             "winner": gs.winner,
             "trustee": self.trustee_status(),
         }
+
+    @staticmethod
+    def _has_model_key(player: Player) -> bool:
+        key = (player.ai_config or {}).get("api_key", "")
+        return bool(key) and key != "test_key"
 
     def human_player(self):
         """本局的真人玩家（无则返回 None）。"""
@@ -487,14 +499,18 @@ class MainEngine:
             self._waiting_for_action = True
             # 出牌阶段引擎同样在等真人，纳入离席计时。
             self._mark_waiting_for_human()
-            await self.emit(
-                ENGINE_EVENT.YOUR_TURN,
-                player_name=player.name,
-                hand=self.get_player_hand(player),
-                actions=[dict(action) for action in actions],
-                timeout=self.human_action_timeout,
-            )
-            data = await self._wait_player_input()
+            payload = {
+                "player_name": player.name,
+                "hand": self.get_player_hand(player),
+                "actions": [dict(action) for action in actions],
+                "timeout": self.human_action_timeout,
+            }
+            self._remember_prompt("your_turn", ENGINE_EVENT.YOUR_TURN, payload)
+            try:
+                await self.emit(ENGINE_EVENT.YOUR_TURN, **payload)
+                data = await self._wait_player_input()
+            finally:
+                self._open_prompts.pop("your_turn", None)
             self._waiting_for_action = False
             if self.game_state.game_over:
                 break
@@ -791,7 +807,31 @@ class MainEngine:
             effect_id, card, player.id, current_target_id=getattr(target, "id", None),
         )
 
+    def _remember_prompt(self, key: str, event: str, payload: Dict):
+        self._open_prompts[key] = {"event": event, "payload": payload,
+                                   "since": asyncio.get_running_loop().time()}
+
+    def pending_prompts(self) -> List[Dict]:
+        """断线重连时需要重发给真人的提示，timeout 换算成剩余秒数。"""
+        if self.game_aborted:
+            return []
+        now = asyncio.get_running_loop().time()
+        prompts = []
+        for entry in self._open_prompts.values():
+            payload = dict(entry["payload"])
+            if "hand" in payload:
+                # 出牌提示里的手牌以当前为准（等待期间可能被拆、被顺）。
+                payload["hand"] = self.get_player_hand(self.human_player())
+            try:
+                remaining = float(payload.get("timeout") or 0) - (now - entry["since"])
+            except (TypeError, ValueError):
+                remaining = 0
+            payload["timeout"] = max(1, int(remaining))
+            prompts.append({"event": entry["event"], "payload": payload})
+        return prompts
+
     def _close_request(self, request_id: str):
+        self._open_prompts.pop(request_id, None)
         self._pending_requests.pop(request_id, None)
         self._pending_request_specs.pop(request_id, None)
         self._request_outcomes.setdefault(request_id, "expired")
@@ -1198,19 +1238,20 @@ class MainEngine:
         }
         request["selection"] = selection_block
         try:
-            await self.emit(
-                ENGINE_EVENT.REQUIRE_RESPONSE,
-                request_id=request_id,
-                game_id=request.get("game_id", self.game_id),
-                candidate_version=request.get("candidate_version"),
-                player_id=player.id,
-                kind=request.get("kind", "confirm"),
-                prompt=request.get("prompt", ""),
-                timeout=self.response_timeout,
-                options=[self._serialize_choice_option(o, i) for i, o in enumerate(request.get("options") or [])],
-                context=self._serialize_response_context(request.get("context") or {}),
-                selection=selection_block,
-            )
+            payload = {
+                "request_id": request_id,
+                "game_id": request.get("game_id", self.game_id),
+                "candidate_version": request.get("candidate_version"),
+                "player_id": player.id,
+                "kind": request.get("kind", "confirm"),
+                "prompt": request.get("prompt", ""),
+                "timeout": self.response_timeout,
+                "options": [self._serialize_choice_option(o, i) for i, o in enumerate(request.get("options") or [])],
+                "context": self._serialize_response_context(request.get("context") or {}),
+                "selection": selection_block,
+            }
+            self._remember_prompt(request_id, ENGINE_EVENT.REQUIRE_RESPONSE, payload)
+            await self.emit(ENGINE_EVENT.REQUIRE_RESPONSE, **payload)
             raw = await asyncio.wait_for(future, timeout=self.response_timeout)
             if isinstance(raw, dict) and raw.get("trustee"):
                 return None, "trustee"
@@ -1443,22 +1484,23 @@ class MainEngine:
         self._pending_request_specs[request_id] = request
         self._mark_waiting_for_human()
         try:
-            await self.emit(
-                ENGINE_EVENT.REQUIRE_RESPONSE,
-                request_id=request_id,
-                game_id=request.get("game_id", self.game_id),
-                candidate_version=request.get("candidate_version"),
-                player_id=player.id,
-                kind=request.get("kind", "respond"),
-                prompt=request.get("prompt", ""),
-                requested_name=request.get("requested_name"),
-                timeout=self.response_timeout,
-                selection=request.get("selection", {
+            payload = {
+                "request_id": request_id,
+                "game_id": request.get("game_id", self.game_id),
+                "candidate_version": request.get("candidate_version"),
+                "player_id": player.id,
+                "kind": request.get("kind", "respond"),
+                "prompt": request.get("prompt", ""),
+                "requested_name": request.get("requested_name"),
+                "timeout": self.response_timeout,
+                "selection": request.get("selection", {
                     "mode": "single", "min": 0, "max": 1, "cancelable": True,
                 }),
-                options=[self._serialize_option(o, i) for i, o in enumerate(request.get("options") or [])],
-                context=self._serialize_response_context(request.get("context") or {}),
-            )
+                "options": [self._serialize_option(o, i) for i, o in enumerate(request.get("options") or [])],
+                "context": self._serialize_response_context(request.get("context") or {}),
+            }
+            self._remember_prompt(request_id, ENGINE_EVENT.REQUIRE_RESPONSE, payload)
+            await self.emit(ENGINE_EVENT.REQUIRE_RESPONSE, **payload)
             raw = await asyncio.wait_for(future, timeout=self.response_timeout)
             if isinstance(raw, dict) and raw.get("trustee"):
                 return None, "trustee"

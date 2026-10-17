@@ -52,7 +52,8 @@
     line-height: 1.2;
     pointer-events: none;
 }
-.field {
+/* 牌桌毡面：用 id 限定，避免与表单的 .field（输入框行）同名冲突——之前托管弹窗里会多出一个椭圆 */
+#field {
     grid-area: field;
     position: relative;
     overflow: hidden;
@@ -62,7 +63,7 @@
         radial-gradient(ellipse at 50% 120%, rgba(0, 0, 0, .65), transparent 55%);
 }
 /* 桌沿：一圈淡金椭圆 */
-.field::before {
+#field::before {
     content: "";
     position: absolute;
     left: 14%; right: 14%; top: 22%; bottom: 4%;
@@ -372,11 +373,15 @@
     100% { opacity: 0; }
 }
 .table-cards { display: flex; gap: 8px; justify-content: center; min-height: calc(var(--hand-w) * .8 * 1.4 + 22px); }
-.table-card { display: grid; justify-items: center; gap: 4px; animation: land .25s var(--ease); transition: opacity .6s; pointer-events: auto; }
+/* 每张处理区牌占固定宽度，说明文字不超过自己这一格，避免压到相邻的牌和文字上。 */
+.table-card { width: calc(var(--hand-w) * 1.05); display: grid; justify-items: center; align-content: start; gap: 4px; animation: land .25s var(--ease); transition: opacity .6s; pointer-events: auto; }
 .table-card .card { --w: calc(var(--hand-w) * .8); }
-.table-card figcaption { max-width: calc(var(--hand-w) * 1.1); font-size: 11px; line-height: 1.3; color: var(--paper-dim); text-align: center; text-shadow: 0 1px 2px #000; }
+.table-card figcaption {
+    width: 100%; font-size: 11px; line-height: 1.3; color: var(--paper-dim); text-align: center; text-shadow: 0 1px 2px #000;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+}
 .table-card.old { opacity: .45; }
-@keyframes land { from { transform: scale(1.15); } }
+@keyframes land { from { transform: translateY(-6px); opacity: .6; } }
 
 /* ======================================================================
    4. 特效层：指向线、飞牌、浮字、技能大字、判定框
@@ -747,7 +752,7 @@
     .battle { --seat-w: min(21vw, 86px); --hand-w: 60px; --my-h: 226px; }
     .hud { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info tools" "track track"; row-gap: 4px; align-items: start; }
     .hud-info { grid-area: info; font-size: 11px; }
-    .hud-info .hud-round { display: none; }
+    .hud-info { gap: 6px; white-space: nowrap; }
     .hud-tools { grid-area: tools; }
     .phase-track { grid-area: track; justify-self: center; }
     .pt-step { width: 22px; height: 22px; font-size: 12px; }
@@ -763,7 +768,7 @@
     .gouyu, .s-hp .gouyu { width: 12px; height: 12px; }
     .equip-line { font-size: 9.5px; }
     .judge-tile { width: 17px; height: 17px; }
-    .field::before { top: 42%; left: 4%; right: 4%; }
+    #field::before { top: 42%; left: 4%; right: 4%; }
     .arena { top: 64%; width: 92%; }
     .phase-banner { font-size: 20px; }
     .action-bar { width: 96%; bottom: 6px; }
@@ -783,4 +788,33 @@
     .my-hero .hero-frame { height: 96px; width: 72px; flex: none; }
     .my-hero .skill-btns { flex-direction: column; align-items: stretch; }
     .hand { padding-top: 16px; justify-content: flex-start; }
+}
+
+/* 断线重连提示条：固定在顶部中央，不挡出牌区 */
+.reconnect-banner {
+    position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    z-index: 1200; max-width: calc(100vw - 32px);
+    padding: 8px 16px; border-radius: 999px;
+    background: rgba(90, 24, 18, 0.92); color: var(--gold-hi);
+    border: 1px solid var(--gold-dim); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    font-size: 14px; text-align: center; pointer-events: none;
+}
+.reconnect-banner[hidden] { display: none; }
+@media (max-width: 600px) {
+    .reconnect-banner { top: calc(52px + env(safe-area-inset-top)); font-size: 12px; padding: 5px 12px; white-space: nowrap; }
+}
+
+/* 铁索连环横置标记 */
+.s-chain {
+    position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%) rotate(-8deg);
+    padding: 1px 6px; border-radius: 3px;
+    background: rgba(40, 46, 58, 0.88); color: #d9e4f2;
+    border: 1px solid #8fa3bd; font: 700 12px/1.4 var(--font-ui); letter-spacing: 2px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .5); pointer-events: none;
+}
+@media (max-width: 640px) { .s-chain { font-size: 10px; letter-spacing: 1px; padding: 0 4px; } }
+
+/* 鼠标设备上快捷发言换行排列：原来横向滚动又隐藏了滚动条，最后一个气泡被切掉一半也没法发现 */
+@media (hover: hover) and (pointer: fine) {
+    .quick-phrases { flex-wrap: wrap; overflow-x: visible; }
 }

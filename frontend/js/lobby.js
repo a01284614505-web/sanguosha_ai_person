@@ -7,7 +7,7 @@
     const { esc, store, toast } = SGS;
 
     const SEAT_NAMES = ['二', '三', '四', '五'];
-    const DEFAULT_NAMES = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '吕布'];
+    const DEFAULT_NAMES = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '酒馆常客'];
     const MODE = '5人身份局';
 
     class LobbyController {

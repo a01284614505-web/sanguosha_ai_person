@@ -116,6 +116,7 @@ class ServerChatEchoTest(unittest.TestCase):
         engine = make_engine()
         server.engines["1"] = engine
         server.ws_map[ws] = "1"
+        server.viewers["1"] = ws
         asyncio.run(server.do_chat(ws, {"message": "  大家好  "}))
         self.assertEqual(ws.sent[-1]["type"], "chat")
         self.assertEqual(ws.sent[-1]["message"], "大家好")

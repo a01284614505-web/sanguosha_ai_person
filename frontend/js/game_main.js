@@ -210,6 +210,7 @@
             '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
             (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
+            (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">连环</div>' : '') +
             '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status;
     }
 
@@ -306,7 +307,9 @@
             heroBox.querySelector('.hero-frame').addEventListener('click', () => onSeatClick(p.id));
             heroBox.querySelectorAll('.skill-btn').forEach(b => b.addEventListener('click', () => onSkillClick(b.dataset.skill, b)));
         }
-        document.getElementById('handCount').textContent = '手牌 ' + G.hand.length + ' / 上限 ' + Math.max(0, p.hp);
+        // 手牌上限以引擎下发为准（含英姿、血裔、清俭等技能修正）；旧服务器没有该字段时才退回体力值。
+        const limit = typeof p.hand_limit === 'number' ? p.hand_limit : Math.max(0, p.hp);
+        document.getElementById('handCount').textContent = '手牌 ' + G.hand.length + ' / 上限 ' + limit;
     }
 
     // ------------------------------------------------------------------ 渲染：阶段栏
@@ -949,7 +952,7 @@
         else if (data.reason === 'use' && data.target_name) caption += ' → ' + data.target_name;
         else if (data.reason === 'hand_limit') caption += ' 弃置';
         else if (data.reason && data.reason !== 'use') caption = data.message || caption;
-        fig.innerHTML = SGS.cardHTML(data.card || { name: data.card_name }) + '<figcaption>' + esc(caption) + '</figcaption>';
+        fig.innerHTML = SGS.cardHTML(data.card || { name: data.card_name }) + '<figcaption title="' + esc(caption) + '">' + esc(caption) + '</figcaption>';
         box.appendChild(fig);
         const all = box.querySelectorAll('.table-card');
         all.forEach((el, i) => el.classList.toggle('old', i < all.length - 1));
@@ -1098,6 +1101,13 @@
     // ------------------------------------------------------------------ 消息处理
     /** 连上服务器后立刻用大厅配置开局。 */
     gameClient.onConnect = function () {
+        // 本标签页已有进行中的对局（刷新页面、断线后自动重连）：接回原局，不重新开局。
+        const active = store.sget('activeGame', null);
+        if (active && active.game_id && active.profile_id && !G.ended) {
+            ChatPanel.addLog('已连上游戏服务，正在接回对局…');
+            gameClient.resumeGame(active.game_id, active.profile_id);
+            return;
+        }
         ChatPanel.addLog('已连接游戏服务，正在开局…');
         const cfg = Object.assign({}, G.cfg);
         const hero = cfg.selected_hero;
@@ -1110,7 +1120,11 @@
     };
 
     /** 开局成功：身份卡已由服务端校验并扣除。 */
-    gameClient.onGameCreated = function () {
+    gameClient.onGameCreated = function (data) {
+        gameClient.autoReconnect = true;
+        if (data && data.game_id && data.profile_id) {
+            store.sset('activeGame', { game_id: data.game_id, profile_id: data.profile_id });
+        }
         if (G.cfg.identity_card && G.cfg.identity_card.use) {
             delete G.cfg.identity_card;
             store.sset('gameConfig', G.cfg);
@@ -1167,10 +1181,15 @@
         startTurnTimer(data.timeout);
     };
 
-    gameClient.onActionResult = function (ok) {
-        if (!ok) {
-            toast('操作没有生效，请重新选择', { bad: true });
-            ChatPanel.addLog('上一步操作被引擎判定无效', 'bad');
+    gameClient.onActionResult = function (receipt) {
+        // 服务器回执是对象 {status, success, message}；旧写法把整个对象当布尔值，拒绝从来不会提示。
+        const status = receipt && receipt.status;
+        const rejected = receipt === false || (receipt && receipt.success === false
+            && status !== 'duplicate' && status !== 'game_ended');
+        if (rejected) {
+            const msg = (receipt && receipt.message) || '操作没有生效，请重新选择';
+            toast(msg, { bad: true });
+            ChatPanel.addLog('上一步操作未生效：' + msg, 'bad');
         }
     };
 
@@ -1287,6 +1306,9 @@
     /** 对局结束：保存结算快照（结算页读取）、更新本机战绩与身份卡、弹出胜负印。 */
     gameClient.onGameEnd = function (data) {
         G.ended = true;
+        gameClient.autoReconnect = false;
+        store.sset('activeGame', null);
+        setReconnectBanner('');
         G.turn = null; G.sel = null;
         if (G.req) { G.req = null; clearInterval(G.reqTimer); }
         const state = data.state || G.state || {};
@@ -1330,13 +1352,68 @@
         if (data.fatal) showFatal('对局异常', msg);
     };
 
-    /** 断线：本局无法续上（引擎随连接一起结束），引导回大厅。 */
+    /** 断线：服务器会把对局保留 5 分钟，这里自动重连；超过 5 分钟仍连不上才判定本局结束。 */
+    const RECONNECT_GIVE_UP_MS = 5 * 60 * 1000;
     gameClient.onDisconnect = function (info) {
         if (G.ended) return;
-        showFatal('连接已断开', info && info.wasConnected
-            ? '与游戏服务的连接断开了，本局无法继续。确认服务器仍在运行后，回到大厅重新开局。'
-            : '连不上游戏服务。请先运行 game_server.py，再回到大厅开局。');
+        if (!gameClient.autoReconnect) {
+            showFatal('连不上游戏服务', '请先运行 game_server.py，再回到大厅开局。');
+            return;
+        }
+        if (!G.disconnectedAt) G.disconnectedAt = Date.now();
+        // 断线期间的倒计时与选择都作废，重连后服务器会重新下发仍在等待的提示。
+        G.turn = null; G.sel = null;
+        if (G.req) { G.req = null; clearInterval(G.reqTimer); }
+        clearIdleWatch();
+        renderAll();
+        if (Date.now() - G.disconnectedAt > RECONNECT_GIVE_UP_MS) {
+            gameClient.autoReconnect = false;
+            store.sset('activeGame', null);
+            setReconnectBanner('');
+            showFatal('连接已断开', '超过 5 分钟没能重新连上，本局已按离席处理。回到大厅可以重新开局。');
+            return;
+        }
+        setReconnectBanner('断线重连中…对局保留 5 分钟');
     };
+
+    gameClient.onReconnecting = function (info) {
+        if (G.ended) return;
+        setReconnectBanner('断线重连中（第 ' + info.attempt + ' 次）…对局保留 5 分钟');
+    };
+
+    gameClient.onGameResumed = function (data) {
+        G.disconnectedAt = 0;
+        gameClient.autoReconnect = !data.finished;
+        setReconnectBanner('');
+        G.turn = null; G.sel = null;
+        if (G.req) { G.req = null; clearInterval(G.reqTimer); }
+        renderAll();
+        if (!data.finished) {
+            ChatPanel.addLog('已重新连上，对局继续', 'important');
+            toast('已重新连上，对局继续');
+        }
+    };
+
+    gameClient.onResumeFailed = function (data) {
+        gameClient.autoReconnect = false;
+        store.sset('activeGame', null);
+        setReconnectBanner('');
+        showFatal('对局已结束', (data && data.message) || '这局已经不在服务器上了，回到大厅可以重新开局。');
+    };
+
+    function setReconnectBanner(text) {
+        let bar = document.getElementById('reconnectBanner');
+        if (!text) { if (bar) bar.hidden = true; return; }
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'reconnectBanner';
+            bar.className = 'reconnect-banner';
+            bar.setAttribute('role', 'status');
+            document.body.appendChild(bar);
+        }
+        bar.textContent = text;
+        bar.hidden = false;
+    }
 
     function showFatal(title, message) {
         G.ended = true;
@@ -1374,7 +1451,9 @@
             '<div class="row">' + SGS.factionSeal(hero.faction) + SGS.identitySeal(p.identity && (isMe || p.identity_revealed) ? p.identity : null) + '<span>' + esc(identity) + '</span></div>' +
             '<div class="row">' + SGS.hpHTML(p.hp, p.max_hp) + '<span class="muted">体力 ' + p.hp + ' / ' + p.max_hp + '</span></div>' +
             '<div>手牌 ' + p.hand_count + ' 张' + (p.treasure_count ? '　木牛扣置 ' + p.treasure_count + ' 张' : '') + (p.alive ? '' : '　<b style="color:var(--bad)">已阵亡</b>') + '</div>' +
-            (p.is_ai && p.ai_config ? '<div class="muted">模型　' + esc(p.ai_config.provider + ' / ' + p.ai_config.model) + '</div>' : '') +
+            (p.is_ai && p.ai_config ? '<div class="muted">模型　' + (p.ai_config.rule_ai
+                ? '规则 AI（未填 Key，不调用模型）'
+                : esc(p.ai_config.provider + ' / ' + p.ai_config.model)) + '</div>' : '') +
             (marks ? '<div class="player-marks" aria-label="公开状态标记">' + marks + '</div>' : '') +
             '</div></div>' +
             '<h3 class="info-h">武将技能</h3><div class="info-skills">' + (hero.skills || []).map(s =>
@@ -1510,9 +1589,15 @@
 
     async function quitGame() {
         if (G.ended) { location.href = 'index.html'; return; }
-        const yes = await confirmDialog('结束本局？', '本局会记为主动终止，不计入胜负。', '结束对局');
+        // 与服务端战绩规则一致：前两轮内结束不影响连胜，之后结束会清零连胜。
+        const round = (G.state && G.state.round) || 0;
+        const note = round > 2
+            ? '本局会记为中断，不计胜负；已过第 2 轮，结束后连胜会清零。'
+            : '本局会记为中断，不计胜负；前两轮内结束不影响连胜。';
+        const yes = await confirmDialog('结束本局？', note, '结束对局');
         if (!yes) return;
         document.getElementById('quitBtn').disabled = true;
+        gameClient.autoReconnect = false;
         gameClient.send({ type: Protocol.INBOUND.END_GAME, reason: '玩家主动结束游戏' });
     }
 

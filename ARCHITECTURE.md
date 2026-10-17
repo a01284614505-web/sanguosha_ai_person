@@ -8,7 +8,7 @@
 引擎自驱（全部游戏逻辑） / 服务器纯消息泵 / 前端纯 UI
 ```
 - **引擎是唯一真理来源**：`game_engine/` 计算合法操作、复核选择并执行结算。
-- **服务器只负责传输与持久化**：`game_server.py` 管理 HTTP/WebSocket、连接映射、消息转发、动画 ACK 和 `game_end` 的幂等战绩写入；合法性、胜负和统计由引擎决定。
+- **服务器只负责传输与持久化**：`game_server.py` 管理 HTTP/WebSocket、连接映射、消息转发、动画 ACK 和 `game_end` 的幂等战绩写入；合法性、胜负和统计由引擎决定。对局与连接脱钩：断线只解除观看关系，5 分钟内可用 `resume_game` 接回，超时按离席中止；无人观看时不等动画 ACK。
 - **前端只负责显示和输入**：`frontend/` 渲染引擎状态并提交用户选择，不自行决定规则合法性。
 ## 2. 当前结构
 ```text
@@ -76,7 +76,7 @@ GameServer 转成 WebSocket 出站消息
 6. 引擎判定胜负并发出 `game_end`；服务器按唯一 `game_id` 写入战绩后把收据转发浏览器。`GET /api/history?profile_id=…` 只读取服务端记录。
 ## 4. 当前 WebSocket 协议
 > 本表记录 `game_server.py` 当前实际收发类型。R6 已收敛为 `protocol.py` 与自动生成的 `protocol.js`。
-### 4.1 入站：前端 → 服务器（9 种）
+### 4.1 入站：前端 → 服务器（10 种）
 | 类型 | 用途 |
 |---|---|
 | `create_game` | 创建对局并提交配置 |
@@ -88,7 +88,8 @@ GameServer 转成 WebSocket 出站消息
 | `set_trustee` | 开启/解除托管，来源为规则、默认连接、场上 AI 连接或单独配置 |
 | `ping` | 连接心跳 |
 | `server_info` | 请求服务器能力信息 |
-### 4.2 出站：服务器 → 前端（18 种）
+| `resume_game` | 断线或刷新后带 `game_id`、`profile_id` 接回仍在进行的对局 |
+### 4.2 出站：服务器 → 前端（20 种）
 | 类型 | 用途 |
 |---|---|
 | `pong` | 心跳响应 |
@@ -109,6 +110,8 @@ GameServer 转成 WebSocket 出站消息
 | `end_game_accepted` | 主动结束请求回执 |
 | `game_end` | 对局结束与结算状态（含真实 `stats` / `mvp` / `duration`；服务器追加持久化 `profile` / `reward` / `player_won` 或 `history_error`） |
 | `error` | 协议、配置或执行错误 |
+| `game_resumed` | 重连成功；随后补发完整状态、托管状态与仍在等待的提示（`finished=true` 时紧跟结算消息） |
+| `resume_failed` | 重连失败：`not_found` / `forbidden` / `bad_profile` |
 ## 5. 游戏与 AI 系统
 ### 游戏引擎
 - 5 人身份局：主公 ×1、忠臣 ×1、反贼 ×2、内奸 ×1。

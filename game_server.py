@@ -13,6 +13,7 @@ from threading import Thread
 from urllib.parse import parse_qs, urlsplit
 from websockets.exceptions import ConnectionClosedOK
 from game_engine import MainEngine
+from game_engine.config_validator import sanitize_client_config
 from game_engine.game_history import GameHistoryStore, validate_profile_id
 from game_engine.identity_system import IdentitySystem
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
@@ -36,13 +37,22 @@ def configure_logging():
 
 
 class GameServer:
+    """对局与浏览器连接脱钩：断线只是观众离开，对局继续，由 5 分钟离席 watchdog 与托管兜底。"""
+
+    FINISHED_KEEP = 20          # 无人观看时结束的对局，保留多少条结果供重连领取
+    DISCONNECT_GRACE = 300.0    # 断线后保留对局的秒数，与 5 分钟离席铁规则一致
+
     def __init__(self, history_path=None):
         self.engines = {}
         self.tasks = {}
-        self.ws_map = {}
+        self.ws_map = {}            # ws -> game_id
+        self.viewers = {}           # game_id -> 当前观看的 ws（可在重连时替换）
+        self.finished = {}          # game_id -> {"profile_id", "game_end"}：无人观看时结束的结果
         self.history = GameHistoryStore(history_path or HISTORY_PATH)
         self.animation_waiters = {}
         self.animation_seq = 0
+        self.grace_tasks = {}       # game_id -> 断线宽限计时任务
+
     async def handle(self, ws):
         print(f"[连接] {ws.remote_address}")
         try:
@@ -59,33 +69,64 @@ class GameServer:
         except Exception as exc:
             print(f"[连接关闭] {exc}")
         finally:
-            gid = self.ws_map.get(ws)
-            engine = self.engines.get(gid)
-            if engine is not None and not engine.game_aborted:
-                try:
-                    await engine.request_end_game("连接断开，对局中止")
-                except Exception as exc:
-                    logging.getLogger(__name__).error("断线收摊失败: %s", exc)
-            self.ws_map.pop(ws, None)
-            task = self.tasks.get(gid)
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            self.tasks.pop(gid, None)
-            self.engines.pop(gid, None)
-            prefix = f"{gid}-"
-            for animation_id, waiter in list(self.animation_waiters.items()):
-                if animation_id.startswith(prefix):
-                    if not waiter.done():
-                        waiter.cancel()
-                    self.animation_waiters.pop(animation_id, None)
+            await self._detach(ws)
+
+    async def _detach(self, ws):
+        """连接断开：只解除观看关系。进行中的对局保留，等重连或由离席规则收尾。"""
+        gid = self.ws_map.pop(ws, None)
+        if gid is None or self.viewers.get(gid) is not ws:
+            return
+        self.viewers.pop(gid, None)
+        self._release_animation_waiters(gid)
+        engine = self.engines.get(gid)
+        task = self.tasks.get(gid)
+        if engine is None or task is None or task.done():
+            self._drop_game(gid)
+            return
+        print(f"[观众离开] game_{gid} 对局继续，{int(self.DISCONNECT_GRACE)} 秒内可重连")
+        self._cancel_grace(gid)
+        self.grace_tasks[gid] = asyncio.create_task(self._disconnect_grace(gid))
+
+    def _cancel_grace(self, gid):
+        task = self.grace_tasks.pop(gid, None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def _disconnect_grace(self, gid):
+        """断线超过宽限期仍未重连：按离席规则中止对局（记为中断），不让无人对局一直消耗模型调用。"""
+        try:
+            await asyncio.sleep(self.DISCONNECT_GRACE)
+        except asyncio.CancelledError:
+            return
+        self.grace_tasks.pop(gid, None)
+        engine = self.engines.get(gid)
+        if engine is None or self.viewers.get(gid) is not None or engine.game_aborted:
+            return
+        try:
+            await engine.request_end_game("离线超过 5 分钟，对局中止")
+        except Exception as exc:
+            logging.getLogger(__name__).error("断线收摊失败: %s", exc)
+
+    def _release_animation_waiters(self, gid):
+        prefix = f"{gid}-"
+        for animation_id, waiter in list(self.animation_waiters.items()):
+            if animation_id.startswith(prefix):
+                if not waiter.done():
+                    waiter.set_result(False)
+                self.animation_waiters.pop(animation_id, None)
+
+    def _drop_game(self, gid):
+        self._cancel_grace(gid)
+        self.tasks.pop(gid, None)
+        self.engines.pop(gid, None)
+        self.viewers.pop(gid, None)
+        self._release_animation_waiters(gid)
+
     async def dispatch(self, ws, data):
         message_type = data.get("type", "")
         handlers = {
             INBOUND.CREATE_GAME: lambda: self.do_create(ws, data.get("config", {})),
+            INBOUND.RESUME_GAME: lambda: self.do_resume(ws, data),
             INBOUND.PLAYER_ACTION: lambda: self.do_action(ws, data),
             INBOUND.CHAT: lambda: self.do_chat(ws, data),
             INBOUND.CARD_ANIMATION_DONE: lambda: self.do_animation_done(data),
@@ -102,19 +143,39 @@ class GameServer:
             await handler()
         else:
             await self.send_error(ws, f"未知消息类型: {message_type}")
+
     def engine_for(self, ws):
-        return self.engines.get(self.ws_map.get(ws))
+        gid = self.ws_map.get(ws)
+        # 只有当前观看者能操作对局；被新页面接管的旧连接不再能下指令。
+        if gid is None or self.viewers.get(gid) is not ws:
+            return None
+        return self.engines.get(gid)
+
+    async def _end_orphaned_games(self, profile_id):
+        """同一档案开新局时，结束它在后台无人观看、仍在进行的旧局（记为中断）。"""
+        for gid, engine in list(self.engines.items()):
+            if self.viewers.get(gid) is not None:
+                continue
+            if engine.game_config.get("profile_id") != profile_id or engine.game_aborted:
+                continue
+            try:
+                await engine.request_end_game("开始了新对局，旧对局中止")
+            except Exception as exc:
+                logging.getLogger(__name__).error("结束旧对局失败: %s", exc)
+
     async def do_create(self, ws, raw_config):
         old_gid = self.ws_map.get(ws)
         if old_gid and old_gid in self.tasks and not self.tasks[old_gid].done():
             await self.send_error(ws, "当前连接已有正在运行的游戏")
             return
         if old_gid:
-            self.tasks.pop(old_gid, None)
-            self.engines.pop(old_gid, None)
-        cfg = MainEngine.normalize_config(raw_config, BASE_DIR)
+            self.ws_map.pop(ws, None)
+            if self.viewers.get(old_gid) is ws:
+                self._drop_game(old_gid)
+        cfg = MainEngine.normalize_config(sanitize_client_config(raw_config), BASE_DIR)
         gid = uuid.uuid4().hex
         cfg["profile_id"] = validate_profile_id(cfg.get("profile_id") or f"guest_{gid}")
+        await self._end_orphaned_games(cfg["profile_id"])
         print(f"\n[创建] game_{gid} | 模式: {cfg['mode']} | 玩家: {cfg['player']['name']}")
         engine = MainEngine(cfg)
         engine.game_id = gid
@@ -130,13 +191,61 @@ class GameServer:
                 return
         self.engines[gid] = engine
         self.ws_map[ws] = gid
+        self.viewers[gid] = ws
         for event in ENGINE_EVENTS:
-            engine.on(event, self._forward(ws, event))
-        engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(ws, gid))
+            engine.on(event, self._forward(gid, event))
+        engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(gid))
         await self.send(ws, {"type": OUTBOUND.GAME_CREATED, "game_id": gid,
                              "profile_id": cfg["profile_id"]})
-        self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine, ws))
-    async def _run_engine(self, gid, engine, ws):
+        self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine))
+
+    async def do_resume(self, ws, data):
+        """重连：校验档案后把新连接设为观看者，补发状态快照和仍在等待的提示。"""
+        gid = str(data.get("game_id") or "")
+        try:
+            profile_id = validate_profile_id(data.get("profile_id"))
+        except ValueError:
+            await self.send(ws, {"type": OUTBOUND.RESUME_FAILED, "game_id": gid,
+                                 "reason": "bad_profile", "message": "档案 ID 无效"})
+            return
+        engine = self.engines.get(gid)
+        if engine is None or gid in self.finished:
+            # 对局已结束（包括引擎还在收尾的瞬间）：直接把结算结果交给重连的页面。
+            finished = self.finished.get(gid)
+            if finished and finished["profile_id"] == profile_id:
+                await self.send(ws, {"type": OUTBOUND.GAME_RESUMED, "game_id": gid,
+                                     "profile_id": profile_id, "finished": True})
+                await self.send(ws, finished["game_end"])
+                return
+            await self.send(ws, {"type": OUTBOUND.RESUME_FAILED, "game_id": gid, "reason": "not_found",
+                                 "message": "这局已经不在服务器上了（可能服务器重启过）"})
+            return
+        if engine.game_config.get("profile_id") != profile_id:
+            await self.send(ws, {"type": OUTBOUND.RESUME_FAILED, "game_id": gid,
+                                 "reason": "forbidden", "message": "这局不属于当前浏览器档案"})
+            return
+        previous = self.viewers.get(gid)
+        if previous is not None and previous is not ws:
+            self.ws_map.pop(previous, None)
+            await self.send_error(previous, "本局已在另一个页面继续")
+        old_gid = self.ws_map.get(ws)
+        if old_gid and old_gid != gid and self.viewers.get(old_gid) is ws:
+            self.viewers.pop(old_gid, None)
+        self.ws_map[ws] = gid
+        self.viewers[gid] = ws
+        self._cancel_grace(gid)
+        print(f"[重连] game_{gid}")
+        await self.send(ws, {"type": OUTBOUND.GAME_RESUMED, "game_id": gid, "profile_id": profile_id,
+                             "finished": False, "idle_seconds": int(engine.idle_seconds())})
+        await self.send(ws, {"type": OUTBOUND.GAME_STATE, "state": engine.serialize()})
+        status = engine.trustee_status() if hasattr(engine, "trustee_status") else None
+        if status:
+            await self.send(ws, {"type": OUTBOUND.TRUSTEE_STATUS, **status})
+        for prompt in engine.pending_prompts():
+            await self.send(ws, {"type": ENGINE_EVENT_MAP.get(prompt["event"], prompt["event"]),
+                                 **prompt["payload"]})
+
+    async def _run_engine(self, gid, engine):
         try:
             await engine.run()
         except asyncio.CancelledError:
@@ -149,7 +258,14 @@ class GameServer:
                     self.history.refund_identity_card(engine.game_config["profile_id"], gid)
                 except (OSError, ValueError, RuntimeError) as refund_exc:
                     logging.getLogger(__name__).error("身份卡退款失败: %s", type(refund_exc).__name__)
-            await self.send_error(ws, f"游戏引擎异常: {exc}", fatal=True)
+            ws = self.viewers.get(gid)
+            if ws is not None:
+                await self.send_error(ws, f"游戏引擎异常: {exc}", fatal=True)
+        finally:
+            if self.viewers.get(gid) is None:
+                # 无人观看时结束：结果已写入战绩并留在 finished 里供重连领取，释放引擎。
+                self._drop_game(gid)
+
     async def do_action(self, ws, data):
         engine = self.engine_for(ws)
         if not engine:
@@ -212,18 +328,18 @@ class GameServer:
             await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
         except ValueError as exc:
             await self.send_error(ws, str(exc))
-    def _forward(self, ws, event):
+    def _forward(self, gid, event):
         async def handler(**data):
-            if event == ENGINE_EVENT.GAME_END:
-                engine = self.engine_for(ws)
-                if engine is not None:
-                    try:
-                        data.update(self.history.record_result(
-                            engine.game_config["profile_id"], engine.game_id, data
-                        ))
-                    except (OSError, ValueError, RuntimeError) as exc:
-                        logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
-                        data["history_error"] = "战绩保存失败，请检查服务器日志"
+            engine = self.engines.get(gid)
+            if event == ENGINE_EVENT.GAME_END and engine is not None:
+                # 战绩写入不依赖是否有人在看：断线期间结束的对局同样入账。
+                try:
+                    data.update(self.history.record_result(
+                        engine.game_config["profile_id"], engine.game_id, data
+                    ))
+                except (OSError, ValueError, RuntimeError) as exc:
+                    logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
+                    data["history_error"] = "战绩保存失败，请检查服务器日志"
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
             if event == ENGINE_EVENT.CARD_MOVE and isinstance(data.get("move"), dict):
@@ -233,11 +349,24 @@ class GameServer:
                 if move.get("visibility") != "public" and owner_id != 0:
                     move["card_id"] = None
                 data["move"] = move
-            await self.send(ws, {"type": ENGINE_EVENT_MAP.get(event, event), **data})
+            message = {"type": ENGINE_EVENT_MAP.get(event, event), **data}
+            if event == ENGINE_EVENT.GAME_END and engine is not None:
+                self.finished[gid] = {"profile_id": engine.game_config.get("profile_id"),
+                                      "game_end": message}
+                while len(self.finished) > self.FINISHED_KEEP:
+                    self.finished.pop(next(iter(self.finished)))
+            ws = self.viewers.get(gid)
+            if ws is not None:
+                await self.send(ws, message)
         return handler
-    def _animation_handler(self, ws, gid):
+
+    def _animation_handler(self, gid):
         async def handler(**data):
             await_ui = bool(data.pop("await_ui", False))
+            ws = self.viewers.get(gid)
+            if ws is None:
+                # 没人在看就不等动画 ACK，后台对局全速推进。
+                return
             self.animation_seq += 1
             animation_id = f"{gid}-{self.animation_seq}"
             waiter = asyncio.get_running_loop().create_future()
@@ -257,6 +386,7 @@ class GameServer:
             finally:
                 self.animation_waiters.pop(animation_id, None)
         return handler
+
     async def send_error(self, ws, message, fatal=False):
         await self.send(ws, {"type": OUTBOUND.ERROR, "message": message, "fatal": fatal})
     async def send(self, ws, data):

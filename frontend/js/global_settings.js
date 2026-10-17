@@ -142,7 +142,7 @@
         box.innerHTML = `
             <div class="gs-stat">运行时武将<b>${manifest.runtime_heroes ?? '?'}</b></div>
             <div class="gs-stat">技能类<b>${manifest.generated_skills ?? '?'}</b></div>
-            <div class="gs-stat">世界书卡牌<b>${manifest.worldbook_cards ?? '?'}</b></div>`;
+            <div class="gs-stat">卡牌种类<b>${manifest.card_kinds ?? '?'}</b></div>`;
     }
 
     // Provider 下拉：以服务端 /api/providers 为准（来源 protocol.py），失败时回退到生成的 Protocol.PROVIDERS。

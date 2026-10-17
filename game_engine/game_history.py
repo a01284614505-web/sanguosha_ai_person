@@ -13,6 +13,8 @@ from pathlib import Path
 
 
 SCHEMA_VERSION = 1
+# 中断局在第几轮之后才清零连胜（用户 2026-10-17 指定：第 2 轮之后）。
+INTERRUPT_GRACE_ROUNDS = 2
 PROFILE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
@@ -105,6 +107,13 @@ class GameHistoryStore:
             self._save(data)
             return True
 
+    @staticmethod
+    def _round_of(payload):
+        try:
+            return int((payload.get("state") or {}).get("round") or 0)
+        except (TypeError, ValueError):
+            return 0
+
     def record_result(self, profile_id, game_id, payload):
         profile_id = validate_profile_id(profile_id)
         game_id = str(game_id)
@@ -133,6 +142,9 @@ class GameHistoryStore:
                     reward = "identity_card"
             elif player_won is False or winner == "draw":
                 profile["win_streak"] = 0
+            elif winner == "aborted" and self._round_of(payload) > INTERRUPT_GRACE_ROUNDS:
+                # 前两轮内退出不计；之后中断视同输掉连胜，防止快输时退出保连胜。
+                profile["win_streak"] = 0
 
             record = {
                 "game_id": game_id,
@@ -142,6 +154,7 @@ class GameHistoryStore:
                 "player_identity": identity,
                 "hero_name": (human or {}).get("hero_name", ""),
                 "duration": payload.get("duration", 0),
+                "rounds": self._round_of(payload),
                 "stats": (human or {}).get("stats") or {},
                 "status": "interrupted" if winner == "aborted" else "completed",
             }

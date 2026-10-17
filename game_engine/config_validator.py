@@ -21,6 +21,28 @@ def normalize_ai(raw_ai, use_default=True):
     except (TypeError, ValueError):
         ai["temperature"] = 0.8
     return ai
+# 只能由服务器决定的运行参数：浏览器发来的同名字段一律丢弃，使用服务器默认值。
+# 其中 idle_abort_seconds 是"5 分钟离席"铁规则，绝不能由客户端改写。
+SERVER_ONLY_KEYS = (
+    "idle_abort_seconds", "idle_check_interval", "max_turns",
+    "human_action_timeout", "response_timeout", "phase_delay", "turn_delay",
+)
+
+
+def sanitize_client_config(raw_config):
+    """浏览器开局配置的入口过滤：去掉服务器专属参数，真人座位不能自称 AI。"""
+    if not isinstance(raw_config, dict):
+        raise ValueError("config必须是JSON对象")
+    cfg = {key: value for key, value in raw_config.items() if key not in SERVER_ONLY_KEYS}
+    player = cfg.get("player")
+    if isinstance(player, dict):
+        player = dict(player)
+        player["is_ai"] = False
+        player.pop("ai_config", None)
+        cfg["player"] = player
+    return cfg
+
+
 def normalize_config(raw_config, project_root=None, hero_registry=None):
     if not isinstance(raw_config, dict):
         raise ValueError("config必须是JSON对象")
@@ -62,4 +84,4 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
     cfg.setdefault("phase_delay", 0.05)
     cfg.setdefault("turn_delay", 0.1)
     return cfg
-__all__ = ["normalize_config"]
+__all__ = ["normalize_config", "sanitize_client_config", "SERVER_ONLY_KEYS"]
