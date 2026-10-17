@@ -14,10 +14,17 @@ class WeiSkillHandler(FactionSkillHandler):
     def _finished(self):
         return bool(self.engine.game_aborted or self.state.game_over)
 
-    async def _choose_owned_card(self, chooser, owner, skill_name, prompt, *, cancelable=True):
-        """Ask against a frozen hand/equipment snapshot and return its real zone."""
-        places = [(owner, "hand", card) for card in list(owner.hand)]
-        places.extend((owner, "equipment", card) for card in list(owner.equipment.values()))
+    async def _choose_owned_card(self, chooser, owner, skill_name, prompt, *, cancelable=True,
+                                 zones=("hand", "equipment")):
+        """Ask against a frozen hand/equipment snapshot and return its real zone.
+
+        zones 限定可选的牌区（突袭只能拿手牌）。
+        """
+        places = []
+        if "hand" in zones:
+            places.extend((owner, "hand", card) for card in list(owner.hand))
+        if "equipment" in zones:
+            places.extend((owner, "equipment", card) for card in list(owner.equipment.values()))
         if not places:
             return None
         result = await self.manager.ask_choose_cards_result(
@@ -64,13 +71,23 @@ class WeiSkillHandler(FactionSkillHandler):
         if phase == Phase.DRAW and self.has(player, "突袭"):
             victims = [p for p in self.state.players if p.alive and p is not player and p.hand]
             if victims:
-                use = await self.manager.ask_confirm(player, "是否发动【突袭】少摸牌并获得其他角色的手牌？", skill_name="突袭", default=False)
+                ai_seat = player.is_ai or (
+                    getattr(self.engine, "_trustee_active", False) is True
+                    and player is self.engine.human_player())
+                if ai_seat:
+                    # AI / 托管座位：发不发动和选谁合并成一次决策，选 0 人即不发动。
+                    use = True
+                else:
+                    use = await self.manager.ask_confirm(player, "是否发动【突袭】少摸牌并获得其他角色的手牌？", skill_name="突袭", default=False)
                 if self._finished():
                     return {"skip_default": True}
                 if use:
                     chosen = await self.manager.ask_choose_players(
-                        player, "【突袭】：选择1至2名有手牌的角色", victims,
-                        min_n=1, max_n=2, skill_name="突袭", cancelable=True,
+                        player,
+                        "【突袭】：选择0至2名有手牌的角色（选0人表示不发动）" if ai_seat
+                        else "【突袭】：选择1至2名有手牌的角色",
+                        victims,
+                        min_n=0 if ai_seat else 1, max_n=2, skill_name="突袭", cancelable=True,
                     )
                     if self._finished():
                         return {"skip_default": True}
@@ -82,7 +99,7 @@ class WeiSkillHandler(FactionSkillHandler):
                             continue
                         selected = await self._choose_owned_card(
                             player, victim, "突袭", f"【突袭】：选择{victim.name}的一张手牌",
-                            cancelable=False,
+                            cancelable=False, zones=("hand",),
                         )
                         if self._finished():
                             return {"skip_default": True}

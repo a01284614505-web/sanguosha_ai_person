@@ -913,6 +913,17 @@ class AIDecision:
             return self.simple_choice_decision(player, request)
 
         options = request.get("options") or []
+        hidden = set(request.get("hidden_indices") or [])
+        if (request.get("kind") == "choose_cards" and options
+                and all(i in hidden for i in range(len(options)))):
+            # 候选全是对自己暗置的牌：模型看不到牌面，问它只是浪费一次调用，本地随机选。
+            minimum = max(0, int(request.get("min_n", 1)))
+            maximum = max(minimum, int(request.get("max_n", 1)))
+            count = min(len(options), max(minimum, 1), maximum)
+            self.last_failure[player.id] = None
+            self.last_reasoning[player.id] = ""
+            self.last_meta[player.id] = {}
+            return sorted(self.rng.sample(range(len(options)), count))
         visible = [{"index": i, "label": str(option.get("label", i))}
                    for i, option in enumerate(options)]
         prompt = (

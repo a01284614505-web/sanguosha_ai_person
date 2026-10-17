@@ -521,3 +521,111 @@ def test_yiji_when_no_other_alive_recipient_keeps_drawn_cards():
     assert target.hand == drawn
     assert engine.skill_manager.ask_choose_players.await_count == 2
     assert all(call.kwargs["cancelable"] is False for call in engine.skill_manager.ask_choose_players.await_args_list)
+
+
+# ---- T0-10：突袭合并为一次决策 ----
+
+def _ai_tuxi_setup():
+    engine = game()
+    handler = get_wei(engine)
+    player, victim = engine.game_state.players[1:3]  # 座位 1 是 AI
+    assert player.is_ai
+    handler.has = lambda p, name: p is player and name == "突袭"
+    return engine, handler, player, victim
+
+
+def test_tuxi_ai_seat_choosing_nobody_does_not_activate_and_skips_confirm():
+    engine, handler, player, victim = _ai_tuxi_setup()
+    victim.hand.append(card("t10_a", "闪"))
+    engine.skill_manager.ask_confirm = AsyncMock()
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[])
+    engine.skill_manager.draw_cards = AsyncMock()
+
+    result = run(handler.before_phase(player, Phase.DRAW))
+
+    assert result is None
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+    engine.skill_manager.draw_cards.assert_not_awaited()
+    kwargs = engine.skill_manager.ask_choose_players.await_args.kwargs
+    assert kwargs["min_n"] == 0 and kwargs["max_n"] == 2 and kwargs["cancelable"] is True
+
+
+def test_tuxi_ai_seat_two_targets_asks_players_once_without_confirm():
+    engine, handler, player, _ = _ai_tuxi_setup()
+    v1, v2 = engine.game_state.players[2:4]
+    c1, c2 = card("t10_c1", "桃", "heart"), card("t10_c2", "杀")
+    v1.hand.append(c1)
+    v2.hand.append(c2)
+    engine.skill_manager.ask_confirm = AsyncMock()
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[v1, v2])
+    engine.skill_manager.ask_choose_cards_result = AsyncMock(
+        side_effect=[{"status": "resolved", "cards": [c1]}, {"status": "resolved", "cards": [c2]}])
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+    engine.skill_manager.announce = AsyncMock()
+
+    result = run(handler.before_phase(player, Phase.DRAW))
+
+    assert result == {"skip_default": True}
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+    assert engine.skill_manager.ask_choose_players.await_count == 1
+    assert player.hand == [c1, c2]
+    text = engine.skill_manager.announce.await_args.args[2]
+    assert v1.name in text and v2.name in text and "桃" not in text and "杀" not in text
+
+
+def test_tuxi_candidates_exclude_equipment():
+    engine = game()
+    handler = get_wei(engine)
+    player, victim = engine.game_state.players[:2]
+    hand_card = card("t10_hand", "闪")
+    victim.hand.append(hand_card)
+    victim.equipment["weapon"] = card("t10_weapon", "诸葛连弩", "club", "equipment")
+    handler.has = lambda p, name: p is player and name == "突袭"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[victim])
+    engine.skill_manager.ask_choose_cards_result = AsyncMock(
+        return_value={"status": "resolved", "cards": [hand_card]})
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+    engine.skill_manager.announce = AsyncMock()
+
+    run(handler.before_phase(player, Phase.DRAW))
+
+    candidates = engine.skill_manager.ask_choose_cards_result.await_args.args[2]
+    assert candidates == [hand_card]
+
+
+def test_human_seat_keeps_two_step_flow():
+    engine = game()
+    handler = get_wei(engine)
+    player, victim = engine.game_state.players[:2]
+    assert not player.is_ai
+    victim.hand.append(card("t10_h", "闪"))
+    handler.has = lambda p, name: p is player and name == "突袭"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[])
+
+    run(handler.before_phase(player, Phase.DRAW))
+
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+    assert engine.skill_manager.ask_choose_players.await_args.kwargs["min_n"] == 1
+
+
+def test_all_hidden_card_choice_never_calls_model_and_uses_injected_rng():
+    import random
+    from game_engine.ai_decision import AIDecision
+    engine = game()
+    ai = engine.ai_decision if hasattr(engine, "ai_decision") else AIDecision(engine)
+    player = engine.game_state.players[1]
+    player.ai_config = {"api_key": "sk-real", "model": "m"}
+    ai.rng = random.Random(7)
+    ai._call_with_session = AsyncMock(side_effect=AssertionError("must not call model"))
+    request = {"kind": "choose_cards", "min_n": 1, "max_n": 1, "cancelable": False,
+               "hidden_indices": [0, 1, 2], "options": [{"label": "?"}] * 3,
+               "context": {}}
+
+    picked = run(ai.make_choice_decision(player, request))
+
+    assert len(picked) == 1 and picked[0] in (0, 1, 2)
+    expected = random.Random(7).sample(range(3), 1)
+    assert picked == expected
+    ai._call_with_session.assert_not_awaited()
