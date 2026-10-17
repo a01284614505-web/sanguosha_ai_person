@@ -9,7 +9,7 @@
     SGS.fetchJSON('/system_manifest.json').catch(() => ({})).then(data => {
         const items = [
             ['运行时武将', data.runtime_heroes], ['源武将数据', data.source_heroes], ['技能类', data.generated_skills],
-            ['已接线技能', data.runtime_skill_implementations], ['世界书卡牌', data.worldbook_cards]
+            ['已接线技能', data.runtime_skill_implementations], ['卡牌种类', data.card_kinds]
         ];
         document.getElementById('stats').innerHTML = items.map(([k, v]) => '<div>' + k + '<b>' + esc(v ?? '?') + '</b></div>').join('');
     });

@@ -1417,6 +1417,8 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [B5–B7 技能、托管与战绩集成交接（2026-10-17 UTC）](handover/20261017_0410_B5B7技能托管战绩集成.md)
 - [B5–B7 Luna 规则与浏览器审计（2026-10-17 UTC）](handover/20261017_luna_b5_b7_rule_audit.md)
 - [Stage T 酒馆系统施工方案稿（GitHub 文档提交，未开工）](handover/20261017_1150_StageT酒馆系统施工方案.md)
+- [B0–B7 完成情况核查报告（2026-10-17 14:20 +08:00，Claude 独立审核）](handover/20261017_1420_B0-B7完成情况核查报告.md)
+- [核查修复与断线重连（2026-10-17 15:30 +08:00）](handover/20261017_1530_核查修复与断线重连.md)
 - [P1-2 AI 牌面视觉优化（2026-10-12 16:37 UTC）](handover/20261012_1637_P1-2牌面视觉优化.md)
 - [项目排查与计划文档产出 · 任务交接（2026-09-12 23:05）](handover/20260912_2305_项目排查与计划文档交接.md)
 - [开发路线图 ROADMAP（长期文档，随批次更新）](../ROADMAP.md)

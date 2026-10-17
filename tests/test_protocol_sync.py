@@ -31,23 +31,24 @@ class ProtocolSyncTest(unittest.TestCase):
             "protocol.js 与 protocol.py 不同步：请运行 python scripts/gen_protocol_js.py",
         )
 
-    def test_inbound_types_are_nine(self):
+    def test_inbound_types_are_ten(self):
         self.assertEqual(
-            len(protocol.ALL_INBOUND), 9,
-            f"入站消息类型应为 9 种，当前 {len(protocol.ALL_INBOUND)} 种: {protocol.ALL_INBOUND}",
+            len(protocol.ALL_INBOUND), 10,
+            f"入站消息类型应为 10 种，当前 {len(protocol.ALL_INBOUND)} 种: {protocol.ALL_INBOUND}",
         )
         self.assertEqual(
             set(protocol.ALL_INBOUND),
             {
                 "create_game", "player_action", "chat", "card_animation_done",
                 "end_game", "update_ai_config", "set_trustee", "ping", "server_info",
+                "resume_game",
             },
         )
 
-    def test_outbound_types_are_eighteen(self):
+    def test_outbound_types_are_twenty(self):
         self.assertEqual(
-            len(protocol.ALL_OUTBOUND), 18,
-            f"出站消息类型应为 18 种，当前 {len(protocol.ALL_OUTBOUND)} 种: {protocol.ALL_OUTBOUND}",
+            len(protocol.ALL_OUTBOUND), 20,
+            f"出站消息类型应为 20 种，当前 {len(protocol.ALL_OUTBOUND)} 种: {protocol.ALL_OUTBOUND}",
         )
         self.assertEqual(
             set(protocol.ALL_OUTBOUND),
@@ -56,6 +57,7 @@ class ProtocolSyncTest(unittest.TestCase):
                 "require_response", "action_result", "selection_result", "card_moved", "ai_action", "chat",
                 "event_notification", "ai_config_updated", "end_game_accepted",
                 "game_end", "trustee_status", "decision_trace", "error",
+                "game_resumed", "resume_failed",
             },
         )
 

@@ -10,7 +10,7 @@ PROTOCOL_VERSION = "1.0"
 
 
 class INBOUND:
-    """前端 → 服务器（WebSocket 入站消息类型，9 种）。"""
+    """前端 → 服务器（WebSocket 入站消息类型，10 种）。"""
 
     CREATE_GAME = "create_game"
     PLAYER_ACTION = "player_action"
@@ -21,10 +21,12 @@ class INBOUND:
     SET_TRUSTEE = "set_trustee"
     PING = "ping"
     SERVER_INFO = "server_info"
+    # 断线重连：{"game_id", "profile_id"}，把新连接重新接到仍在进行的对局上。
+    RESUME_GAME = "resume_game"
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，18 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，20 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -44,6 +46,10 @@ class OUTBOUND:
     END_GAME_ACCEPTED = "end_game_accepted"
     GAME_END = "game_end"
     ERROR = "error"
+    # 重连成功：随后补发完整状态快照与仍在等待的提示。
+    GAME_RESUMED = "game_resumed"
+    # 重连失败：对局已不存在（服务器重启或已清理）或不属于该档案。
+    RESUME_FAILED = "resume_failed"
 
 
 class ENGINE_EVENT:

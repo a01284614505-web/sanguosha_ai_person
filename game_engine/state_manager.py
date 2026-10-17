@@ -228,6 +228,17 @@ class GameState:
     def shuffle_deck(self):
         """洗牌"""
         random.shuffle(self.deck)
+
+    def refill_deck_if_empty(self) -> bool:
+        """摸牌堆为空时把弃牌堆洗成新的摸牌堆；返回摸牌堆此刻是否有牌。
+
+        摸牌、判定、技能亮牌和身份奖励共用这一条规则，避免某条路径在牌堆耗尽时少摸。
+        """
+        if not self.deck and self.discard_pile:
+            self.deck = self.discard_pile.copy()
+            self.discard_pile.clear()
+            self.shuffle_deck()
+        return bool(self.deck)
     
     def _deal_cards(self):
         """发牌"""
@@ -241,13 +252,7 @@ class GameState:
         """摸牌"""
         drawn_cards = []
         for _ in range(count):
-            if not self.deck:
-                # 牌堆空了，洗弃牌堆
-                self.deck = self.discard_pile.copy()
-                self.discard_pile.clear()
-                self.shuffle_deck()
-            
-            if self.deck:
+            if self.refill_deck_if_empty():
                 card = self.deck.pop(0)
                 player.hand.append(card)
                 drawn_cards.append(card)

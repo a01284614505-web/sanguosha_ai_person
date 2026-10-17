@@ -123,7 +123,7 @@ class WeiSkillHandler(FactionSkillHandler):
     async def _luoshen(self, player):
         obtained = []
         for _ in range(12):
-            if not self.state.deck:
+            if not self.state.refill_deck_if_empty():
                 break
             card = self.state.deck.pop(0)
             card = await self.manager.before_judge(player, card, {"reason": "洛神"})

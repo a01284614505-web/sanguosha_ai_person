@@ -88,10 +88,11 @@ def test_server_game_end_forwards_persisted_receipt(tmp_path):
 
     ws = Socket()
     server.ws_map[ws] = "game_1"
+    server.viewers["game_1"] = ws
     server.engines["game_1"] = SimpleNamespace(
         game_id="game_1", game_config={"profile_id": "local_1"}
     )
-    asyncio.run(server._forward(ws, ENGINE_EVENT.GAME_END)(**result()))
+    asyncio.run(server._forward("game_1", ENGINE_EVENT.GAME_END)(**result()))
     message = ws.messages[-1]
     assert message["type"] == "game_end"
     assert message["profile"]["total_games"] == 1

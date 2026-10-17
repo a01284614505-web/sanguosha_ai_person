@@ -109,9 +109,7 @@ class PhaseController:
                 and getattr(self.engine, "game_aborted", False)):
             return
 
-        if not self.game_state.deck:
-            self.game_state.draw_card(player, 0)
-        if not self.game_state.deck:
+        if not self.game_state.refill_deck_if_empty():
             return
 
         result = self.game_state.deck.pop(0)

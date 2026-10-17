@@ -171,6 +171,7 @@ class B1InputLifecycle(unittest.TestCase):
         server = GameServer()
         server.engines["42"] = self.engine
         server.ws_map[socket] = "42"
+        server.viewers["42"] = socket
         self.engine.game_id = "42"
         self.engine.on("require_response", capture)
 

@@ -10,8 +10,41 @@ class GameClient {
         this.ws = null;
         this.gameId = null;
         this.connected = false;
+        // 断线自动重连：页面在对局中时打开；对局结束或主动离开时关闭。
+        this.autoReconnect = false;
+        this.reconnectAttempts = 0;
+        this.reconnectTimer = null;
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            // 手机从后台切回、网络恢复时立即尝试，不必等退避计时。
+            const kick = () => { if (this.autoReconnect && !this.connected) this.reconnectNow(); };
+            window.addEventListener('online', kick);
+            if (typeof document !== 'undefined') {
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') kick();
+                });
+            }
+        }
     }
-    
+
+    /** 立即重连（取消正在等待的退避计时）。 */
+    reconnectNow() {
+        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+        this.connect();
+    }
+
+    scheduleReconnect() {
+        if (!this.autoReconnect || this.reconnectTimer) return;
+        // 1s, 2s, 4s, 8s 之后固定每 10s 一次。
+        const delay = Math.min(10000, 1000 * Math.pow(2, this.reconnectAttempts));
+        this.reconnectAttempts += 1;
+        if (this.onReconnecting) this.onReconnecting({ attempt: this.reconnectAttempts, delay: delay });
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.reconnectNow();
+        }, delay);
+    }
+
     connect() {
         const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:8889`;
@@ -20,6 +53,7 @@ class GameClient {
         
         this.ws.onopen = () => {
             this.connected = true;
+            this.reconnectAttempts = 0;
             console.log('[WS] 已连接');
             if (this.onConnect) this.onConnect();
         };
@@ -38,6 +72,7 @@ class GameClient {
             this.connected = false;
             console.log('[WS] 断开');
             if (this.onDisconnect) this.onDisconnect({ wasConnected: wasConnected, code: event && event.code });
+            this.scheduleReconnect();
         };
         
         this.ws.onerror = (e) => {
@@ -51,6 +86,15 @@ class GameClient {
                 this.gameId = data.game_id;
                 console.log('[游戏] 已创建:', this.gameId);
                 if (this.onGameCreated) this.onGameCreated(data);
+                break;
+
+            case Protocol.OUTBOUND.GAME_RESUMED:
+                this.gameId = data.game_id;
+                if (this.onGameResumed) this.onGameResumed(data);
+                break;
+
+            case Protocol.OUTBOUND.RESUME_FAILED:
+                if (this.onResumeFailed) this.onResumeFailed(data);
                 break;
 
             case Protocol.OUTBOUND.GAME_STATE:
@@ -121,6 +165,11 @@ class GameClient {
         this.send({ type: Protocol.INBOUND.CREATE_GAME, config: config });
     }
 
+    resumeGame(gameId, profileId) {
+        if (!this.connected) return;
+        this.send({ type: Protocol.INBOUND.RESUME_GAME, game_id: gameId, profile_id: profileId });
+    }
+
     playerAction(action, targetIds) {
         if (!this.connected || !this.gameId) return;
         targetIds = targetIds || [];
@@ -165,6 +214,9 @@ GameClient.prototype.onEndGameAccepted = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;
 GameClient.prototype.onGameCreated = null;
+GameClient.prototype.onGameResumed = null;
+GameClient.prototype.onResumeFailed = null;
+GameClient.prototype.onReconnecting = null;
 
 // 全局实例
 const gameClient = new GameClient();

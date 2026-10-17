@@ -333,7 +333,8 @@ class CardSystem:
             
             result = await self.choose_to_respond(
                 target,
-                f"请使用第{i+1}张闪响应杀",
+                (f"{player.name}对你使用【杀】，请打出【闪】（共需 {shan_required} 张，第 {i+1} 张）"
+                 if shan_required > 1 else f"{player.name}对你使用【杀】，是否打出【闪】？"),
                 card_filter=lambda c: c.name == '闪',
                 requested_name='闪',
                 context={'source': player, 'target': target, 'card': event['card'],
@@ -694,7 +695,9 @@ class CardSystem:
                     f"{current_source.name}使用【{card.name}】，是否使用【无懈可击】？",
                     card_filter=lambda c: c.name == '无懈可击',
                     requested_name='无懈可击',
-                    context={"source": current_source, "targets": targets or [], "card": card},
+                    # 被抵消的锦囊名、当前是第几层无懈都是公开信息，AI 据此判断该不该拦。
+                    context={"source": current_source, "targets": targets or [], "card": card,
+                             "card_name": card.name, "layer": layer},
                     kind="wuxie",
                 )
                 if not (result and result.get("bool")):
@@ -765,8 +768,15 @@ class CardSystem:
                 chain_visited.add(target.id)
             # 先记录待传导座次再重置当前横置状态，防止伤害钩子重入形成环。
             propagate = bool(chain_visited is not None and target.chained)
-            chain_targets = [p for p in self.game_state.players
-                             if p is not target and p.alive and p.chained] if propagate else []
+            chain_targets = []
+            if propagate:
+                # 传导从当前回合角色起按座次依次结算（跳过原目标），而不是按玩家列表下标。
+                seats = self.game_state.players
+                current = self.game_state.current_player
+                start = seats.index(current) if current in seats else 0
+                chain_targets = [p for offset in range(len(seats))
+                                 if (p := seats[(start + offset) % len(seats)]) is not target
+                                 and p.alive and p.chained]
             if propagate:
                 target.chained = False
             target.hp -= amount
@@ -787,6 +797,19 @@ class CardSystem:
                           if target.equipment.get(slot) is not None]
                 if mounts and await self._weapon_confirm(source, "是否发动【麒麟弓】弃置目标坐骑？"):
                     chosen = mounts[0]
+                    if len(mounts) > 1 and self.engine is not None:
+                        # 两匹马都在时由麒麟弓持有者选择弃哪一匹（坐骑是明牌）。
+                        picked = await self.engine.ask_choose_cards(
+                            source, f"【麒麟弓】：选择弃置{target.name}的一匹坐骑",
+                            mounts, min_n=1, max_n=1, zone="equipment",
+                            cancelable=False,
+                            places=[(target, "equipment") for _ in mounts],
+                            context={"intent": "discard"},
+                        )
+                        if self.engine.game_aborted:
+                            return
+                        if picked and picked[0] in mounts:
+                            chosen = picked[0]
                     if self.engine is not None:
                         await self.engine.move_card(chosen, "equipment", "discard",
                                                     from_owner=target, reason="麒麟弓", actor_id=source.id)
@@ -911,7 +934,7 @@ class CardSystem:
         if killer is not None and killer.alive and victim.identity == "rebel":
             drawn = []
             for _ in range(3):
-                if not self.game_state.deck:
+                if not self.game_state.refill_deck_if_empty():
                     break
                 card = self.game_state.deck[0]
                 if self.engine is not None:
@@ -1084,7 +1107,8 @@ class CardSystem:
             required = 2 if self.trigger_manager.has_skill(other, "无双") else 1
             for response_number in range(required):
                 result = await self.choose_to_respond(
-                    current, f"【决斗】：请打出第{response_number + 1}张【杀】",
+                    current, (f"【决斗】：请打出【杀】（共需 {required} 张，第 {response_number + 1} 张）"
+                              if required > 1 else "【决斗】：是否打出【杀】？"),
                     card_filter=lambda c: c.name == "杀", requested_name="杀",
                     context={"source": other, "target": current, "card": card},
                 )

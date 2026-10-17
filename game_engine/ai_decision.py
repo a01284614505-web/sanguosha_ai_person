@@ -14,6 +14,7 @@ import httpx
 
 from .card_system import option_label
 from .card_table import CARD_TABLE
+from .card_text import CARD_TEXT
 from .hero_registry import HeroRegistry
 from .protocol import PROVIDERS
 
@@ -35,12 +36,6 @@ class WorldbookManager:
 
         self.cache["heroes"] = HeroRegistry().all_heroes()
 
-        self.cache["cards"] = []
-        for card_type in ["basic_cards", "trick_cards", "equipment_cards"]:
-            card_path = os.path.join(base_path, "cards", f"{card_type}.json")
-            if os.path.exists(card_path):
-                with open(card_path, "r", encoding="utf-8") as f:
-                    self.cache["cards"].extend(json.load(f).get("cards", []))
 
         rules_path = os.path.join(base_path, "rules", "game_flow.json")
         if os.path.exists(rules_path):
@@ -88,17 +83,19 @@ class WorldbookManager:
             "- 出牌阶段每回合限用1张【杀】（技能可突破）；手牌上限等于当前体力值。",
             "- 体力降到0进入濒死，按座次逐个询问是否使用【桃】；无人施救即阵亡。",
             "- 身份局胜负：主公与忠臣需杀光反贼与内奸；反贼杀死主公即胜；内奸需最后与主公单挑取胜。",
+            "- 身份奖惩：任何角色杀死反贼后摸3张牌；主公杀死忠臣须弃置所有手牌和装备区的牌。",
+            "- 属性伤害：火【杀】/雷【杀】、【火攻】、【闪电】造成属性伤害；处于连环状态的角色受到属性伤害时，"
+            "其他连环角色依次受到同样的伤害（从当前回合角色起按座次）。",
             "",
-            "【卡牌效果表】",
+            "【卡牌效果表】（括号内为武器攻击范围）",
         ]
-        seen = set()
-        for card in self.cache.get("cards", []):
-            name = card.get("name")
-            if not name or name in seen:
-                continue
-            seen.add(name)
-            effect = card.get("effect") or card.get("worldbook") or ""
-            lines.append(f"- 【{name}】{effect}")
+        # 牌面文字取自引擎的 CARD_TEXT（42 种牌名全覆盖，与前端图鉴逐字一致），
+        # 旧版 worldbook_generated/cards 只有 29 种牌名，缺酒、铁索、火攻、木牛流马等。
+        for name, (card_type, text) in CARD_TEXT.items():
+            spec = CARD_TABLE.get(name)
+            reach = (f"（范围{spec.weapon_range}）"
+                     if spec is not None and spec.equipment_slot == "weapon" else "")
+            lines.append(f"- 【{name}】{card_type}{reach}：{text}")
 
         lines += [
             "",
@@ -122,7 +119,34 @@ class WorldbookManager:
                 for i, p in enumerate(game_state.players)
             )
             sections.append(f"开局座次：{seats}")
+            # 武将技能是公开信息；只知道对手技能名而不知效果，就无法判断该不该打他、怎么防他。
+            others = []
+            for p in game_state.players:
+                if p is player:
+                    continue
+                hero = p.hero or {}
+                skills = "；".join(
+                    f"【{sk.get('name')}】{sk.get('description') or sk.get('worldbook') or ''}"
+                    for sk in hero.get("skills", []) if isinstance(sk, dict)
+                ) or "无"
+                others.append(f"- {p.name}/{hero.get('name', '未知武将')}：{skills}")
+            if others:
+                sections.append("其他角色的武将技能（公开信息）：\n" + "\n".join(others))
         return "\n\n".join(sections)
+
+    @staticmethod
+    def _public_zones(p) -> str:
+        """装备区、判定区、连环状态都是明的，决定杀谁、拆谁、要不要用火攻。"""
+        parts = []
+        equipment = getattr(p, "equipment", {}) or {}
+        if equipment:
+            parts.append("装备=" + "、".join(card.name for card in equipment.values()))
+        judge = getattr(p, "judge_area", []) or []
+        if judge:
+            parts.append("判定区=" + "、".join(card.name for card in judge))
+        if getattr(p, "chained", False):
+            parts.append("连环中")
+        return ("，" + "，".join(parts)) if parts else ""
 
     def build_situation(self, player, game_state, available_actions: List[Dict] = None) -> str:
         """L2 局势层：每次都变，只追加在消息列表末尾。"""
@@ -142,10 +166,14 @@ class WorldbookManager:
                     for s in hero.get('skills', []) if isinstance(s, dict)
                 ) or "无"
                 others.append(
-                    f"{p.name}/{hero.get('name', '未知武将')}：{p.hp}/{p.max_hp}体力，{len(p.hand)}手牌，{identity}，公开技能={skills}"
+                    f"{p.name}/{hero.get('name', '未知武将')}：{p.hp}/{p.max_hp}体力，{len(p.hand)}手牌，{identity}，"
+                    f"公开技能={skills}{self._public_zones(p)}"
                 )
         if others:
             sections.append("场上角色：\n" + "\n".join(f"- {x}" for x in others))
+        own_zones = self._public_zones(player)
+        if own_zones:
+            sections.append("你的场上区域：" + own_zones.lstrip("，"))
 
         if player.hand:
             hand = "、".join(f"{i}:{c.name}({c.suit}{c.rank})" for i, c in enumerate(player.hand))
@@ -698,6 +726,9 @@ class AIDecision:
         indices.sort(key=lambda i: (options[i].get("skill_name") is not None, i))
         return indices
 
+    # 对目标有益的锦囊：规则 AI 不会用无懈去拦。
+    BENEFICIAL_TRICKS = frozenset({"桃园结义", "五谷丰登", "无中生有"})
+
     def simple_response_decision(self, player, request: Dict) -> Optional[int]:
         """规则脚本兜底：不调用任何 API，返回候选索引；None 表示不响应。
 
@@ -715,14 +746,33 @@ class AIDecision:
             dying_id = dying.get("id") if isinstance(dying, dict) else getattr(dying, "id", None)
             if dying is None or dying_id == player.id:
                 return indices[0]
+            # 主公身份公开：忠臣必救主公；内奸在场上还有第三方时也救（主公早死=反贼赢，内奸同样输）。
+            dying_identity = dying.get("identity") if isinstance(dying, dict) else (
+                getattr(dying, "identity", None) if getattr(dying, "identity_revealed", False) else None)
+            if dying_identity == "lord":
+                if player.identity == "loyalist":
+                    return indices[0]
+                if player.identity == "spy":
+                    alive = sum(1 for p in self.engine.game_state.players if p.alive)
+                    if alive > 2:
+                        return indices[0]
             return None
 
         if kind == "wuxie":
-            # 无懈保守：只在锦囊直接指向自己时才拦。
-            targets = (request.get("context") or {}).get("targets") or []
-            if any((t.get("id") if isinstance(t, dict) else getattr(t, "id", None)) == player.id
-                   for t in targets):
+            # 无懈保守：不拦有益锦囊；指向自己就拦（原行为）；忠臣在第一层替公开的主公挡有害锦囊。
+            context = request.get("context") or {}
+            if context.get("card_name") in self.BENEFICIAL_TRICKS:
+                return None
+            targets = context.get("targets") or []
+            target_ids = [(t.get("id") if isinstance(t, dict) else getattr(t, "id", None)) for t in targets]
+            if player.id in target_ids:
                 return indices[0]
+            if player.identity == "loyalist" and int(context.get("layer") or 1) == 1:
+                for t in targets:
+                    identity = t.get("identity") if isinstance(t, dict) else (
+                        getattr(t, "identity", None) if getattr(t, "identity_revealed", False) else None)
+                    if identity == "lord":
+                        return indices[0]
             return None
 
         # 普通响应（闪 / 杀 / 桃）：能挡就挡，优先不消耗技能的那张。
