@@ -11,6 +11,7 @@
     const defaults = {
         animation_ms: 1100,
         show_ai_thinking: true,
+        show_decision_trace: true,
         worldbook_enabled: true,
         custom_worldbook_enabled: true,
         default_provider: 'deepseek',
@@ -101,6 +102,7 @@
                     <label class="gs-row"><span>界面主题</span><select id="gsTheme"><option value="dark">夜墨（深色）</option><option value="light">暖纸（浅色）</option><option value="system">跟随系统</option></select></label>
                     <label class="gs-row"><span>出牌动画</span><select id="gsAnimation"><option value="800">轻快 0.8 秒</option><option value="1100">标准 1.1 秒</option><option value="1600">从容 1.6 秒</option></select></label>
                     <label class="gs-row"><span>AI 思考提示</span><span><input id="gsThinking" type="checkbox">在武将框上显示“思考中”，并把思考摘要写进战报</span></label>
+                    <label class="gs-row"><span>决策轨迹</span><span><input id="gsDecisionTrace" type="checkbox">在战报中显示可展开的简略与完整决策记录</span></label>
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
                     <label class="gs-row"><span>音量</span><input id="gsVolume" type="range" min="0" max="1" step="0.05"></label>
                 </div>
@@ -176,6 +178,7 @@
         document.getElementById('gsTheme').value = s.theme || 'dark';
         document.getElementById('gsAnimation').value = String(s.animation_ms);
         document.getElementById('gsThinking').checked = !!s.show_ai_thinking;
+        document.getElementById('gsDecisionTrace').checked = s.show_decision_trace !== false;
         document.getElementById('gsSfx').checked = s.sfx_enabled !== false;
         document.getElementById('gsVolume').value = String(s.sfx_volume ?? 0.5);
         document.getElementById('gsProvider').value = s.default_provider;
@@ -192,6 +195,7 @@
             theme: document.getElementById('gsTheme').value,
             animation_ms: Number(document.getElementById('gsAnimation').value) || 1100,
             show_ai_thinking: document.getElementById('gsThinking').checked,
+            show_decision_trace: document.getElementById('gsDecisionTrace').checked,
             sfx_enabled: document.getElementById('gsSfx').checked,
             sfx_volume: Number(document.getElementById('gsVolume').value),
             default_provider: document.getElementById('gsProvider').value,

@@ -89,6 +89,12 @@
 .hud-info b { color: var(--paper); font-weight: 600; }
 .hud-tools { display: flex; gap: 8px; justify-content: flex-end; }
 .hud-tools .icon-btn { width: 36px; height: 36px; position: relative; }
+.trustee-indicator { color: var(--heading); font-size: 11px; white-space: nowrap; }
+.decision-traces { margin: 8px 10px; border: 1px solid rgba(201,163,90,.25); border-radius: 5px; color: var(--text-dim); }
+.decision-traces > summary { padding: 7px 9px; cursor: pointer; color: var(--heading); }
+.decision-trace-row { margin: 0 8px 5px; border-top: 1px solid rgba(201,163,90,.14); }
+.decision-trace-row > summary { padding: 6px 2px; cursor: pointer; font-size: 12px; }
+.decision-trace-full { white-space: pre-wrap; padding: 0 8px 9px; font-size: 11px; line-height: 1.5; color: var(--text-dim); }
 .chat-toggle { display: none !important; }
 /* 未读小红点：用暗朱漆，不用亮红 */
 .unread { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--cinnabar-hi); box-shadow: 0 0 0 2px var(--ink-1); }
@@ -645,6 +651,8 @@
 .info-grid .hero-frame { cursor: default; }
 .info-lines { display: grid; gap: 6px; font-size: 13.5px; }
 .info-lines .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.player-marks { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+.status-mark { border: 1px solid var(--gold-dim); border-radius: 999px; padding: 2px 8px; color: var(--gold-hi); font-size: 12px; }
 .info-h { margin: 16px 0 6px; font: 600 15px/1.4 var(--font-kai); color: var(--gold); }
 .info-skills { display: grid; gap: 8px; }
 .info-skill { padding: 9px 11px; border-radius: 6px; background: rgba(0, 0, 0, .28); border-left: 3px solid var(--gold-dim); font-size: 13.5px; line-height: 1.7; }

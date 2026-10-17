@@ -19,7 +19,7 @@ from .rules_engine import RulesEngine
 from .ai_decision import AIDecision
 from .identity_system import IdentitySystem
 from .chat_engine import ChatEngine
-from .config_validator import normalize_config
+from .config_validator import normalize_ai, normalize_config
 from .deck_manager import DeckManager
 from .game_stats import GameStats, record_stat
 from .effect_context import EffectContext
@@ -28,6 +28,17 @@ from .effect_context import EffectContext
 logger = logging.getLogger(__name__)
 from .hero_registry import HeroRegistry
 from .protocol import ENGINE_EVENT, PROVIDERS
+
+
+class _TrusteePlayerView:
+    """Use the human's exact game perspective with a separate model connection."""
+
+    def __init__(self, player, ai_config):
+        self._player = player
+        self.ai_config = ai_config
+
+    def __getattr__(self, name):
+        return getattr(self._player, name)
 
 
 class MainEngine:
@@ -113,6 +124,13 @@ class MainEngine:
         self.time_source: Callable[[], float] = time.monotonic  # 测试可注入假时钟
         self._human_idle_since: Any = None
         self._trustee_active = False
+        self._trustee_source = "rules"
+        self._trustee_config: Dict = {}
+        self._trustee_failures = 0
+        self._trustee_degraded = False
+        self._trustee_degrade_reason = None
+        self._trustee_generation = 0
+        self._waiting_for_action = False
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
         self._game_end_emitted = False
@@ -288,6 +306,12 @@ class MainEngine:
                         instance.to_dict()
                         for instance in self.skill_manager.skill_state.for_owner(p.id)
                     ],
+                    "marks": {
+                        key: p.flags[key]
+                        for key in ("pao_tokens", "hand_limit_bonus", "rende_count",
+                                    "cannot_use_hand", "nonlocked_disabled")
+                        if isinstance(p.flags.get(key), (bool, int)) and p.flags[key]
+                    },
                 }
             )
         # serialize() 只发给真人自己的连接（AI 决策不读它），因此可以附带真人自己的手牌，
@@ -306,6 +330,7 @@ class MainEngine:
             "discard_count": len(gs.discard_pile),
             "game_over": gs.game_over,
             "winner": gs.winner,
+            "trustee": self.trustee_status(),
         }
 
     def human_player(self):
@@ -437,9 +462,29 @@ class MainEngine:
 
         while not play_skipped and player.alive and not self.game_state.game_over:
             actions = self.get_available_actions(player)
+            if self._trustee_active:
+                generation = self._trustee_generation
+                decision = await self._trustee_make_decision(player, actions)
+                if decision is None or generation != self._trustee_generation:
+                    continue
+                action = decision.get("action") or {"type": "end_phase"}
+                if action.get("type") == "end_phase":
+                    await self._emit_decision_trace(player, "play", len(actions), action, "accepted")
+                    break
+                target_ids = decision.get("target_ids") or []
+                ok = await self.execute_action(player, action, target_ids)
+                await self._emit_decision_trace(player, "play", len(actions), action,
+                                                "accepted" if ok else "invalid")
+                if not self.game_aborted:
+                    await self.emit(ENGINE_EVENT.ACTION_RESULT, success=ok, trustee=True)
+                    await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+                if not ok:
+                    break
+                continue
             # 必须先创建等待器再广播，避免WebSocket客户端立即响应造成丢操作。
             self._player_event = asyncio.Event()
             self._player_input = None
+            self._waiting_for_action = True
             # 出牌阶段引擎同样在等真人，纳入离席计时。
             self._mark_waiting_for_human()
             await self.emit(
@@ -447,12 +492,16 @@ class MainEngine:
                 player_name=player.name,
                 hand=self.get_player_hand(player),
                 actions=[dict(action) for action in actions],
+                timeout=self.human_action_timeout,
             )
             data = await self._wait_player_input()
+            self._waiting_for_action = False
             if self.game_state.game_over:
                 break
             action = data["action"]
             target_ids = data["target_ids"]
+            if action.get("type") == "trustee":
+                continue
             if action.get("type") == "end_phase":
                 break
 
@@ -530,7 +579,7 @@ class MainEngine:
             decision = await self.ai_decision.make_decision(player, actions)
             await self.emit(
                 ENGINE_EVENT.AI_ACTION, player_name=player.name, action="thinking_end",
-                reasoning=decision.get("reasoning", "")
+                reasoning=""
             )
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
@@ -538,6 +587,8 @@ class MainEngine:
             if decision.get("chat") and self.chat_enabled:
                 await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=decision["chat"], from_id=player.id)
             if action.get("type") == "end_phase":
+                await self._emit_decision_trace(player, "play", len(actions), action,
+                                                "accepted")
                 break
 
             if action.get("type") == "play_card":
@@ -552,6 +603,8 @@ class MainEngine:
 
             ok = await self.execute_action(player, action, target_ids)
             self._record_ai_outcome(player, action, target_ids, ok)
+            await self._emit_decision_trace(player, "play", len(actions), action,
+                                            "accepted" if ok else "invalid")
             if not ok:
                 logger.info("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
                 break
@@ -567,13 +620,44 @@ class MainEngine:
         verdict = "已生效" if ok else "被引擎判定为非法，未生效"
         recorder(player, f"【引擎执行结果】你的操作 {action.get('type')}{target_text} {verdict}。")
 
+    async def _emit_decision_trace(self, player, kind, candidate_count, choice, validation):
+        """Publish only information already visible to the human client."""
+        own_decision = player is self.human_player()
+        meta = getattr(self.ai_decision, "last_meta", {}).get(player.id) or {}
+        if own_decision and (self._trustee_source == "rules" or self._trustee_degraded):
+            meta = {}
+        failure = getattr(self.ai_decision, "last_failure", {}).get(player.id)
+        reason = (getattr(self.ai_decision, "last_reasoning", {}).get(player.id, "")
+                  if own_decision and meta else "")
+        if not reason:
+            reason = "模型结果已由引擎复核" if meta.get("model") and not failure else "按规则选择合法候选"
+        if own_decision:
+            if isinstance(choice, dict):
+                final_choice = self.ai_decision.format_action(choice) if hasattr(self.ai_decision, "format_action") else choice.get("type", "")
+            else:
+                final_choice = str(choice)[:100]
+        else:
+            final_choice = choice.get("type", "已选择") if isinstance(choice, dict) else "已选择" if choice is not None else "放弃"
+        await self.emit(
+            ENGINE_EVENT.DECISION_TRACE,
+            player_id=player.id, player_name=player.name, kind=kind,
+            source="trustee" if own_decision else "rules" if failure or not meta.get("model") else "model",
+            model=meta.get("model"), elapsed_ms=meta.get("elapsed_ms"),
+            prompt_tokens=meta.get("prompt_tokens"), completion_tokens=meta.get("completion_tokens"),
+            candidate_count=int(candidate_count),
+            candidate_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
+            worldbook_hits=meta.get("worldbook_hits") or [], reason=reason[:200],
+            final_choice=final_choice, validation=validation,
+        )
+
     # ---------- 玩家输入 ----------
 
     async def _wait_player_input(self) -> Dict:
         try:
             await asyncio.wait_for(self._player_event.wait(), timeout=self.human_action_timeout)
         except asyncio.TimeoutError:
-            return {"action": {"type": "end_phase"}, "target_ids": []}
+            self.set_trustee(True, source="rules")
+            return {"action": {"type": "trustee"}, "target_ids": []}
         return self._player_input or {"action": {"type": "end_phase"}, "target_ids": []}
 
     def submit_action(self, action: Dict, target_ids: List[int]):
@@ -588,10 +672,19 @@ class MainEngine:
             return self.submit_response_status(action.get("request_id"), selection)
         if self.game_aborted:
             return {"status": "game_ended", "success": False, "message": "对局已结束"}
+        if self._trustee_active:
+            self._note_human_input()
+            return {"status": "stale", "success": False,
+                    "message": "已解除托管，请等待新的出牌提示后重试"}
+        if (not self._waiting_for_action or self._player_event.is_set()
+                or self.game_state.current_player is not self.human_player()):
+            return {"status": "stale", "success": False,
+                    "message": "当前没有等待中的出牌操作，请等待新的出牌提示"}
         self._note_human_input()
         self._player_input = {"action": action, "target_ids": target_ids or action.get("target_ids", []) or []}
         if self._player_event and not self._player_event.is_set():
             self._player_event.set()
+        return {"status": "accepted", "success": True, "message": "已接收操作"}
 
     # ---------- 场外响应通道 ----------
 
@@ -757,8 +850,23 @@ class MainEngine:
             return {"bool": False}
         request_id = self._next_request_id()
         request = self._prepare_request(player, request, request_id)
-        if player.is_ai:
+        trustee_request = self._trustee_active and player is self.human_player()
+        generation = self._trustee_generation
+        if player.is_ai or trustee_request:
             index = await self._ai_choose_option(player, request)
+            if self.game_aborted:
+                await self._emit_selection_result(player, request, "game_ended")
+                return {"bool": False}
+            if trustee_request and generation != self._trustee_generation:
+                if self._trustee_active:
+                    index = await self._ai_choose_option(player, request)
+                else:
+                    index, input_status = await self._human_choose_option(player, request, request_id)
+                    if input_status in {"timeout", "trustee"} and not self.game_aborted:
+                        index = await self._trustee_choose(player, request)
+                    elif input_status != "accepted":
+                        await self._emit_selection_result(player, request, input_status)
+                        return {"bool": False}
             if self.game_aborted:
                 await self._emit_selection_result(player, request, "game_ended")
                 return {"bool": False}
@@ -767,23 +875,33 @@ class MainEngine:
             await self._emit_selection_result(
                 player, request, self._response_resolution_status(player, request, index, result)
             )
+            if player.is_ai or self._trustee_active:
+                await self._emit_decision_trace(
+                    player, request.get("kind", "respond"), len(request.get("options") or []),
+                    index, "accepted" if result.get("bool") else "pass",
+                )
             return result
         index, input_status = await self._human_choose_option(player, request, request_id)
         if input_status == "accepted":
             result = resolver(player, request, index)
             status = self._response_resolution_status(player, request, index, result)
-        elif input_status == "timeout" and not self.game_aborted:
+        elif input_status in {"timeout", "trustee"} and not self.game_aborted:
             index = await self._trustee_choose(player, request)
             if self.game_aborted:
                 result, status = {"bool": False}, "game_ended"
             else:
                 result = resolver(player, request, index)
-                status = "timeout"
+                status = "timeout" if input_status == "timeout" else "resolved"
         elif input_status == "cancelled":
             result, status = {"bool": False}, "cancelled"
         else:
             result, status = {"bool": False}, "game_ended"
         await self._emit_selection_result(player, request, status)
+        if input_status in {"timeout", "trustee"} and not self.game_aborted:
+            await self._emit_decision_trace(
+                player, request.get("kind", "respond"), len(request.get("options") or []),
+                index, status,
+            )
         return result
 
     async def request_response(self, player: Player, request: Dict) -> Dict:
@@ -828,7 +946,11 @@ class MainEngine:
 
     def _card_in_zone(self, card, owner, zone: str) -> bool:
         """复核单张牌是否仍在声明的牌区内（兼容装备字典与判定区）。"""
-        if owner is None or card is None:
+        if card is None:
+            return False
+        if zone == "deck":
+            return card in self.game_state.deck
+        if owner is None:
             return False
         if zone == "hand":
             return card in owner.hand
@@ -953,7 +1075,7 @@ class MainEngine:
                     player, self._mask_hidden_candidates(request)
                 )
             except Exception as exc:
-                logger.info(f"  ⚠️ 兜底决策失败: {type(exc).__name__}: {exc}")
+                logger.info("  ⚠️ 兜底决策失败: %s", type(exc).__name__)
                 fallback_raw = []
             result = self._resolve_choice(player, request, fallback_raw, _allow_rule_fallback=False)
             if result.get("bool"):
@@ -993,8 +1115,11 @@ class MainEngine:
     def _public_decision_value(value):
         """Remove live player and card objects from advisory decision context."""
         if isinstance(value, Player):
-            return {"id": value.id, "name": value.name, "hp": value.hp,
-                    "alive": value.alive, "is_ai": value.is_ai}
+            public = {"id": value.id, "name": value.name, "hp": value.hp,
+                      "alive": value.alive, "is_ai": value.is_ai}
+            if value.identity_revealed:
+                public["identity"] = value.identity
+            return public
         if isinstance(value, Card):
             return None
         if isinstance(value, dict):
@@ -1030,25 +1155,30 @@ class MainEngine:
     async def _ai_choose_choice(self, player: Player, request: Dict):
         """AI dispatch for four new primitives. Returns List[int]."""
         request = self._mask_hidden_candidates(request)
+        trustee = self._trustee_active and player is self.human_player()
+        if trustee and (self._trustee_source == "rules" or self._trustee_degraded):
+            return self.ai_decision.simple_choice_decision(player, request)
+        decision_player = self._trustee_view(player) if trustee else player
         handler = getattr(self.ai_decision, "make_choice_decision", None)
         if handler is not None:
             try:
-                return await handler(player, request)
+                result = await handler(decision_player, request)
+                if trustee:
+                    self._update_trustee_failure(player)
+                return result
             except Exception as exc:
-                logger.info(f"  ⚠️ 选择AI失败，切换规则AI: {type(exc).__name__}: {exc}")
+                logger.info("  ⚠️ 选择AI失败，切换规则AI: %s", type(exc).__name__)
+                if trustee:
+                    self._trustee_failures += 1
+                    self._trustee_degraded = self._trustee_failures >= 3
         return self.ai_decision.simple_choice_decision(player, request)
 
     async def _trustee_choose_choice(self, player: Player, request: Dict):
         if self._abort_reason:
             return []
-        self._trustee_active = True
-        try:
-            indices = self.ai_decision.simple_choice_decision(
-                player, self._mask_hidden_candidates(request)
-            )
-        except Exception as exc:
-            logger.info(f"  ⚠️ 托管选择决策失败: {type(exc).__name__}: {exc}")
-            indices = []
+        if not self._trustee_active:
+            self.set_trustee(True, source="rules")
+        indices = await self._ai_choose_choice(player, request)
         await self.log_event("[托管] 已代为选择", trustee=True, player_id=player.id)
         return indices
 
@@ -1082,6 +1212,8 @@ class MainEngine:
                 selection=selection_block,
             )
             raw = await asyncio.wait_for(future, timeout=self.response_timeout)
+            if isinstance(raw, dict) and raw.get("trustee"):
+                return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
                 return None, "cancelled"
             if self.game_aborted:
@@ -1125,9 +1257,18 @@ class MainEngine:
             return {**self._empty_choice_result(request.get("kind", "confirm")), "status": "game_ended"}
         request_id = self._next_request_id()
         request = self._prepare_request(player, request, request_id)
-        if player.is_ai:
+        trustee_request = self._trustee_active and player is self.human_player()
+        generation = self._trustee_generation
+        if player.is_ai or trustee_request:
             raw = await self._ai_choose_choice(player, request)
-            input_status = "accepted"
+            if trustee_request and generation != self._trustee_generation:
+                if self._trustee_active:
+                    raw = await self._ai_choose_choice(player, request)
+                    input_status = "accepted"
+                else:
+                    raw, input_status = await self._human_choose_choice(player, request, request_id)
+            else:
+                input_status = "accepted"
         else:
             raw, input_status = await self._human_choose_choice(player, request, request_id)
 
@@ -1135,7 +1276,7 @@ class MainEngine:
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
         elif input_status == "cancelled":
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "cancelled"
-        elif input_status == "timeout":
+        elif input_status in {"timeout", "trustee"}:
             if self.game_aborted:
                 result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
             else:
@@ -1144,7 +1285,7 @@ class MainEngine:
                     result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
                 else:
                     result = self._resolve_choice(player, request, raw)
-                    status = "timeout"
+                    status = "timeout" if input_status == "timeout" else "resolved"
         elif self._choice_has_stale_candidates(request, raw):
             result, status = self._empty_choice_result(request.get("kind", "confirm")), "stale"
         else:
@@ -1161,6 +1302,11 @@ class MainEngine:
             "candidate_version": request.get("candidate_version"),
         })
         await self._emit_selection_result(player, request, status)
+        if (player.is_ai or trustee_request or input_status in {"timeout", "trustee"}) and not self.game_aborted:
+            await self._emit_decision_trace(
+                player, request.get("kind", "confirm"), len(request.get("options") or []),
+                raw, status,
+            )
         return result
 
     async def ask_confirm(self, player: Player, prompt: str, *,
@@ -1272,12 +1418,22 @@ class MainEngine:
 
     async def _ai_choose_option(self, player: Player, request: Dict):
         decision_request = self._response_decision_view(request)
+        trustee = self._trustee_active and player is self.human_player()
+        if trustee and (self._trustee_source == "rules" or self._trustee_degraded):
+            return self.ai_decision.simple_response_decision(player, decision_request)
+        decision_player = self._trustee_view(player) if trustee else player
         handler = getattr(self.ai_decision, "make_response_decision", None)
         if handler is not None:
             try:
-                return await handler(player, decision_request)
+                result = await handler(decision_player, decision_request)
+                if trustee:
+                    self._update_trustee_failure(player)
+                return result
             except Exception as exc:
-                logger.info(f"  ⚠️ 响应AI失败，切换规则AI: {type(exc).__name__}: {exc}")
+                logger.info("  ⚠️ 响应AI失败，切换规则AI: %s", type(exc).__name__)
+                if trustee:
+                    self._trustee_failures += 1
+                    self._trustee_degraded = self._trustee_failures >= 3
         return self.ai_decision.simple_response_decision(player, decision_request)
 
     async def _human_choose_option(self, player: Player, request: Dict, request_id: str):
@@ -1304,6 +1460,8 @@ class MainEngine:
                 context=self._serialize_response_context(request.get("context") or {}),
             )
             raw = await asyncio.wait_for(future, timeout=self.response_timeout)
+            if isinstance(raw, dict) and raw.get("trustee"):
+                return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
                 return None, "cancelled"
             if self.game_aborted:
@@ -1377,15 +1535,90 @@ class MainEngine:
 
     # ---------- 托管兜底与离席看门狗 ----------
 
+    def trustee_status(self) -> Dict:
+        return {
+            "enabled": self._trustee_active,
+            "source": self._trustee_source if self._trustee_active else None,
+            "model": self._trustee_config.get("model") if self._trustee_active and not self._trustee_degraded else None,
+            "failures": self._trustee_failures if self._trustee_active else 0,
+            "degraded": bool(self._trustee_active and self._trustee_degraded),
+            "degrade_reason": self._trustee_degrade_reason if self._trustee_active else None,
+        }
+
+    def set_trustee(self, enabled: bool, *, source="rules", player_id=None, config=None) -> Dict:
+        """Set one human's takeover source without changing their cards or identity."""
+        if self.game_aborted:
+            raise ValueError("对局已结束")
+        if not enabled:
+            self._trustee_active = False
+            self._trustee_generation += 1
+            self._human_idle_since = None
+            return self.trustee_status()
+        if source not in {"default", "copy_ai", "custom", "rules"}:
+            raise ValueError("未知托管来源")
+        connection = {}
+        if source == "default":
+            connection = normalize_ai(self.game_config.get("trustee_default") or {}, use_default=True)
+        elif source == "copy_ai":
+            candidate = next((p for p in self.game_state.players
+                              if p.id == player_id and p.is_ai), None)
+            if candidate is None:
+                raise ValueError("复制来源不是场上 AI")
+            connection = dict(candidate.ai_config or {})
+        elif source == "custom":
+            if not isinstance(config, dict):
+                raise ValueError("托管配置必须是对象")
+            connection = normalize_ai(config, use_default=False)
+        allowed = {"provider", "model", "api_url", "base_url", "temperature", "thinking", "api_key"}
+        self._trustee_config = {key: value for key, value in connection.items() if key in allowed}
+        self._trustee_source = source
+        self._trustee_active = True
+        self._trustee_failures = 0
+        self._trustee_degraded = source != "rules" and not bool(self._trustee_config.get("api_key"))
+        self._trustee_degrade_reason = "missing_api_key" if self._trustee_degraded else None
+        self._trustee_generation += 1
+        self._human_idle_since = None
+        # Wake a pending turn/selection so the takeover starts immediately.
+        for future in self._pending_requests.values():
+            if not future.done():
+                future.set_result({"trustee": True})
+        self._player_input = {"action": {"type": "trustee"}, "target_ids": []}
+        if self._player_event is not None and not self._player_event.is_set():
+            self._player_event.set()
+        return self.trustee_status()
+
+    def _trustee_view(self, player):
+        return _TrusteePlayerView(player, self._trustee_config)
+
+    async def _trustee_make_decision(self, player, actions):
+        generation = self._trustee_generation
+        if self._trustee_source == "rules" or self._trustee_degraded:
+            decision = self.ai_decision.simple_ai_decision(player, actions)
+        else:
+            decision = await self.ai_decision.make_decision(self._trustee_view(player), actions)
+            self._update_trustee_failure(player)
+        return decision if self._trustee_active and generation == self._trustee_generation else None
+
+    def _update_trustee_failure(self, player):
+        failure = getattr(self.ai_decision, "last_failure", {}).get(player.id)
+        if failure:
+            self._trustee_failures += 1
+            if self._trustee_failures >= 3:
+                self._trustee_degraded = True
+                self._trustee_degrade_reason = "three_failures"
+        else:
+            self._trustee_failures = 0
+
     def _mark_waiting_for_human(self):
         """引擎开始等真人。已经在计时就不重新打点，保证是累计而不是每次重置。"""
-        if self._human_idle_since is None:
+        if not self._trustee_active and self._human_idle_since is None:
             self._human_idle_since = self.time_source()
 
     def _note_human_input(self):
         """收到任何真人输入即清零，并解除托管状态。"""
         self._human_idle_since = None
         self._trustee_active = False
+        self._trustee_generation += 1
 
     def idle_seconds(self) -> float:
         if self._human_idle_since is None:
@@ -1393,16 +1626,12 @@ class MainEngine:
         return float(self.time_source() - self._human_idle_since)
 
     async def _trustee_choose(self, player: Player, request: Dict):
-        """单次请求超时后的规则脚本托管。不调用任何 API。"""
+        """Resolve a timed out response through the configured takeover source."""
         if self._abort_reason:
             return None
-        self._trustee_active = True
-        try:
-            decision_request = self._response_decision_view(request)
-            index = self.ai_decision.simple_response_decision(player, decision_request)
-        except Exception as exc:
-            logger.info(f"  ⚠️ 托管决策失败: {type(exc).__name__}: {exc}")
-            index = None
+        if not self._trustee_active:
+            self.set_trustee(True, source="rules")
+        index = await self._ai_choose_option(player, request)
         options = request.get("options") or []
         label = "不响应"
         if isinstance(index, int) and 0 <= index < len(options):

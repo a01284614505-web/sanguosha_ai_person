@@ -3,6 +3,7 @@
 
 import asyncio
 import unittest
+from unittest.mock import AsyncMock
 
 from game_engine import MainEngine
 from game_engine.state_manager import Card, Phase
@@ -236,6 +237,7 @@ class SkillStatsEdgeTest(unittest.TestCase):
         target.hp = 1  # 濒死救援后回到1点；主公更濒危（1点）时才会触发救援转移
         self.engine.game_state.current_player = target
         wu.has = lambda p, name: name == "救援" and p is lord
+        self.engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
         self.engine.stats.add(rescuer, "healing", 1)  # 模拟濒死救援记给提供者
         asyncio.run(wu.on_recover(target, 1, rescuer, "dying_rescue"))
         self.assertEqual(stats_of(self.engine, rescuer)["healing"], 0,
@@ -282,6 +284,10 @@ class SkillStatsEdgeTest(unittest.TestCase):
         player.hand.append(card)
         shu.has = lambda p, name: name == "武圣"
         wu.has = lambda p, name: name == "连营" and p is player
+        self.engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+        self.engine.skill_manager.ask_choose_players = AsyncMock(
+            return_value=[player],
+        )
         deck_before = len(self.engine.game_state.deck)
         asyncio.run(shu._consume_conversion(player, card, "武圣", "杀"))
         self.assertEqual(stats_of(self.engine, player)["cards_lost"], 1)

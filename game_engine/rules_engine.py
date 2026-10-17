@@ -111,6 +111,14 @@ class RulesEngine:
         if getattr(player, "jiu_used_this_turn", False):
             return False, "本回合已经使用过酒"
         return True, "OK"
+
+    def can_play_huogong(self, player, card, targets: List) -> Tuple[bool, str]:
+        if not targets or len(targets) != 1:
+            return False, "火攻需要指定一名目标"
+        target = targets[0]
+        if not target.alive or target is player or not target.hand:
+            return False, "火攻目标必须是有手牌的其他角色"
+        return True, "OK"
     
     def can_play_guohe(self, player, card, targets: List) -> Tuple[bool, str]:
         """检查是否可以用过河拆桥"""

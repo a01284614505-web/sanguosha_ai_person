@@ -94,6 +94,12 @@ class GameClient {
             case Protocol.OUTBOUND.AI_CONFIG_UPDATED:
                 if (this.onAIConfigUpdated) this.onAIConfigUpdated(data.config);
                 break;
+            case Protocol.OUTBOUND.TRUSTEE_STATUS:
+                if (this.onTrusteeStatus) this.onTrusteeStatus(data);
+                break;
+            case 'decision_trace':
+                if (this.onDecisionTrace) this.onDecisionTrace(data);
+                break;
             case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
                 break;
@@ -126,6 +132,12 @@ class GameClient {
         if (!this.connected || !this.gameId) return;
         this.send({ type: Protocol.INBOUND.CHAT, message: msg });
     }
+
+    setTrustee(enabled, source, playerId, config) {
+        if (!this.connected || !this.gameId) return;
+        this.send({ type: Protocol.INBOUND.SET_TRUSTEE, enabled: !!enabled,
+            source: source || 'rules', player_id: playerId, config: config });
+    }
     
     send(data) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -147,6 +159,8 @@ GameClient.prototype.onRequireResponse = null;
 GameClient.prototype.onEventNotification = null;
 GameClient.prototype.onError = null;
 GameClient.prototype.onAIConfigUpdated = null;
+GameClient.prototype.onTrusteeStatus = null;
+GameClient.prototype.onDecisionTrace = null;
 GameClient.prototype.onEndGameAccepted = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;

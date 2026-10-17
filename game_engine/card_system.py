@@ -96,6 +96,7 @@ class CardSystem:
                 zone="mixed", cancelable=False,
                 hidden_indices=[i for i, entry in enumerate(places) if entry[1] == "hand" and chooser is not owner],
                 places=[(entry[0], entry[1]) for entry in places],
+                context={"intent": "discard"},
             )
             if self.engine.game_aborted:
                 return False
@@ -432,7 +433,8 @@ class CardSystem:
         chosen = await self.engine.ask_choose_cards(
             chooser, prompt, candidates, min_n=1, max_n=1, zone="mixed",
             cancelable=False, hidden_indices=hidden, places=places,
-            context={"target": target, "reason": reason},
+            context={"target": target, "reason": reason,
+                     "intent": "gain" if reason == "顺手牵羊" else "discard"},
         )
         if not chosen:
             return None
@@ -648,13 +650,24 @@ class CardSystem:
         if self.responder is None:
             return {'bool': False}
 
-        return await self.responder(player, {
+        request = {
             "kind": kind,
             "prompt": prompt,
             "requested_name": requested_name,
             "options": options,
             "context": context or {},
-        })
+        }
+        result = await self.responder(player, request)
+        if result and result.get("bool") and result.get("skill_name") == "激将":
+            offered = await self.trigger_manager.request_lord_sha(player, result.get("owner"))
+            if offered and not (self.engine and self.engine.game_aborted):
+                return offered
+            # 供牌者都拒绝后，主公仍可选择自己的合法响应牌。
+            own_options = [option for option in options if option.get("skill_name") != "激将"]
+            if any(option.get("card") is not None for option in own_options):
+                return await self.responder(player, {**request, "options": own_options})
+            return {"bool": False}
+        return result
 
     async def ask_wuxie(self, card, source, targets=None) -> bool:
         """询问无懈可击链，返回 True 表示当前锦囊最终被无懈。
@@ -688,8 +701,10 @@ class CardSystem:
                     continue
                 owner = result.get("owner") or responder
                 response_card = result.get("card")
-                if response_card is None or response_card not in owner.hand:
-                    raise AssertionError("无懈响应已确认，但响应牌未在提供者手牌中")
+                source_zone = result.get("source_zone", "hand")
+                source_cards = owner.treasure_cards if source_zone == "treasure" else owner.hand
+                if response_card is None or response_card not in source_cards:
+                    raise AssertionError("无懈响应已确认，但响应牌未在提供者的合法牌区中")
                 # 无懈链每层也只提交一条响应牌移动事实。
                 consumed = await self._consume_response(
                     responder, result, "wuxie",
@@ -698,8 +713,8 @@ class CardSystem:
                 )
                 if not consumed:
                     return canceled
-                if response_card in owner.hand:
-                    raise AssertionError("无懈响应消费后仍留在手牌")
+                if response_card in source_cards:
+                    raise AssertionError("无懈响应消费后仍留在原牌区")
                 responded = True
                 current_source = responder
                 canceled = not canceled
@@ -1189,11 +1204,12 @@ class CardSystem:
                     effect_context.cancel_target(p.id)
                 continue
             chosen = None
-            if self.engine and not p.is_ai:
+            if self.engine:
                 chosen_list = await self.engine.ask_choose_cards(
                     p, "【五谷丰登】：请选择一张牌",
                     candidates=remaining, min_n=1, max_n=1,
                     zone="shown", cancelable=False,
+                    context={"intent": "gain"},
                 )
                 chosen = chosen_list[0] if chosen_list else None
                 if chosen is not None and chosen not in remaining:
@@ -1296,33 +1312,52 @@ class CardSystem:
         target = await self.trigger_manager.before_card_target(player, target, card)
         if not target or not target.hand:
             return False
-        shown = target.hand[0]
+        if self.engine is not None:
+            choice = await self.engine.ask_choose_cards(
+                target, "【火攻】：请选择展示的一张手牌", list(target.hand),
+                zone="hand", cancelable=False,
+            )
+            if self.engine.game_aborted:
+                return False
+            if not choice:
+                return True
+            shown = choice[0]
+        else:
+            shown = target.hand[0]
         logger.info(f"  → {target.name} 亮出【{shown}】")
         # 玩家选择弃置一张同花色的手牌
         same_suit = [c for c in player.hand if c.suit == shown.suit]
         if not same_suit:
             logger.info("  → 没有同花色的牌，火攻无效")
-            return False
+            return True
         discarded = None
-        if self.engine and not player.is_ai:
+        if self.engine:
             chosen = await self.engine.ask_choose_cards(
                 player, f"【火攻】：请弃置一张与【{shown}】同花色的牌",
                 candidates=same_suit, min_n=1, max_n=1,
                 zone="hand", cancelable=True,
+                context={"intent": "discard"},
             )
             discarded = chosen[0] if chosen else None
         if discarded is None:
-            if self.engine is not None and self.engine.game_aborted:
-                logger.info("  → 对局已收摊，火攻不再结算")
-                return False
+            if self.engine is not None:
+                logger.info("  → 火攻弃牌已取消或对局结束，不再造成伤害")
+                return not self.engine.game_aborted
             discarded = same_suit[0]
         if discarded in player.hand:
             idx = player.hand.index(discarded)
-            player.hand.remove(discarded)
-            self.game_state.discard_pile.append(discarded)
+            if self.engine is not None:
+                if await self.engine.move_card(
+                    discarded, "hand", "discard", from_owner=player,
+                    reason="火攻", actor_id=player.id,
+                ) is None:
+                    return False
+            else:
+                player.hand.remove(discarded)
+                self.game_state.discard_pile.append(discarded)
+                await self.trigger_manager.on_cards_lost(player, [discarded], "火攻")
             await self.notify_card_to_discard(player, discarded, "discard", idx,
                                                f"{player.name}弃置【{discarded.name}】发动火攻")
-            await self.trigger_manager.on_cards_lost(player, [discarded], "火攻")
             await self.trigger_manager.on_card_discarded(player, discarded, "火攻")
             await self.damage(player, target, 1, card=card, context={"reason": "火攻"})
         return True

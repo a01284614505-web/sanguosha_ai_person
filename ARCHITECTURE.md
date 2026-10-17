@@ -1,18 +1,18 @@
 # AI 三国杀酒馆 · 项目架构
 > 当前验证环境：Linux / Python 3.12；Windows、Termux 为目标平台
-> 当前阶段：B2 代表场景已通过自动化验收；真人浏览器验收待完成
-> 更新时间：2026-10-12
+> 当前阶段：B5–B7 集成验证；五人局规则 AI 批量通过，技能版本和浏览器专项仍按交接台账验收
+> 更新时间：2026-10-17
 > 路线图见 [ROADMAP.md](ROADMAP.md)，现状事实基线见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)
 ## 1. 架构铁律
 ```text
 引擎自驱（全部游戏逻辑） / 服务器纯消息泵 / 前端纯 UI
 ```
 - **引擎是唯一真理来源**：`game_engine/` 计算合法操作、复核选择并执行结算。
-- **服务器只负责传输**：`game_server.py` 管理 HTTP/WebSocket、连接映射、消息转发及动画 ACK/Future；配置、武将、牌堆、结算和统计均经 `MainEngine` 门面决定。
+- **服务器只负责传输与持久化**：`game_server.py` 管理 HTTP/WebSocket、连接映射、消息转发、动画 ACK 和 `game_end` 的幂等战绩写入；合法性、胜负和统计由引擎决定。
 - **前端只负责显示和输入**：`frontend/` 渲染引擎状态并提交用户选择，不自行决定规则合法性。
 ## 2. 当前结构
 ```text
-sanguosha_data/
+sanguosha_ai_person/
 ├── game_server.py              # HTTP 8888 + WebSocket 8889
 ├── start_windows.ps1           # Windows 开发启动器
 ├── requirements.txt            # Python 运行依赖
@@ -32,6 +32,7 @@ sanguosha_data/
 │   ├── skill_runtime_core.py   # 技能运行时基础类型
 │   ├── skills_generated.py     # 27 将技能定义
 │   ├── game_stats.py           # 真实对局统计（7 项指标口径与 MVP）
+│   ├── game_history.py         # 服务端 JSON 战绩、连胜、身份卡及原子写入
 │   └── skills_{wei,shu,wu,qun}.py
 ├── frontend/
 │   ├── index.html              # 大厅
@@ -41,11 +42,11 @@ sanguosha_data/
 │   ├── result.html             # 结算页
 │   ├── hero_manager.html       # 武将数据管理页
 │   ├── js/                     # 活跃前端逻辑（含 game_main.js / protocol.js / lobby.js）
-│   ├── css/                    # 活跃样式（main.css + game.css）
+│   ├── css/                    # 活跃样式（sgs.css + game.css）
 │   └── assets/                 # 武将、卡牌和音频资产
 ├── data/                       # 武将、技能与真实牌堆 JSON
 ├── worldbook_generated/        # AI 世界书数据
-├── tests/                      # 86 项 pytest 回归
+├── tests/                      # pytest 回归
 ├── scripts/                    # 检查、提取与手工工具
 ├── legacy_reference/           # 后续阶段仍有价值的历史参考
 └── logs/
@@ -72,10 +73,10 @@ GameServer 转成 WebSocket 出站消息
 3. 真人只从 `your_turn` 或 `require_response` 给出的合法候选中选择。
 4. `player_action` 进入 `MainEngine.submit_action()`，由引擎再次复核。
 5. AI 从引擎候选中决策；规则 AI 或外部模型都不越过合法操作列表。
-6. 引擎判定胜负并发出 `game_end`。
+6. 引擎判定胜负并发出 `game_end`；服务器按唯一 `game_id` 写入战绩后把收据转发浏览器。`GET /api/history?profile_id=…` 只读取服务端记录。
 ## 4. 当前 WebSocket 协议
 > 本表记录 `game_server.py` 当前实际收发类型。R6 已收敛为 `protocol.py` 与自动生成的 `protocol.js`。
-### 4.1 入站：前端 → 服务器（8 种）
+### 4.1 入站：前端 → 服务器（9 种）
 | 类型 | 用途 |
 |---|---|
 | `create_game` | 创建对局并提交配置 |
@@ -84,9 +85,10 @@ GameServer 转成 WebSocket 出站消息
 | `card_animation_done` | 通知卡牌动画已播放完成 |
 | `end_game` | 请求主动结束当前对局 |
 | `update_ai_config` | 局内更新指定 AI 配置 |
+| `set_trustee` | 开启/解除托管，来源为规则、默认连接、场上 AI 连接或单独配置 |
 | `ping` | 连接心跳 |
 | `server_info` | 请求服务器能力信息 |
-### 4.2 出站：服务器 → 前端（16 种）
+### 4.2 出站：服务器 → 前端（18 种）
 | 类型 | 用途 |
 |---|---|
 | `pong` | 心跳响应 |
@@ -102,8 +104,10 @@ GameServer 转成 WebSocket 出站消息
 | `chat` | 真人或 AI 聊天消息 |
 | `event_notification` | 游戏事件与动画通知 |
 | `ai_config_updated` | AI 配置更新回执 |
+| `trustee_status` | 托管来源、模型、连续失败、降级及原因 |
+| `decision_trace` | 脱敏后的候选数量、公开理由、最终选择及引擎复核结果 |
 | `end_game_accepted` | 主动结束请求回执 |
-| `game_end` | 对局结束与结算状态（含真实 `stats` / `mvp` / `duration`；全员 `serialize().players[].stats`） |
+| `game_end` | 对局结束与结算状态（含真实 `stats` / `mvp` / `duration`；服务器追加持久化 `profile` / `reward` / `player_won` 或 `history_error`） |
 | `error` | 协议、配置或执行错误 |
 ## 5. 游戏与 AI 系统
 ### 游戏引擎
@@ -118,6 +122,9 @@ GameServer 转成 WebSocket 出站消息
 3. 引擎复核后执行，并把结果回灌到该 AI 的会话窗口。
 4. 同一 AI 整局复用窗口；L0 全局层不含玩家专属内容，以提高跨玩家缓存命中。
 Provider 清单以 `game_engine/protocol.py` 为单一来源，经 `/api/providers` 与生成的 `protocol.js` 下发；大厅读取 `default_url` / `default_model`。
+托管模型复用真人座位的可见视角，只复制连接配置。响应、四原语及出牌共用候选复核；真人解除托管时，晚到的模型结果由代次检查丢弃。连续三次失败转规则脚本；无 Key 的模型来源立即报告 `missing_api_key` 降级。公开轨迹只保留对真人可见的信息。
+### 战绩持久化
+`GameHistoryStore` 使用 `schema_version`、唯一 `game_id`、进程内串行锁、临时文件 `fsync` 加 `os.replace`。重复结束只返回原收据；损坏文件保留备份并报告错误。旧 `localStorage` 战绩不作为可信胜负来源。运行文件为 `logs/runtime/game_history.json`，不进 Git。
 ### 日志与缓存统计轮转
 - 引擎全部 `print` 已迁移至 `logging`（模块级 `logger = logging.getLogger(__name__)`）；正常流程 `INFO`，拒绝/未实现/异常路径 `WARNING`/`ERROR`。
 - `game_server.py` 在 `__main__` 调用 `configure_logging()`（`basicConfig(stream=sys.stdout, force=True)`）。服务器自身的连接/错误横幅仍用 `print`，不在引擎日志范围内。
@@ -146,7 +153,7 @@ PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 - R6：协议、Provider、牌表与序列化单一真相源（已完成；`protocol.py` + `CARD_TABLE` + `card_to_dict`，前端经 `gen_protocol_js.py` 生成同步）。
 - R7：拆分 `game.html`、样式变量化并接线武将头像（已完成；`game.html` 79 行纯结构 + `css/game.css` + `js/game_main.js`，回归 83）。
 - R8：日志机制与重构总交接（已完成；引擎 84 处 `print` → `logging`，缓存统计 5 MiB 轮转，回归提升至 86）。
-### 7.2 当前功能边界（2026-10-03 复核更新）
+### 7.2 历史功能边界（2026-10-03 快照，以下表格非当前状态）
 | 领域 | 状态 |
 |---|---|
 | 模式 | 只支持 5 人身份局（`config_validator.py:29`、`identity_system.py:19` 硬阻断） |
@@ -160,8 +167,8 @@ PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 | 结算统计 | 引擎产出 7 项真实统计与 MVP（`game_stats.py`），随 `game_end` 下发，`result.js` 渲染真实数据 |
 | 托管 | CHRONICLE 13.5.3 四种来源只实现第 4 种（规则脚本兜底） |
 | 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
-### 7.3 下一阶段
-**B2 请求、牌移动、事件与技能状态最小骨架 → B3 公共规则 → B4 装备/木牛 → B5 技能真人化 → B6 托管/模型 → B7 持久化**；新版 UI 在 B7 发布门槛后接入。B2 代表场景已通过自动化验收：四原语可用模型或规则脚本选索引，再由引擎复核原始候选；隐藏候选和玩家私密对象不进入决策视图；实体牌移动记录统一事实，统计与技能按各自口径投影；技能实例状态和普通/技能杀效果上下文可序列化。其余旧牌区直接写入点及决斗/群体锦囊上下文仍待 B3/B4 迁移，详见 [B2 验收记录](logs/handover/20261013_0016_B2接口验收.md)。
+### 7.3 本轮验收入口
+B2–B4 已有代表机制实现；B5–B7 的当前状态、未签收规则及浏览器场景以本轮交接日志为准。固定种子五人局批量入口：`.venv/bin/python -m scripts.verify_b7_games`（三套牌堆各十局，检查胜负终结、非法操作及每张实体牌守恒）。完整回归及两项 WebSocket 冒烟仍由 `scripts/verify_project.py` 提供。
 
 6A 交互原语层与选牌消费者补全已完成（2026-09-13 / 2026-10-03），详见
 [Stage 6A](logs/handover/20260913_0000_Stage6A交互原语层.md) 与

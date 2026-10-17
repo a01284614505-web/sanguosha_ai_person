@@ -41,6 +41,9 @@
         phase: { playerId: null, phase: '', skipped: new Set() },  // 阶段栏
         animQueue: Promise.resolve(),   // 出牌/判定动画串行队列
         ended: false,
+        trustee: null,
+        idleSince: 0,
+        idleWarningTimer: null,
         lastTurnKey: ''     // “轮次:当前玩家”，用于识别换人
     };
     window.GameUI = G;
@@ -550,7 +553,7 @@
         cancel.textContent = '取消';
         ok.hidden = cancel.hidden = end.hidden = false;
         opts.innerHTML = '';
-        timer.classList.toggle('on', !!G.req);
+        timer.classList.toggle('on', !!G.req || !!G.turn);
 
         if (G.ended) {
             bar.className = 'action-bar idle';
@@ -721,6 +724,7 @@
     function onOk() {
         if (G.req) {
             if (G.req.expired) return;
+            noteHumanActivity();
             if (G.req.kind === 'confirm') { sendResponse(0); return; }
             submitPicked();
             return;
@@ -751,6 +755,7 @@
     function onCancel() {
         if (G.req) {
             if (G.req.expired) return;
+            noteHumanActivity();
             if (G.req.kind === 'confirm') { sendResponse(1); return; }
             if (!G.req.selection) {
                 const passIdx = (G.req.options || []).findIndex(o => o.is_pass);
@@ -766,6 +771,7 @@
     /** “结束出牌”。 */
     function onEnd() {
         if (!isMyPlay()) return;
+        noteHumanActivity();
         gameClient.playerAction({ type: 'end_phase' }, []);
         ChatPanel.addLog('你结束了出牌阶段', 'me');
         G.sel = null;
@@ -787,6 +793,7 @@
     function sendResponse(selection) {
         const r = G.req;
         if (!r || r.expired) return;
+        noteHumanActivity();
         const action = { type: 'response', request_id: r.request_id };
         if (Array.isArray(selection)) action.option_indices = selection;
         else action.option_index = selection;
@@ -824,6 +831,24 @@
         tick();
         G.reqTimer = setInterval(tick, 200);
     }
+
+    // The engine enforces the five-minute watchdog; this client timer only warns 30 seconds ahead.
+    function beginIdleWatch() {
+        if (G.idleWarningTimer || (G.trustee && G.trustee.enabled) || G.ended) return;
+        G.idleSince = Date.now();
+        G.idleWarningTimer = setTimeout(() => {
+            G.idleWarningTimer = null;
+            if (!G.ended && !(G.trustee && G.trustee.enabled)) {
+                toast('你已离席约 4 分 30 秒；若继续无操作，对局将在约 30 秒后结束。请进行任意游戏操作或开启托管。', { bad: true, ms: 12000 });
+            }
+        }, 270000);
+    }
+    function clearIdleWatch() {
+        if (G.idleWarningTimer) clearTimeout(G.idleWarningTimer);
+        G.idleWarningTimer = null;
+        G.idleSince = 0;
+    }
+    function noteHumanActivity() { clearIdleWatch(); }
 
     // ------------------------------------------------------------------ 特效
     function centerOf(el) {
@@ -1084,12 +1109,9 @@
         gameClient.createGame(cfg);
     };
 
-    /** 开局成功：若本局用了身份卡，扣掉一张（并从配置里删掉，刷新页面不会重复扣）。 */
+    /** 开局成功：身份卡已由服务端校验并扣除。 */
     gameClient.onGameCreated = function () {
         if (G.cfg.identity_card && G.cfg.identity_card.use) {
-            const user = store.get('userData', {}) || {};
-            user.identityCards = Math.max(0, (user.identityCards || 0) - 1);
-            store.set('userData', user);
             delete G.cfg.identity_card;
             store.sset('gameConfig', G.cfg);
             ChatPanel.addLog('已使用一张身份卡');
@@ -1104,6 +1126,7 @@
         G.players = s.players || [];
         const human = G.players.find(p => !p.is_ai) || G.players.find(p => p.id === 0);
         if (human) G.meId = human.id;
+        renderTrusteeStatus();
         // 手牌换了（摸牌、被拆等）时，原来的选择作废
         if (Array.isArray(s.self_hand)) {
             const oldKey = G.hand.map(c => c.id).join('|');
@@ -1140,6 +1163,8 @@
         G.sel = null;
         renderAll();
         if (fresh) sfx('click');
+        beginIdleWatch();
+        startTurnTimer(data.timeout);
     };
 
     gameClient.onActionResult = function (ok) {
@@ -1153,6 +1178,7 @@
     gameClient.onRequireResponse = function (data) {
         G.req = data;
         G.picked = [];
+        beginIdleWatch();
         startRequestTimer(data.timeout);
         renderAll();
         sfx('click');
@@ -1186,6 +1212,47 @@
                     if (data.trustee && data.player_id === G.meId) toast(data.message);
                 }
         }
+    };
+
+    gameClient.onTrusteeStatus = function (status) {
+        G.trustee = status || null;
+        if (status && status.enabled) clearIdleWatch();
+        else if (G.turn || G.req) beginIdleWatch();
+        renderTrusteeStatus();
+    };
+
+    gameClient.onDecisionTrace = function (trace) {
+        if (settings().show_decision_trace === false) return;
+        const list = document.getElementById('decisionTraceList');
+        const panel = document.getElementById('decisionTracePanel');
+        const count = document.getElementById('decisionTraceCount');
+        if (!list || !panel) return;
+        const summary = document.createElement('summary');
+        const row = document.createElement('details');
+        row.className = 'decision-trace-row';
+        const player = playerById(trace.player_id);
+        const name = player ? player.name : ('角色 ' + trace.player_id);
+        const kind = trace.kind || '决策';
+        const model = trace.model ? ' · ' + trace.model : '';
+        summary.textContent = name + ' · ' + kind + model;
+        row.appendChild(summary);
+        const full = document.createElement('div');
+        full.className = 'decision-trace-full';
+        const facts = [
+            ['理由', trace.reason], ['最终选择', trace.final_choice],
+            ['校验', trace.validation], ['来源', trace.source],
+            ['候选数', trace.candidate_count], ['候选概览', trace.candidate_summary],
+            ['世界书规则', trace.worldbook_hits],
+            ['耗时', Number.isFinite(trace.elapsed_ms) ? trace.elapsed_ms + ' ms' : null]
+        ];
+        full.textContent = facts.filter(([, value]) => value !== undefined && value !== null && value !== '')
+            .map(([label, value]) => label + '：' + (typeof value === 'object' ? JSON.stringify(value) : String(value)))
+            .join('\n');
+        row.appendChild(full);
+        list.prepend(row);
+        while (list.children.length > 100) list.lastElementChild.remove();
+        count.textContent = String(list.children.length);
+        panel.hidden = settings().show_decision_trace === false;
     };
 
     /** AI 的回合事件：思考中提示、思考摘要。 */
@@ -1224,43 +1291,34 @@
         if (G.req) { G.req = null; clearInterval(G.reqTimer); }
         const state = data.state || G.state || {};
         if (data.state) { G.state = data.state; G.players = data.state.players || G.players; }
-        const mine = (state.players || []).find(p => p.id === G.meId) || {};
         const winner = data.winner;
-        // 主公胜利时忠臣也算赢
-        const side = { lord: ['lord', 'loyalist'], rebel: ['rebel'], spy: ['spy'] }[winner] || [];
-        const decided = side.length > 0;
-        const won = decided && side.includes(mine.identity);
+        const decided = ['lord', 'rebel', 'spy'].includes(winner);
         const result = {
             winner: winner,
             message: data.message,
             total_rounds: state.round || 0,
             duration: data.duration || 0,
-            player_identity: mine.identity || '未知',
+            player_identity: data.player_identity || '未知',
             player_id: G.meId,
-            player_won: won,
+            player_won: data.player_won === true,
             mvp: data.mvp || null,
             stats: data.stats || null,
-            players: state.players || []
+            players: state.players || [],
+            profile: data.profile || null,
+            reward: data.reward || null,
+            history_error: data.history_error || null
         };
         store.set('gameResult', result);
-        if (decided) {
-            // 连胜每满 2 局奖励一张身份卡（大厅可用来指定身份）
-            const user = store.get('userData', {}) || {};
-            user.totalGames = (user.totalGames || 0) + 1;
-            user.winStreak = won ? (user.winStreak || 0) + 1 : 0;
-            if (won && user.winStreak % 2 === 0) { user.identityCards = (user.identityCards || 0) + 1; result.reward = 'identity_card'; store.set('gameResult', result); }
-            store.set('userData', user);
-        }
         renderAll();
         const verdict = document.getElementById('endVerdict');
-        verdict.className = 'verdict ' + (decided ? (won ? 'win' : 'lose') : '');
-        verdict.textContent = decided ? (won ? '胜' : '败') : '终';
-        document.getElementById('endTitle').textContent = decided ? (won ? '旗开得胜' : '惜败一局') : '对局结束';
+        verdict.className = 'verdict ' + (decided ? (result.player_won ? 'win' : 'lose') : '');
+        verdict.textContent = decided ? (result.player_won ? '胜' : '败') : '终';
+        document.getElementById('endTitle').textContent = decided ? (result.player_won ? '旗开得胜' : '惜败一局') : '对局结束';
         const winText = SGS.WINNER[winner] ? (decided ? SGS.WINNER[winner] + '获胜' : '') : '';
         document.getElementById('endMessage').textContent = [winText, winner === 'aborted' || winner === 'draw' ? data.message : ''].filter(Boolean).join('。') || data.message || '';
         document.getElementById('endResult').hidden = false;
         ChatPanel.addLog(data.message || '对局结束', 'important');
-        sfx(decided ? (won ? 'win' : 'lose') : 'click');
+        sfx(decided ? (result.player_won ? 'win' : 'lose') : 'click');
         // 稍等动画收尾再弹窗，让玩家看到最后一张牌
         setTimeout(() => { const d = document.getElementById('endModal'); if (!d.open) d.showModal(); }, 900);
     };
@@ -1306,6 +1364,9 @@
             return '<div class="info-skill"><b>' + esc(eq[s]) + '</b><small class="muted">' + SGS.EQUIP_SLOT[s].name + (info.range ? ' · 攻击范围 ' + info.range : '') + '</small><br>' + esc(info.text || '') + '</div>';
         }).join('');
         const judgeItems = (p.judge_area || []).map(n => '<div class="info-skill"><b>' + esc(n) + '</b>' + esc((SGS.CARD_INFO[n] || {}).text || '') + '</div>').join('');
+        const markNames = { pao_tokens: '咆哮次数', hand_limit_bonus: '额外手牌上限', rende_count: '仁德已给牌', cannot_use_hand: '禁用手牌', nonlocked_disabled: '非锁定技失效' };
+        const marks = Object.entries(p.marks || {}).filter(([key, value]) => markNames[key] && (value === true || (Number.isFinite(value) && value !== 0)))
+            .map(([key, value]) => '<span class="status-mark">' + esc(markNames[key]) + (value === true ? '' : '：' + esc(String(value))) + '</span>').join('');
         document.getElementById('playerInfoTitle').textContent = p.name + ' · ' + (hero.name || p.hero_name || '');
         document.getElementById('playerInfoBody').innerHTML =
             '<div class="info-grid"><div class="hero-frame faction-' + esc(hero.faction || '群') + '">' + SGS.heroImgHTML(hero.id, hero.name) + '</div>' +
@@ -1314,6 +1375,7 @@
             '<div class="row">' + SGS.hpHTML(p.hp, p.max_hp) + '<span class="muted">体力 ' + p.hp + ' / ' + p.max_hp + '</span></div>' +
             '<div>手牌 ' + p.hand_count + ' 张' + (p.treasure_count ? '　木牛扣置 ' + p.treasure_count + ' 张' : '') + (p.alive ? '' : '　<b style="color:var(--bad)">已阵亡</b>') + '</div>' +
             (p.is_ai && p.ai_config ? '<div class="muted">模型　' + esc(p.ai_config.provider + ' / ' + p.ai_config.model) + '</div>' : '') +
+            (marks ? '<div class="player-marks" aria-label="公开状态标记">' + marks + '</div>' : '') +
             '</div></div>' +
             '<h3 class="info-h">武将技能</h3><div class="info-skills">' + (hero.skills || []).map(s =>
                 '<div class="info-skill"><b>' + esc(s.name) + '</b>' + (SGS.SKILL_TAG[s.type] && s.type !== 'trigger' ? '<small class="muted">' + SGS.SKILL_TAG[s.type] + '</small><br>' : '') + esc(s.description || '') + '</div>').join('') + '</div>' +
@@ -1330,6 +1392,72 @@
     function fillProviders() {
         const list = (providerList && providerList.length) ? providerList : (window.Protocol ? Protocol.PROVIDERS : []);
         document.getElementById('aiSettingProvider').innerHTML = list.map(p => '<option value="' + esc(p.value) + '">' + esc(p.name) + '</option>').join('');
+        const trustee = document.getElementById('trusteeProvider');
+        if (trustee) trustee.innerHTML = list.map(p => '<option value="' + esc(p.value) + '">' + esc(p.name) + '</option>').join('');
+    }
+
+    function trusteeSourceChanged() {
+        const source = document.getElementById('trusteeSource').value;
+        document.getElementById('trusteeCopyRow').hidden = source !== 'copy_ai';
+        document.getElementById('trusteeCustomFields').hidden = source !== 'custom';
+    }
+    function renderTrusteeStatus() {
+        const status = G.trustee || (G.state && G.state.trustee) || null;
+        const indicator = document.getElementById('trusteeIndicator');
+        const text = document.getElementById('trusteeStatusText');
+        if (!indicator || !text) return;
+        indicator.hidden = !(status && status.enabled);
+        if (!status || !status.enabled) { text.textContent = '未开启托管'; return; }
+        const sources = { rules: '规则托管', default: '默认模型', copy_ai: '复制 AI', custom: '自定义模型' };
+        const degraded = status.degraded ? ' · 已降级为规则托管' : '';
+        const degradedReason = status.degrade_reason === 'missing_api_key' ? '（大厅第一席未配置 Key）' :
+            status.degrade_reason === 'three_failures' ? '（模型连续失败 3 次）' : '';
+        const model = status.model ? ' · ' + status.model : '';
+        const failures = status.failures ? ' · 连续失败 ' + status.failures + ' 次' : '';
+        text.textContent = (sources[status.source] || '已托管') + model + failures + degraded + degradedReason;
+        indicator.textContent = '托管中';
+    }
+    function openTrusteeDialog() {
+        fillProviders();
+        const source = document.getElementById('trusteeSource');
+        const ai = document.getElementById('trusteeCopyPlayer');
+        ai.innerHTML = G.players.filter(p => p.is_ai).map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+        trusteeSourceChanged();
+        renderTrusteeStatus();
+        document.getElementById('trusteeModal').showModal();
+    }
+    function saveTrustee(e) {
+        e.preventDefault();
+        const source = document.getElementById('trusteeSource').value;
+        let config;
+        if (source === 'custom') {
+            const apiKey = document.getElementById('trusteeKey').value.trim();
+            if (!apiKey) { toast('请输入自定义托管的 API Key', { bad: true }); return; }
+            config = { provider: document.getElementById('trusteeProvider').value,
+                model: document.getElementById('trusteeModel').value.trim(),
+                api_url: document.getElementById('trusteeUrl').value.trim(), api_key: apiKey };
+        }
+        const playerId = source === 'copy_ai' ? Number(aiValue()) : undefined;
+        gameClient.setTrustee(true, source, playerId, config);
+        document.getElementById('trusteeKey').value = '';
+        document.getElementById('trusteeModal').close();
+    }
+    function aiValue() { return document.getElementById('trusteeCopyPlayer').value; }
+    function startTurnTimer(seconds) {
+        clearInterval(G.reqTimer);
+        const total = Math.max(1, Number(seconds) || 30) * 1000;
+        G.reqDeadline = Date.now() + total;
+        const bar = document.querySelector('#abTimer i');
+        const wrap = document.getElementById('abTimer');
+        const tick = () => {
+            if (!G.turn || G.req || G.ended) { clearInterval(G.reqTimer); return; }
+            const left = G.reqDeadline - Date.now();
+            bar.style.transform = 'scaleX(' + Math.max(0, left / total) + ')';
+            wrap.classList.toggle('urgent', left < 5000);
+            if (left <= 0) clearInterval(G.reqTimer);
+        };
+        tick();
+        G.reqTimer = setInterval(tick, 200);
     }
     /** 局内调整某个 AI 的模型（update_ai_config，立即生效；Key 留空则保留原 Key）。 */
     function openAISettings(id) {
@@ -1398,17 +1526,29 @@
 
     function bindUI() {
         buildPhaseTrack();
+        document.getElementById('decisionTracePanel').hidden = settings().show_decision_trace === false;
         document.getElementById('okBtn').addEventListener('click', onOk);
         document.getElementById('cancelBtn').addEventListener('click', onCancel);
         document.getElementById('endBtn').addEventListener('click', onEnd);
         document.getElementById('quitBtn').addEventListener('click', quitGame);
         document.getElementById('sbtn').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
+        document.getElementById('trusteeBtn').addEventListener('click', openTrusteeDialog);
+        document.getElementById('trusteeSource').addEventListener('change', trusteeSourceChanged);
+        document.getElementById('trusteeForm').addEventListener('submit', saveTrustee);
+        document.getElementById('trusteeOff').addEventListener('click', () => {
+            gameClient.setTrustee(false);
+            document.getElementById('trusteeModal').close();
+        });
         document.getElementById('aiSettingsForm').addEventListener('submit', saveAISettings);
         document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
         document.querySelectorAll('dialog.sgs-dialog').forEach(d => d.addEventListener('click', (e) => { if (e.target === d && d.id !== 'endModal') d.close(); }));
         document.getElementById('endModal').addEventListener('cancel', (e) => e.preventDefault());
         window.addEventListener('resize', layoutHand);
         window.addEventListener('global-settings-changed', () => { G.seatSig = {}; renderAll(); });
+        window.addEventListener('global-settings-changed', (event) => {
+            const panel = document.getElementById('decisionTracePanel');
+            if (panel) panel.hidden = event.detail && event.detail.show_decision_trace === false;
+        });
         // 键盘：回车 = 确定，Esc = 取消（输入框里打字时不拦截）
         document.addEventListener('keydown', (e) => {
             if (e.target.closest('input, textarea, select') || document.querySelector('dialog[open]')) return;

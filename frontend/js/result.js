@@ -27,6 +27,17 @@
         document.getElementById('totalRounds').textContent = r.total_rounds || 0;
         document.getElementById('gameDuration').textContent = formatDuration(r.duration);
         document.getElementById('yourIdentity').textContent = identityName(r.player_identity);
+        if (r.profile) {
+            const profile = document.getElementById('profileSummary');
+            profile.hidden = false;
+            profile.textContent = '服务端档案：连胜 ' + (r.profile.win_streak || 0) + ' 局 · 总对局 ' +
+                (r.profile.total_games || 0) + ' 局 · 身份卡 ' + (r.profile.identity_cards || 0) + ' 张';
+        }
+        if (r.history_error) {
+            const error = document.getElementById('historySaveError');
+            error.hidden = false;
+            error.textContent = r.history_error + '；本局结果仍可查看，请稍后在大厅检查历史。';
+        }
 
         if (r.mvp) {
             const m = r.mvp;

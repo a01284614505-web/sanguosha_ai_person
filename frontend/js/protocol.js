@@ -3,10 +3,10 @@
 const Protocol = {
   VERSION: "1.0",
   INBOUND: {
-  CREATE_GAME: "create_game",   PLAYER_ACTION: "player_action",   CHAT: "chat",   CARD_ANIMATION_DONE: "card_animation_done",   END_GAME: "end_game",   UPDATE_AI_CONFIG: "update_ai_config",   PING: "ping",   SERVER_INFO: "server_info"
+  CREATE_GAME: "create_game",   PLAYER_ACTION: "player_action",   CHAT: "chat",   CARD_ANIMATION_DONE: "card_animation_done",   END_GAME: "end_game",   UPDATE_AI_CONFIG: "update_ai_config",   SET_TRUSTEE: "set_trustee",   PING: "ping",   SERVER_INFO: "server_info"
   },
   OUTBOUND: {
-  PONG: "pong",   SERVER_INFO: "server_info",   GAME_CREATED: "game_created",   GAME_STATE: "game_state",   YOUR_TURN: "your_turn",   REQUIRE_RESPONSE: "require_response",   ACTION_RESULT: "action_result",   SELECTION_RESULT: "selection_result",   CARD_MOVED: "card_moved",   AI_ACTION: "ai_action",   CHAT: "chat",   EVENT_NOTIFICATION: "event_notification",   AI_CONFIG_UPDATED: "ai_config_updated",   END_GAME_ACCEPTED: "end_game_accepted",   GAME_END: "game_end",   ERROR: "error"
+  PONG: "pong",   SERVER_INFO: "server_info",   GAME_CREATED: "game_created",   GAME_STATE: "game_state",   YOUR_TURN: "your_turn",   REQUIRE_RESPONSE: "require_response",   ACTION_RESULT: "action_result",   SELECTION_RESULT: "selection_result",   CARD_MOVED: "card_moved",   AI_ACTION: "ai_action",   CHAT: "chat",   EVENT_NOTIFICATION: "event_notification",   AI_CONFIG_UPDATED: "ai_config_updated",   TRUSTEE_STATUS: "trustee_status",   DECISION_TRACE: "decision_trace",   END_GAME_ACCEPTED: "end_game_accepted",   GAME_END: "game_end",   ERROR: "error"
   },
   PROVIDERS: [
   {

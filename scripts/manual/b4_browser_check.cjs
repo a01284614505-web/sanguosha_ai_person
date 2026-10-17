@@ -1,3 +1,4 @@
+// DEPRECATED: superseded by b5_b7_browser_check.cjs; the former window.selectTarget API was removed.
 /**
  * B4 Chromium 检查：先运行 game_server.py，再提供 Playwright 模块路径。
  * 例如：npm install --prefix /tmp/b4-browser-check playwright

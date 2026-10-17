@@ -368,6 +368,13 @@ class SkillManager:
             options.extend(handler.response_options(player, requested_name))
         return options
 
+    async def request_lord_sha(self, player, first_donor):
+        for handler in self.handlers:
+            request = getattr(handler, "request_jijiang_response", None)
+            if request is not None:
+                return await request(player, first_donor)
+        return None
+
     def target_error(self, source, target, card_name):
         for handler in self.handlers:
             error = handler.can_target(source, target, card_name)

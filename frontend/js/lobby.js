@@ -265,8 +265,11 @@
                     model: (ais[0] && ais[0].model) || (first ? first.default_model : 'deepseek-chat')
                 },
                 global_settings: window.getGlobalSettings ? getGlobalSettings() : {},
-                custom_worldbook: store.get('worldbook', [])
+                custom_worldbook: store.get('worldbook', []),
+                // 默认模型托管沿用大厅第一席的连接配置，Key 只随 sessionStorage 传给本局。
+                trustee_default: ais[0] ? Object.assign({}, ais[0]) : null
             };
+            config.profile_id = this.getProfileId();
             if (deckId) {
                 config.deck_id = deckId;
                 try { localStorage.setItem('active_deck', deckId); } catch (_) {}
@@ -278,17 +281,50 @@
             }
             // 带 Key 的完整配置只放在本标签页的 sessionStorage；localStorage 中的副本去掉 Key。
             store.sset('gameConfig', config);
-            store.set('gameConfig', Object.assign({}, config, { ais: ais.map(a => Object.assign({}, a, { apiKey: '' })) }));
+            const localConfig = Object.assign({}, config, {
+                ais: ais.map(a => Object.assign({}, a, { apiKey: '' })),
+                trustee_default: config.trustee_default ? Object.assign({}, config.trustee_default, { apiKey: '' }) : null
+            });
+            store.set('gameConfig', localConfig);
             window.location.href = 'select_hero.html';
         }
 
-        // 本机战绩：连胜、总局数、身份卡（连胜每满 2 局奖励 1 张，可在开局前指定身份）。
+        getProfileId() {
+            let id = store.get('profileId', '');
+            if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+                id = (window.crypto && crypto.randomUUID)
+                    ? crypto.randomUUID().replace(/-/g, '_')
+                    : 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+                store.set('profileId', id);
+            }
+            return id;
+        }
+
+        // 战绩与身份卡以服务端档案为准；旧 userData 只显示迁移提示。
         loadUserData() {
-            const userData = store.get('userData', {}) || {};
-            document.getElementById('winStreak').textContent = userData.winStreak || 0;
-            document.getElementById('totalGames').textContent = userData.totalGames || 0;
-            document.getElementById('cardCount').textContent = userData.identityCards || 0;
-            document.getElementById('identityCardSection').hidden = !(userData.identityCards > 0);
+            const legacy = store.get('userData', null);
+            const notice = document.getElementById('legacyRecordNotice');
+            if (notice) notice.hidden = !legacy;
+            const profileId = this.getProfileId();
+            SGS.fetchJSON('/api/history?profile_id=' + encodeURIComponent(profileId))
+                .then(data => {
+                    if (!data || !data.success || !data.profile) throw new Error('history unavailable');
+                    const profile = data.profile;
+                    document.getElementById('winStreak').textContent = profile.win_streak || 0;
+                    document.getElementById('totalGames').textContent = profile.total_games || 0;
+                    document.getElementById('cardCount').textContent = profile.identity_cards || 0;
+                    document.getElementById('identityCardSection').hidden = !(profile.identity_cards > 0);
+                    const status = document.getElementById('recordStatus');
+                    if (status) status.textContent = '已同步服务端战绩';
+                })
+                .catch(() => {
+                    document.getElementById('winStreak').textContent = '—';
+                    document.getElementById('totalGames').textContent = '—';
+                    document.getElementById('cardCount').textContent = '—';
+                    document.getElementById('identityCardSection').hidden = true;
+                    const status = document.getElementById('recordStatus');
+                    if (status) status.textContent = '服务端战绩暂不可用';
+                });
         }
     }
 
