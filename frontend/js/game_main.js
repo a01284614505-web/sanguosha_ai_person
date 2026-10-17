@@ -786,10 +786,10 @@
             if (G.req.kind === 'confirm') { sendResponse(1); return; }
             if (!G.req.selection) {
                 const passIdx = (G.req.options || []).findIndex(o => o.is_pass);
-                sendResponse(passIdx >= 0 ? passIdx : -1);
+                if (passIdx >= 0) sendResponse(passIdx); else sendCancel();
                 return;
             }
-            if (G.req.selection.cancelable) sendResponse([]);
+            if (G.req.selection.cancelable) sendCancel();
             return;
         }
         if (G.sel) { G.sel = null; renderAll(); }
@@ -825,6 +825,15 @@
         if (Array.isArray(selection)) action.option_indices = selection;
         else action.option_index = selection;
         gameClient.playerAction(action, []);
+        clearRequest();
+    }
+
+    /** 取消当前请求：发 cancel 标志，而不是空数组或 -1（引擎按"取消"处理，不会报参数错误）。 */
+    function sendCancel() {
+        const r = G.req;
+        if (!r || r.expired) return;
+        noteHumanActivity();
+        gameClient.playerAction({ type: 'response', request_id: r.request_id, cancel: true }, []);
         clearRequest();
     }
 
