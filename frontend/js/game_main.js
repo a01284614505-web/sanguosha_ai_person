@@ -1837,7 +1837,11 @@
         if (G.ended) { location.href = 'index.html'; return; }
         // 与服务端战绩规则一致：前两轮内结束不影响连胜，之后结束会清零连胜。
         const round = (G.state && G.state.round) || 0;
-        const note = round > 2
+        const me = G.players.find(p => !p.is_ai);
+        const iAmDead = !!me && me.alive === false;
+        const note = (round > 2 && iAmDead)
+            ? '你已阵亡。本局会记为中断，不计胜负，连胜保持不变。'
+            : round > 2
             ? '本局会记为中断，不计胜负；已过第 2 轮，结束后连胜会清零。'
             : '本局会记为中断，不计胜负；前两轮内结束不影响连胜。';
         const yes = await confirmDialog('结束本局？', note, '结束对局');
