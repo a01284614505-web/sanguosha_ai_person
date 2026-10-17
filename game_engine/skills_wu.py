@@ -120,11 +120,15 @@ class WuSkillHandler(FactionSkillHandler):
             if not self.manager.consume_skill_use(player, "制衡", phase=Phase.PLAY, charges=0):
                 return False
             await self.manager.announce(player, "制衡", f"{player.name}发动【制衡】弃置{len(cards)}张牌")
-            for card in list(cards):
-                if not await self.manager.discard_card(player, card, "制衡"):
-                    return False
-                if self.engine.game_aborted:
-                    return False
+            self.manager.begin_loss_batch(player, "制衡")
+            try:
+                for card in list(cards):
+                    if not await self.manager.discard_card(player, card, "制衡"):
+                        return False
+                    if self.engine.game_aborted:
+                        return False
+            finally:
+                await self.manager.finish_loss_batch(player)
             await self.manager.draw_cards(player, len(cards) + (1 if all_hand else 0), "制衡")
             return True
 
@@ -390,9 +394,7 @@ class WuSkillHandler(FactionSkillHandler):
         return target
 
     async def on_cards_lost(self, player, cards, reason="unknown", *, event=None):
-        # Committed moves are handled with their source zone below. Legacy
-        # direct writes still use this callback until their B3/B5 migration.
-        if event is not None:
+        if event is not None and (event.from_zone != "hand" or event.to_zone == "temporary"):
             return
         if self.has(player, "连营") and not player.hand and cards:
             recipients = [player] + [p for p in self.state.players if p.alive and p is not player]
@@ -402,7 +404,7 @@ class WuSkillHandler(FactionSkillHandler):
                 return
             selected = await self.manager.ask_choose_players(
                 player, "选择因【连营】摸牌的角色", recipients,
-                min_n=count, max_n=count, skill_name="连营", cancelable=False,
+                min_n=1, max_n=count, skill_name="连营", cancelable=False,
             )
             if self._finished():
                 return
@@ -410,13 +412,6 @@ class WuSkillHandler(FactionSkillHandler):
                 await self.manager.draw_cards(target, 1, "连营")
             if selected:
                 await self.manager.announce(player, "连营", f"{player.name}发动【连营】，令{len(selected)}名角色各摸一张牌")
-
-    async def on_card_move(self, card, event):
-        if event.from_zone != "hand" or event.to_zone == "temporary":
-            return
-        player = next((p for p in self.state.players if p.id == event.from_owner), None)
-        if player is not None:
-            await self.on_cards_lost(player, [card], event.reason)
 
     async def on_hp_lost(self, player, amount, reason="unknown", source=None):
         if not self.has(player, "诈降"):

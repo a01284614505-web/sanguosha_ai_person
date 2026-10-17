@@ -226,20 +226,26 @@ class PhaseController:
         # 等待真人选牌期间可能主动结束或被离席看门狗结束。
         if getattr(self.engine, "game_aborted", False):
             return
-        for card in discarded:
-            if getattr(self.engine, "game_aborted", False):
-                return
-            if self.engine is not None:
-                move = await self.engine.move_card(
-                    card, "hand", "discard", from_owner=player,
-                    reason="hand_limit", actor_id=player.id,
-                )
-                if move is None:
-                    continue
-            else:
-                self.game_state.discard_card(player, card)
-            if self.skill_manager:
-                await self.skill_manager.on_card_discarded(player, card, "hand_limit")
+        if self.skill_manager and self.engine is not None:
+            self.skill_manager.begin_loss_batch(player, "hand_limit")
+        try:
+            for card in discarded:
+                if getattr(self.engine, "game_aborted", False):
+                    return
+                if self.engine is not None:
+                    move = await self.engine.move_card(
+                        card, "hand", "discard", from_owner=player,
+                        reason="hand_limit", actor_id=player.id,
+                    )
+                    if move is None:
+                        continue
+                else:
+                    self.game_state.discard_card(player, card)
+                if self.skill_manager:
+                    await self.skill_manager.on_card_discarded(player, card, "hand_limit")
+        finally:
+            if self.skill_manager and self.engine is not None:
+                await self.skill_manager.finish_loss_batch(player)
         logger.info(f"  自动弃置 {len(discarded)} 张牌")
 
     async def end_phase(self):

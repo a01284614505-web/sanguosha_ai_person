@@ -22,6 +22,7 @@ class SkillManager:
         self.handlers = []
         self.activation_log: List[Dict] = []
         self.skill_state = SkillStateStore()
+        self._loss_batches = {}
         if engine is not None:
             self.bind_engine(engine)
 
@@ -29,6 +30,7 @@ class SkillManager:
         self.engine = engine
         self.registered_skills.clear()
         self.skill_state = SkillStateStore()
+        self._loss_batches.clear()
         for player in engine.game_state.players:
             self.registered_skills[player.id] = get_hero_skills(hero_id(player))
             for skill in self.registered_skills[player.id]:
@@ -433,6 +435,19 @@ class SkillManager:
         if self._is_counted_loss(event):
             self.engine.stats.add(player, "cards_lost")
 
+    def begin_loss_batch(self, player, reason):
+        """Group cards lost in one declared action for X-card skill triggers."""
+        if player.id in self._loss_batches:
+            raise RuntimeError(f"loss batch already active for player {player.id}")
+        self._loss_batches[player.id] = {"reason": reason, "cards": []}
+
+    async def finish_loss_batch(self, player):
+        batch = self._loss_batches.pop(player.id, None)
+        if batch and batch["cards"]:
+            await self.on_cards_lost(
+                player, batch["cards"], batch["reason"], record=False,
+            )
+
     async def on_card_move(self, card, event, *, stats_recorded=False):
         """Project statistics and skill hooks from one committed movement fact."""
         if not stats_recorded:
@@ -445,6 +460,10 @@ class SkillManager:
             return
         player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
         if player is None:
+            return
+        batch = self._loss_batches.get(player.id)
+        if batch is not None and event.reason == batch["reason"]:
+            batch["cards"].append(card)
             return
         await self.on_cards_lost(player, [card], event.reason, record=False, event=event)
 

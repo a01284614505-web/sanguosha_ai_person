@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 from game_engine import MainEngine
-from game_engine.state_manager import Card
+from game_engine.state_manager import Card, Phase
 from game_engine.skill_runtime_core import once_per_turn
 from game_engine.skills_wu import WuSkillHandler
 
@@ -373,7 +373,7 @@ def test_fenwei_illegal_selected_target_does_not_spend_limited_skill():
     assert "奋威" not in owner.flags["limited_skills"]
 
 
-def test_lianying_multiple_cards_asks_for_matching_number_of_recipients():
+def test_lianying_multiple_cards_allows_up_to_matching_number_of_recipients():
     engine = game()
     handler = get_wu(engine)
     player, *recipients = engine.game_state.players
@@ -386,8 +386,84 @@ def test_lianying_multiple_cards_asks_for_matching_number_of_recipients():
     run(handler.on_cards_lost(player, pair))
 
     request = engine.skill_manager.ask_choose_players.await_args
-    assert (request.kwargs["min_n"], request.kwargs["max_n"]) == (2, 2)
+    assert (request.kwargs["min_n"], request.kwargs["max_n"]) == (1, 2)
     assert engine.skill_manager.draw_cards.await_count == 2
+
+
+def test_lianying_owner_may_choose_fewer_recipients_than_lost_cards():
+    engine = game()
+    handler = get_wu(engine)
+    player, recipient = engine.game_state.players[:2]
+    handler.has = lambda p, skill: p is player and skill == "连营"
+    pair = [card("b5_lianying_fewer1", "杀"), card("b5_lianying_fewer2", "桃", "heart")]
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[recipient])
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    run(handler.on_cards_lost(player, pair))
+
+    engine.skill_manager.draw_cards.assert_awaited_once_with(recipient, 1, "连营")
+
+
+def test_lianying_counts_zhiheng_discarded_hand_as_one_two_card_loss():
+    engine = MainEngine(MainEngine.normalize_config({
+        "mode": "5人身份局", "player_name": "P0",
+        "selected_hero": {"id": "sunquan"},
+        "ais": [{"name": f"P{i}"} for i in range(1, 5)],
+        "deck_id": "standard",
+    }))
+    owner, recipient = engine.game_state.players[:2]
+    for player in engine.game_state.players:
+        player.hand.clear()
+    engine.game_state.current_player = owner
+    engine.game_state.current_phase = Phase.PLAY
+    pair = [card("b5_lianying_zhiheng1", "杀"), card("b5_lianying_zhiheng2", "桃", "heart")]
+    owner.hand.extend(pair)
+    handler = get_wu(engine)
+    original_has = handler.has
+    handler.has = lambda player, skill: (player is owner and skill == "连营") or original_has(player, skill)
+    engine.skill_manager.ask_choose_cards_result = AsyncMock(return_value={"status": "resolved", "cards": pair})
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[recipient])
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    assert run(handler.execute(owner, {"skill_name": "制衡", "variant": "choose_discard"}, [])) is True
+
+    assert not owner.hand
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+    request = engine.skill_manager.ask_choose_players.await_args
+    assert (request.kwargs["min_n"], request.kwargs["max_n"]) == (1, 2)
+    assert engine.skill_manager.draw_cards.await_count == 2
+    engine.skill_manager.draw_cards.assert_any_await(recipient, 1, "连营")
+    engine.skill_manager.draw_cards.assert_any_await(owner, 3, "制衡")
+
+
+def test_lianying_counts_discard_phase_hand_cards_as_one_loss_batch():
+    engine = MainEngine(MainEngine.normalize_config({
+        "mode": "5人身份局", "player_name": "P0",
+        "selected_hero": {"id": "luxun"},
+        "ais": [{"name": f"P{i}"} for i in range(1, 5)],
+        "deck_id": "standard",
+    }))
+    owner, recipient = engine.game_state.players[:2]
+    for player in engine.game_state.players:
+        player.hand.clear()
+    engine.game_state.current_player = owner
+    pair = [card("b5_lianying_discard1", "杀"), card("b5_lianying_discard2", "桃", "heart")]
+    owner.hand.extend(pair)
+    engine.skill_manager.hand_limit = lambda _player, _base: 0
+    engine.ask_choose_cards_result = AsyncMock(return_value={"status": "resolved", "cards": pair})
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[recipient])
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    run(engine.phase_controller.discard_phase())
+
+    assert not owner.hand
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+    request = engine.skill_manager.ask_choose_players.await_args
+    assert (request.kwargs["min_n"], request.kwargs["max_n"]) == (1, 2)
+    engine.skill_manager.draw_cards.assert_awaited_once_with(recipient, 1, "连营")
 
 
 def test_qinxue_does_not_awaken_at_or_below_hand_minus_hp_threshold():

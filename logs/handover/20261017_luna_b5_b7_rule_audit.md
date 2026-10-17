@@ -80,7 +80,7 @@
 
 ### 本轮实际验证记录
 
-- `63 passed`：魏/吴/群三套 Luna 专项 B5 场景；包含拒绝/取消/指定牌/指定目标及本轮新增的牌已离区、无合法候选、次数上限、阈值、梅花判定等边界。蜀由父任务并行负责。
+- `66 passed`：魏/吴/群三套 B5 专项场景；Luna 完成 63 条，集成复核再补连营“至多 X 名”的单人受赠、制衡多牌、弃牌阶段多牌场景。包含拒绝/取消/指定牌/指定目标及牌已离区、无合法候选、次数上限、阈值、梅花判定等边界。蜀由父任务并行负责。
 - `node --check`：`frontend/js/lobby.js`、`frontend/js/game_main.js`、`scripts/manual/b5_b7_browser_check.cjs` 通过。
 - Chromium 实测命令：`PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright node scripts/manual/b5_b7_browser_check.cjs`，真实页面与真实按钮点击，未伪造 WebSocket。17 项记录：16 项通过（大厅档案与旧数据提示、历史页面、创建对局、座位详情、托管弹窗/复制 AI/自定义/提交、战报页签、轨迹折叠与展开、无页面异常）；“真人回合倒计时及主动技能点击”1 项跳过：15 秒内服务端未下发真人 `your_turn`，没有注入假状态。下一轮服务重启后重跑同一脚本；若仍随机先轮到 AI，等待机制和跳过原因照实记录。
 
@@ -104,7 +104,7 @@
 | 攻心（勤学觉醒后获得） | **非 27 将初始将池技能**，为界吕蒙觉醒后动态获得；版本资料未找到 | `test_gongxin_moves_the_chosen_heart_and_only_then_marks_use` | `test_gongxin_lets_owner_pick_a_heart_and_cancel_uses_no_turn` | 无红桃牌路径不是独立场景；作为额外动态兼容技能，不列入初始全将池覆盖表 |
 | 克己 | 当前十周年精确官方公开资料未找到；按仓库文本 | `test_keji_accepts_when_no_sha_and_does_not_prompt_after_sha_use` | `test_keji_can_decline_and_preserves_default_discard_phase` | 接受函数同时验已使用【杀】边界 |
 | 博图 | 当前十周年精确官方公开资料未找到；按仓库文本 | `test_botu_accepts_eligible_end_turn_and_respects_round_cap` | `test_botu_decline_does_not_schedule_extra_turn` | 接受函数同时验证每轮上限 |
-| 连营 | 当前十周年精确官方公开资料未找到；按仓库文本 | `test_lianying_selects_exact_recipients_after_confirmation`、`test_lianying_multiple_cards_asks_for_matching_number_of_recipients`、`test_hand_card_loss_routes_through_unified_event` | `test_lianying_decline_does_not_draw_for_anyone` | 多张牌一次性传入处理器、最多两名受赠者已覆盖；实际引擎移动事件逐张通知，批量事件入口仍需核心层场景 |
+| 连营 | 当前十周年精确官方公开资料未找到；按仓库文本 | `test_lianying_selects_exact_recipients_after_confirmation`、`test_lianying_multiple_cards_allows_up_to_matching_number_of_recipients`、`test_lianying_owner_may_choose_fewer_recipients_than_lost_cards`、`test_lianying_counts_zhiheng_discarded_hand_as_one_two_card_loss`、`test_lianying_counts_discard_phase_hand_cards_as_one_loss_batch`、`test_hand_card_loss_routes_through_unified_event` | `test_lianying_decline_does_not_draw_for_anyone` | 制衡与弃牌阶段的多张实体牌移动逐张保留统计/通知，技能回调按一次失牌批次计算 X；其他未来一次性多牌动作须显式使用同一批次接口 |
 | 勤学 | 当前十周年精确官方公开资料未找到；按仓库文本 | `test_qinxue_choice_is_asked_after_forced_awakening`（摸牌）、`test_qinxue_can_choose_recovery_after_forced_awakening` | 不适用：觉醒强制；不是可拒绝触发 | `test_qinxue_does_not_awaken_at_or_below_hand_minus_hp_threshold` |
 | 救援 | 当前十周年精确官方公开资料未找到；按仓库文本 | `test_rescue_reversal_lands_on_crediting_row`（接受改疗并核对账本） | `test_jiuyuan_can_decline_recovery_transfer_and_preserve_normal_recovery` | `test_jiuyuan_ineligible_recovery_does_not_prompt` |
 | 利驭 | 官方 2016 OL 界吕布 FAQ [news/20161101_1451_0119](https://www.sanguosha.com/news/20161101_1451_0119)，非当前十周年电脑端文本 | `test_liyu_takes_the_chosen_equipment_and_requests_duel_target` | `test_liyu_decline_does_not_take_a_card` | `test_liyu_without_any_target_card_does_not_prompt`；FAQ 要点已检查：受伤者决定、吕布选牌、决斗目标限制 |
@@ -143,5 +143,5 @@
 - 最终实际 profile：`browser_b5b7_1792209926`；数据库在 `/tmp/sanguosha-b5b7-browser-history.json`。此唯一测试档预置两胜和身份卡；浏览器实点大厅“使用身份卡/主公”、选界刘备出战。工作区默认 `logs/runtime/game_history.json` 中此前试验的 3 个 `browser_b5b7_1792209796`、`_1792209826`、`_1792209852` 及其六条 synthetic game 已按唯一 ID 定向删除。
 - 最终 Chromium：25 条记录、全部通过、0 跳过、0 pageerror。覆盖档案 ID 持久化/旧记录迁移提示/历史请求、身份卡扣用开局、五人局、120 秒真人回合倒计时可见、4:30 离席提醒计时已挂起、真实【仁德】点击/选手牌/取消/结束阶段、AI 座位详情、托管按钮/复制来源/自定义表单/规则与默认来源下发/关闭、战报页签、决策轨迹默认折叠及展开收起。
 - 7A-7 提醒在客户端从首次观察到待操作 `your_turn` 或 `require_response` 起算，并由真人提交输入重启；服务端五分钟 watchdog 仍是唯一权威。浏览器重连时服务端目前未给前端 idle elapsed，不能恢复重连前已耗时间，需协议未来补充后才能完全精准。
-- 专项测试（2026-10-17 更新）：`.venv/bin/python -m pytest -q tests/test_b5_wei_optional_skills.py tests/test_b5_wu_choice_triggers.py tests/test_b5_qun_optional_triggers.py`：63 passed。连营批量丢牌已覆盖 handler 的批量输入，但引擎目前通过逐张 `on_card_move` 回调；要验证一次性多牌移动仍需核心事件支持，此处不改核心。
+- 专项测试（2026-10-17 更新）：`.venv/bin/python -m pytest -q tests/test_b5_wei_optional_skills.py tests/test_b5_wu_choice_triggers.py tests/test_b5_qun_optional_triggers.py`：Luna 交付时 63 passed，集成复核修正连营“至多 X 名”并接通制衡、弃牌阶段的批次失牌后为 66 passed。实体牌仍逐张移动并计数；同一次动作的失牌技能回调在动作结束后合并。
 - 更早的扩展回归（蜀场景与 `SkillStatsEdgeTest`）为 66 passed；本轮新增后未重跑该跨势力命令。`py_compile` 浏览器档案 seeder 通过，`node --check` 的游戏页、大厅及 Playwright 脚本通过（均为先前记录）。
