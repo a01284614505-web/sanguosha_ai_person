@@ -170,7 +170,11 @@ class PhaseController:
 
         player = self.game_state.current_player
         logger.info(f"[摸牌阶段] {player.name}")
-        cards = self.game_state.draw_card(player, 2)
+        engine = getattr(self, "engine", None)
+        if engine is not None and getattr(engine, "game_state", None) is self.game_state and hasattr(engine, "draw_cards"):
+            cards = await engine.draw_cards(player, 2, "摸牌阶段")
+        else:
+            cards = self.game_state.draw_card(player, 2)
         if self.skill_manager:
             await self.skill_manager.on_card_gained(player, cards, "draw")
         logger.info(f"  摸了 {len(cards)} 张牌")

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """界限突破魏国7将11技能运行实现。"""
 
+import inspect
+
 from .state_manager import Phase
 from .skill_runtime_core import FactionSkillHandler, card_color, card_type_group, ensure_flags, hero_faction, mark_once_per_turn, once_per_turn
 
@@ -127,6 +129,16 @@ class WeiSkillHandler(FactionSkillHandler):
                 break
             card = self.state.deck.pop(0)
             card = await self.manager.before_judge(player, card, {"reason": "洛神"})
+            # 每一次判定都在牌桌中央亮出（与官方一致）：黑色“获得”，红色“结束”。
+            announce = getattr(self.engine, "announce_judge", None)
+            if announce is not None:
+                black = card_color(card) == "black"
+                pending = announce(player, card, "洛神", effective=black,
+                                   result_text="获得此牌" if black else "洛神结束")
+                if inspect.isawaitable(pending):
+                    await pending
+                if self._finished():
+                    return
             if card_color(card) == "black":
                 player.hand.append(card)
                 obtained.append(card)

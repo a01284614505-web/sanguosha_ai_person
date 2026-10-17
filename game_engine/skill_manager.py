@@ -192,7 +192,11 @@ class SkillManager:
         return entry
 
     async def draw_cards(self, player, count, reason="skill"):
-        cards = self.engine.game_state.draw_card(player, count)
+        drawer = getattr(self.engine, "draw_cards", None)
+        if callable(drawer) and getattr(self.engine, "game_state", None) is not None and hasattr(self.engine, "move_card"):
+            cards = await drawer(player, count, reason)
+        else:
+            cards = self.engine.game_state.draw_card(player, count)
         await self.on_card_gained(player, cards, reason)
         return cards
 

@@ -16,7 +16,7 @@
             this.providers = [];
             this.aiConfigs = [];
             this.current = 0;
-            this.prefs = Object.assign({ playerName: '', chatEnabled: true, rememberKeys: false }, store.get('lobbyPrefs', {}));
+            this.prefs = Object.assign({ playerName: '', chatEnabled: true, rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
             this.dialog = document.getElementById('aiDialog');
             this.form = document.getElementById('aiForm');
             this.init();
@@ -30,6 +30,11 @@
             const chat = document.getElementById('chatEnabled');
             chat.checked = this.prefs.chatEnabled !== false;
             chat.addEventListener('change', () => this.savePrefs());
+            ['cheatMode', 'hideDeadIdentity'].forEach(id => {
+                const box = document.getElementById(id);
+                box.checked = !!this.prefs[id];
+                box.addEventListener('change', () => this.savePrefs());
+            });
             document.getElementById('rememberKeys').checked = !!this.prefs.rememberKeys;
 
             document.getElementById('useIdentityCard').addEventListener('change', (e) => {
@@ -62,6 +67,8 @@
         savePrefs() {
             this.prefs.playerName = document.getElementById('playerName').value.trim();
             this.prefs.chatEnabled = document.getElementById('chatEnabled').checked;
+            this.prefs.cheatMode = document.getElementById('cheatMode').checked;
+            this.prefs.hideDeadIdentity = document.getElementById('hideDeadIdentity').checked;
             this.prefs.rememberKeys = document.getElementById('rememberKeys').checked;
             store.set('lobbyPrefs', this.prefs);
         }
@@ -271,6 +278,8 @@
                     model: (ais[0] && ais[0].model) || (first ? first.default_model : 'deepseek-chat')
                 },
                 global_settings: window.getGlobalSettings ? getGlobalSettings() : {},
+                cheat_mode: document.getElementById('cheatMode').checked,
+                hide_dead_identity: document.getElementById('hideDeadIdentity').checked,
                 custom_worldbook: store.get('worldbook', []),
                 // 默认模型托管沿用大厅第一席的连接配置，Key 只随 sessionStorage 传给本局。
                 trustee_default: ais[0] ? Object.assign({}, ais[0]) : null

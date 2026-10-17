@@ -38,6 +38,8 @@
         seatEls: {},        // 对手座位 DOM（按玩家 id）
         seatSig: {},        // 座位内容签名：内容没变就不重绘，避免图片闪烁
         thinking: {},       // 正在思考的 AI（按玩家 id）
+        marks: {},          // 我对各座位身份的手动标记（按玩家 id，只存本标签页）
+        thoughts: {},       // 作弊模式下各 AI 最近的公开理由（按玩家 id）
         phase: { playerId: null, phase: '', skipped: new Set() },  // 阶段栏
         animQueue: Promise.resolve(),   // 出牌/判定动画串行队列
         ended: false,
@@ -205,8 +207,19 @@
         const judge = judgeTilesHTML(p.judge_area);
         const status = G.thinking[p.id] && settings().show_ai_thinking !== false && p.alive
             ? '<div class="s-status thinking">思考中</div>' : '';
+        // 身份未公开的座位：问号身份牌可以点开，手动标记“我猜他是谁”（和官方一样，只有自己看得到）。
+        let idSeal = SGS.identitySeal(identity);
+        if (!identity && !isMe) {
+            const m = G.marks[p.id];
+            const info = m ? SGS.IDENTITY[m] : null;
+            idSeal = '<span class="seal id-mark ' + (info ? 'id-' + m + ' marked' : 'id-unknown') + '" data-mark-seat="' + p.id +
+                '" role="button" tabindex="0" title="' + (info ? '你的标记：' + info.name + '（点一下修改）' : '点一下标记身份') + '">' +
+                (info ? info.short : '?') + '</span>';
+        }
+        const cheatPeek = G.state && G.state.cheat_mode && p.is_ai && !isMe
+            ? '<button class="cheat-peek" type="button" data-peek-seat="' + p.id + '" title="看这名 AI 的思考" aria-label="看 ' + esc(p.name) + ' 的思考">›</button>' : '';
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc(p.name) + '</span>' + SGS.identitySeal(identity) + '</div>' +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc(p.name) + '</span>' + idSeal + '</div>' + cheatPeek +
             '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
             (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
@@ -234,7 +247,13 @@
                 el.dataset.id = p.id;
                 el.innerHTML = '<div class="seat-frame" role="button" tabindex="0"></div><div class="seat-equips"></div>';
                 const frame = el.querySelector('.seat-frame');
-                frame.addEventListener('click', () => onSeatClick(p.id));
+                frame.addEventListener('click', (e) => {
+                    const mark = e.target.closest('[data-mark-seat]');
+                    if (mark) { e.stopPropagation(); openMarkMenu(p.id, mark); return; }
+                    const peek = e.target.closest('[data-peek-seat]');
+                    if (peek) { e.stopPropagation(); openThoughts(p.id); return; }
+                    onSeatClick(p.id);
+                });
                 frame.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSeatClick(p.id); } });
                 box.appendChild(el);
                 G.seatEls[p.id] = el;
@@ -1051,6 +1070,126 @@
         });
     }
 
+    /**
+     * 摸牌动画：牌从中央牌堆飞向摸牌者。自己摸的看得到牌面，别人摸的只显示牌背。
+     * 落到位后 ACK，引擎再继续结算（和出牌动画同一条队列，顺序一致）。
+     */
+    function animateDraw(data) {
+        return new Promise(resolve => {
+            ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '摸了' + (data.count || 0) + '张牌'));
+            if (Number.isInteger(data.deck_count)) document.getElementById('dc').textContent = data.deck_count;
+            const count = Math.max(1, Math.min(6, Number(data.count) || 1));
+            if (document.hidden || reducedMotion()) { ack(data); resolve(); return; }
+            const pile = document.getElementById('tableCards').getBoundingClientRect();
+            const isMe = data.actor_id === G.meId;
+            const destEl = isMe ? document.getElementById('hand') : frameEl(data.actor_id);
+            if (!destEl) { ack(data); resolve(); return; }
+            const dest = destEl.getBoundingClientRect();
+            const w = parseFloat(getComputedStyle(document.getElementById('battle')).getPropertyValue('--hand-w')) || 72;
+            const faces = Array.isArray(data.cards) ? data.cards : [];
+            const startX = pile.left + pile.width / 2 - w / 2;
+            const startY = pile.top + pile.height / 2 - w * 0.7;
+            const flyMs = 420, gap = 90;
+            for (let i = 0; i < count; i++) {
+                const holder = document.createElement('div');
+                holder.className = 'flying-card';
+                holder.innerHTML = faces[i] ? SGS.cardHTML(faces[i], { noDetail: true }) : SGS.cardHTML(null, { back: true });
+                const cardEl = holder.firstChild;
+                cardEl.style.setProperty('--w', (isMe ? w : w * 0.7) + 'px');
+                holder.style.left = startX + 'px';
+                holder.style.top = startY + 'px';
+                holder.style.opacity = '0';
+                document.body.appendChild(holder);
+                const offset = (i - (count - 1) / 2) * (isMe ? w * 0.55 : 10);
+                const tx = dest.left + dest.width / 2 - w / 2 + offset - startX;
+                const ty = dest.top + dest.height / 2 - w * 0.7 - startY;
+                holder.animate([
+                    { transform: 'translate(0,0) scale(.85)', opacity: 0 },
+                    { transform: 'translate(0,-6px) scale(.95)', opacity: 1, offset: .2 },
+                    { transform: 'translate(' + tx + 'px,' + ty + 'px) scale(' + (isMe ? 1 : .8) + ')', opacity: .9 }
+                ], { duration: flyMs, delay: i * gap, easing: 'cubic-bezier(.25,.8,.25,1)', fill: 'forwards' });
+                setTimeout(() => holder.remove(), flyMs + i * gap + 30);
+            }
+            sfx('card');
+            setTimeout(() => { ack(data); resolve(); }, flyMs + (count - 1) * gap);
+        });
+    }
+
+    // ------------------------------------------------------------------ 身份标记
+    function marksKey() { return 'idMarks:' + (gameClient.gameId || (store.sget('activeGame', {}) || {}).game_id || ''); }
+    function loadMarks() { G.marks = store.sget(marksKey(), {}) || {}; }
+    function saveMarks() { store.sset(marksKey(), G.marks); }
+
+    /** 点问号身份牌弹出小菜单：忠 / 反 / 内 / 清除。标记只存在本标签页，不发给服务器。 */
+    function openMarkMenu(id, anchor) {
+        closeMarkMenu();
+        const menu = document.createElement('div');
+        menu.className = 'mark-menu';
+        menu.id = 'markMenu';
+        const opts = [['loyalist', '忠'], ['rebel', '反'], ['spy', '内']];
+        menu.innerHTML = opts.map(([key, label]) =>
+            '<button type="button" class="seal id-' + key + (G.marks[id] === key ? ' on' : '') + '" data-mark="' + key + '" title="标记为' + SGS.IDENTITY[key].name + '">' + label + '</button>').join('') +
+            '<button type="button" class="mark-clear" data-mark="">清除</button>';
+        document.body.appendChild(menu);
+        const r = anchor.getBoundingClientRect();
+        const mw = menu.offsetWidth, mh = menu.offsetHeight;
+        menu.style.left = Math.max(6, Math.min(innerWidth - mw - 6, r.left + r.width / 2 - mw / 2)) + 'px';
+        menu.style.top = (r.bottom + 6 + mh > innerHeight ? r.top - mh - 6 : r.bottom + 6) + 'px';
+        menu.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-mark]');
+            if (!b) return;
+            if (b.dataset.mark) G.marks[id] = b.dataset.mark; else delete G.marks[id];
+            saveMarks();
+            closeMarkMenu();
+            G.seatSig = {};
+            renderSeats();
+        });
+        setTimeout(() => document.addEventListener('pointerdown', onMarkOutside, true), 0);
+    }
+    function onMarkOutside(e) { if (!e.target.closest('#markMenu')) closeMarkMenu(); }
+    function closeMarkMenu() {
+        const m = document.getElementById('markMenu');
+        if (m) m.remove();
+        document.removeEventListener('pointerdown', onMarkOutside, true);
+    }
+
+    // ------------------------------------------------------------------ 战报快捷入口与作弊模式
+    /** 有 AI 在思考时显示“战报 ›”快捷按钮。 */
+    function updatePeekLog() {
+        const btn = document.getElementById('peekLog');
+        if (!btn) return;
+        btn.hidden = !Object.keys(G.thinking).some(id => G.thinking[id]) || G.ended;
+    }
+
+    /** 作弊模式：看某个 AI 最近的思考（只有模型主动给出的公开理由，不含手牌与隐藏身份）。 */
+    function openThoughts(id) {
+        const p = playerById(id);
+        if (!p) return;
+        let dlg = document.getElementById('thoughtsModal');
+        if (!dlg) {
+            dlg = document.createElement('dialog');
+            dlg.className = 'sgs-dialog';
+            dlg.id = 'thoughtsModal';
+            dlg.innerHTML = '<div class="frame dialog-body"><div class="dialog-head"><h2 id="thoughtsTitle"></h2>' +
+                '<button class="icon-btn" type="button" data-close aria-label="关闭">×</button></div><div class="thought-list" id="thoughtsBody"></div>' +
+                '<div class="dialog-actions"><button class="btn" type="button" id="thoughtsToLog">在战报里看全部</button></div></div>';
+            document.body.appendChild(dlg);
+            dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
+            dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+            dlg.querySelector('#thoughtsToLog').addEventListener('click', () => { dlg.close(); ChatPanel.open('log'); });
+        }
+        const KIND = { play: '出牌', response: '响应', confirm: '是否发动', choose_cards: '选牌', choose_players: '选人', choose_option: '选项' };
+        const tidy = (c) => /^\[[\d, ]*\]$/.test(String(c || '')) ? '' : String(c || '').replace(/，合法目标(对)?=\[[^\]]*\]/g, '');
+        const list = (G.thoughts[id] || []).slice(-12).reverse().map(t => Object.assign({}, t, { kind: KIND[t.kind] || t.kind, choice: tidy(t.choice) }));
+        dlg.querySelector('#thoughtsTitle').textContent = p.name + ' 的思考';
+        dlg.querySelector('#thoughtsBody').innerHTML = list.length
+            ? list.map(t => '<div class="thought"><small>第 ' + esc(String(t.round || '-')) + ' 轮 · ' + esc(t.kind || '') +
+                (t.model ? ' · ' + esc(t.model) : '') + '</small><p>' + esc(t.reason) + '</p>' +
+                (t.choice ? '<small class="faint">→ ' + esc(t.choice) + '</small>' : '') + '</div>').join('')
+            : '<p class="muted">这名 AI 还没有给出理由。没填 API Key 的规则 AI 不会有理由。</p>';
+        dlg.showModal();
+    }
+
     /** 出牌与判定共用一条队列，保证顺序与引擎结算一致。 */
     function enqueue(fn, data) {
         G.animQueue = G.animQueue.then(() => fn(data)).catch(err => { console.error('动画失败', err); ack(data); });
@@ -1125,6 +1264,7 @@
         if (data && data.game_id && data.profile_id) {
             store.sset('activeGame', { game_id: data.game_id, profile_id: data.profile_id });
         }
+        loadMarks();
         if (G.cfg.identity_card && G.cfg.identity_card.use) {
             delete G.cfg.identity_card;
             store.sset('gameConfig', G.cfg);
@@ -1218,6 +1358,9 @@
             case 'judge':
                 enqueue(animateJudge, data);
                 return;
+            case 'draw':
+                enqueue(animateDraw, data);
+                return;
             case 'phase':
                 onPhaseEvent(data);
                 return;
@@ -1241,6 +1384,14 @@
     };
 
     gameClient.onDecisionTrace = function (trace) {
+        // 作弊模式：AI 的公开理由进思考列表，并写进战报。
+        if (trace.cheat && trace.reason && Number.isInteger(trace.player_id) && trace.player_id !== G.meId) {
+            const arr = G.thoughts[trace.player_id] || (G.thoughts[trace.player_id] = []);
+            arr.push({ round: G.state ? G.state.round : null, kind: trace.kind, model: trace.model, reason: trace.reason, choice: trace.final_choice });
+            if (arr.length > 60) arr.shift();
+            const who = playerById(trace.player_id);
+            ChatPanel.addLog('💭 ' + (who ? who.name : '') + '：' + trace.reason, 'think');
+        }
         if (settings().show_decision_trace === false) return;
         const list = document.getElementById('decisionTraceList');
         const panel = document.getElementById('decisionTracePanel');
@@ -1280,9 +1431,11 @@
         if (data.action === 'thinking_start' && p) {
             G.thinking[p.id] = true;
             renderSeats();
+            updatePeekLog();
         } else if (data.action === 'thinking_end' && p) {
             G.thinking[p.id] = false;
             renderSeats();
+            updatePeekLog();
             if (settings().show_ai_thinking && data.reasoning && data.reasoning !== '规则AI兜底') {
                 ChatPanel.addLog(data.player_name + ' 思考：' + data.reasoning, 'think');
             }
@@ -1328,9 +1481,13 @@
             players: state.players || [],
             profile: data.profile || null,
             reward: data.reward || null,
-            history_error: data.history_error || null
+            history_error: data.history_error || null,
+            game_id: gameClient.gameId || ((store.sget('activeGame', {}) || {}).game_id) || null,
+            log_saved: data.log_saved === true,
+            cheat: data.cheat === true
         };
         store.set('gameResult', result);
+        updatePeekLog();
         renderAll();
         const verdict = document.getElementById('endVerdict');
         verdict.className = 'verdict ' + (decided ? (result.player_won ? 'win' : 'lose') : '');
@@ -1383,6 +1540,7 @@
 
     gameClient.onGameResumed = function (data) {
         G.disconnectedAt = 0;
+        loadMarks();
         gameClient.autoReconnect = !data.finished;
         setReconnectBanner('');
         G.turn = null; G.sel = null;
@@ -1615,6 +1773,7 @@
         document.getElementById('decisionTracePanel').hidden = settings().show_decision_trace === false;
         document.getElementById('okBtn').addEventListener('click', onOk);
         document.getElementById('cancelBtn').addEventListener('click', onCancel);
+        document.getElementById('peekLog').addEventListener('click', () => ChatPanel.open('log'));
         document.getElementById('endBtn').addEventListener('click', onEnd);
         document.getElementById('quitBtn').addEventListener('click', quitGame);
         document.getElementById('sbtn').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
