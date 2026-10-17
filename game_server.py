@@ -7,7 +7,7 @@ import os
 import sys
 import traceback
 import uuid
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 from urllib.parse import parse_qs, urlsplit
@@ -15,12 +15,15 @@ from websockets.exceptions import ConnectionClosedOK
 from game_engine import MainEngine
 from game_engine.config_validator import sanitize_client_config
 from game_engine.game_history import GameHistoryStore, validate_profile_id
+from game_engine.model_catalog import ModelListError, list_models
 from game_engine.identity_system import IdentitySystem
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
 HISTORY_PATH = Path(os.environ.get("SANGUOSHA_HISTORY_PATH") or BASE_DIR / "logs/runtime/game_history.json")
+# 运行中的 GameServer；HTTP 线程只读取它，用于局内“拉取模型”沿用该 AI 已保存的 Key。
+ACTIVE_SERVER = None
 
 
 def configure_logging():
@@ -454,7 +457,44 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         super().do_GET()
+    def _saved_ai_key(self, body):
+        """局内调整 AI 时 Key 可留空：按 game_id + 座位取服务器上已保存的 Key（不回传）。"""
+        server = ACTIVE_SERVER
+        game_id = str(body.get("game_id") or "")
+        if server is None or not game_id:
+            return ""
+        engine = server.engines.get(game_id)
+        if engine is None or engine.game_config.get("profile_id") != body.get("profile_id"):
+            return ""
+        try:
+            player_id = int(body.get("player_id"))
+        except (TypeError, ValueError):
+            return ""
+        player = next((p for p in engine.game_state.players if p.id == player_id and p.is_ai), None)
+        return str((player.ai_config or {}).get("api_key") or "") if player is not None else ""
+
+    def _handle_list_models(self):
+        try:
+            body = self._read_json_body()
+        except json.JSONDecodeError:
+            self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
+            return
+        api_key = str(body.get("api_key") or "").strip() or self._saved_ai_key(body)
+        try:
+            result = list_models(str(body.get("provider") or ""), body.get("api_url"), api_key)
+        except ModelListError as exc:
+            self._send_json(200, {"success": False, "message": str(exc)})
+            return
+        except Exception as exc:  # 不把 Key 或请求细节写进日志
+            logging.getLogger(__name__).error("拉取模型列表失败: %s", type(exc).__name__)
+            self._send_json(200, {"success": False, "message": "拉取失败，请手动填写模型名"})
+            return
+        self._send_json(200, {"success": True, **result})
+
     def do_POST(self):
+        if self.path.split("?")[0] == "/api/models":
+            self._handle_list_models()
+            return
         if self.path.split("?")[0] != "/api/switch_deck":
             self.send_error(404)
             return
@@ -477,10 +517,15 @@ class CustomHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self._send_json(500, {"success": False, "message": f"{type(exc).__name__}: {exc}"})
 def start_http():
-    HTTPServer(("0.0.0.0", HTTP_PORT), CustomHandler).serve_forever()
+    # 多线程：拉取模型列表要等外部 API，不能卡住静态页面与其他请求。
+    httpd = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), CustomHandler)
+    httpd.daemon_threads = True
+    httpd.serve_forever()
 async def main():
     from websockets.asyncio.server import serve
+    global ACTIVE_SERVER
     server = GameServer()
+    ACTIVE_SERVER = server
     info = MainEngine.server_info()
     print(f"\n{'=' * 50}\n  🎮 三国杀AI酒馆 P0")
     print(f"  HTTP: http://localhost:{HTTP_PORT}\n  WS:   ws://localhost:{WS_PORT}")

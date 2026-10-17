@@ -410,12 +410,89 @@
         return r.json();
     }
 
+
+    /**
+     * 给“模型名称”输入框加一个【拉取】按钮：向服务器请求该服务商的模型列表，
+     * 结果显示在输入框下方，点选即可填入；仍可手动输入任意模型名。
+     * getParams() 返回 {provider, api_url, api_key, ...}，调用时才读取，保证用的是表单当前值。
+     */
+    function attachModelPicker(input, getParams) {
+        if (!input || input.dataset.modelPicker) return;
+        input.dataset.modelPicker = '1';
+        const wrap = document.createElement('span');
+        wrap.className = 'model-pick';
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn small model-pick-btn';
+        btn.textContent = '拉取';
+        btn.title = '从服务商拉取可用模型列表';
+        wrap.appendChild(btn);
+        const list = document.createElement('div');
+        list.className = 'model-list';
+        list.hidden = true;
+        list.setAttribute('role', 'listbox');
+        wrap.appendChild(list);
+        let models = [];
+        let filterOn = false;
+
+        function render() {
+            const q = filterOn ? input.value.trim().toLowerCase() : '';
+            const shown = q ? models.filter(m => m.toLowerCase().includes(q)) : models;
+            if (!shown.length) { list.hidden = true; return; }
+            list.innerHTML = shown.slice(0, 300).map(m =>
+                '<button type="button" role="option" class="model-opt' + (m === input.value.trim() ? ' on' : '') +
+                '" data-model="' + esc(m) + '">' + esc(m) + '</button>').join('');
+            list.hidden = false;
+        }
+        function hide() { list.hidden = true; }
+
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            btn.disabled = true;
+            btn.textContent = '拉取中…';
+            try {
+                const data = await fetchJSON('/api/models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(getParams() || {})
+                });
+                if (!data.success) { toast(data.message || '拉取失败，请手动填写', { bad: true, ms: 3200 }); hide(); return; }
+                models = data.models || [];
+                filterOn = false;
+                render();
+                toast('拉取到 ' + models.length + ' 个模型，点选即可');
+            } catch (err) {
+                toast('连不上游戏服务，无法拉取模型', { bad: true });
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '拉取';
+            }
+        });
+        list.addEventListener('click', (e) => {
+            const opt = e.target.closest('[data-model]');
+            if (!opt) return;
+            e.preventDefault();
+            input.value = opt.dataset.model;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            hide();
+        });
+        input.addEventListener('input', () => { if (models.length) { filterOn = true; render(); } });
+        input.addEventListener('focus', () => { if (models.length) { filterOn = false; render(); } });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !list.hidden) { e.stopPropagation(); e.preventDefault(); hide(); } });
+        document.addEventListener('pointerdown', (e) => { if (!wrap.contains(e.target)) hide(); });
+        input.addEventListener('picker-reset', () => { models = []; hide(); });
+        // 换了服务商/地址/Key，旧列表就不再可信。
+        return { reset() { models = []; hide(); } };
+    }
+
     // ------------------------------------------------------------------ 导出与初始化
     const SGS = {
         SUIT, CARD_ART, CARD_INFO, DELAYED, EQUIP_SLOT, EQUIP_ORDER, IDENTITY, WINNER, PHASE, PHASE_ORDER, PHASE_SHORT, SKILL_TAG,
         esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs,
         identitySeal, factionSeal, heroImageURL, heroImgHTML, imgFallback, icon, hydrateIcons,
-        applyTheme, toggleTheme, Detail, cardDetailHTML, skillDetailHTML, store, toast, fetchJSON
+        applyTheme, toggleTheme, Detail, cardDetailHTML, skillDetailHTML, store, toast, fetchJSON, attachModelPicker
     };
     global.SGS = SGS;
 

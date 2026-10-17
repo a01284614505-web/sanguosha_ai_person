@@ -650,7 +650,7 @@
 .end-dialog .verdict.lose { background: radial-gradient(circle at 40% 35%, #6e655a, #3b332b 60%, #18130f); color: #cfc3ab; }
 @keyframes stamp { from { transform: rotate(-6deg) scale(1.8); opacity: 0; } }
 .end-dialog a.btn { text-decoration: none; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 .form-grid .full { grid-column: 1 / -1; }
 .info-grid { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 14px; }
 .info-grid .hero-frame { cursor: default; }

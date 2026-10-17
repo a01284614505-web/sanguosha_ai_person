@@ -1544,6 +1544,7 @@
         if (!p || !p.is_ai) return;
         fillProviders();
         const c = p.ai_config || {};
+        document.getElementById('aiSettingModel').dispatchEvent(new Event('picker-reset'));
         document.getElementById('aiSettingsTitle').textContent = '调整 ' + p.name;
         document.getElementById('aiSettingPlayerId').value = p.id;
         document.getElementById('aiSettingProvider').value = c.provider || 'deepseek';
@@ -1625,6 +1626,19 @@
             document.getElementById('trusteeModal').close();
         });
         document.getElementById('aiSettingsForm').addEventListener('submit', saveAISettings);
+        const val = id => document.getElementById(id).value.trim();
+        const trusteePicker = SGS.attachModelPicker(document.getElementById('trusteeModel'), () => ({
+            provider: val('trusteeProvider'), api_url: val('trusteeUrl'), api_key: val('trusteeKey')
+        }));
+        // 局内调整 AI 时 Key 可留空：服务器按本局 game_id + 座位沿用已保存的 Key（Key 不会回传给页面）。
+        const aiPicker = SGS.attachModelPicker(document.getElementById('aiSettingModel'), () => {
+            const active = store.sget('activeGame') || {};
+            return { provider: val('aiSettingProvider'), api_url: val('aiSettingUrl'), api_key: val('aiSettingKey'),
+                game_id: active.game_id || gameClient.gameId, profile_id: active.profile_id,
+                player_id: parseInt(val('aiSettingPlayerId'), 10) };
+        });
+        ['trusteeProvider', 'trusteeUrl', 'trusteeKey'].forEach(id => document.getElementById(id).addEventListener('change', () => trusteePicker && trusteePicker.reset()));
+        ['aiSettingProvider', 'aiSettingUrl', 'aiSettingKey'].forEach(id => document.getElementById(id).addEventListener('change', () => aiPicker && aiPicker.reset()));
         document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
         document.querySelectorAll('dialog.sgs-dialog').forEach(d => d.addEventListener('click', (e) => { if (e.target === d && d.id !== 'endModal') d.close(); }));
         document.getElementById('endModal').addEventListener('cancel', (e) => e.preventDefault());
