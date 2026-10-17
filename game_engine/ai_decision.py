@@ -22,6 +22,21 @@ from .protocol import PROVIDERS
 logger = logging.getLogger(__name__)
 
 
+def model_call_kwargs(player) -> Dict[str, Any]:
+    """一个座位的模型连接参数（Provider / 模型 / Key / 地址）。
+
+    出牌、响应、选择和席间聊天都从这里取，保证同一个 AI 只有一份连接配置：
+    大厅里填的自定义地址（中转站）对聊天同样生效，不会落回官方默认地址。
+    """
+    config = getattr(player, "ai_config", None) or {}
+    return {
+        "provider": config.get("provider", "deepseek"),
+        "model": config.get("model", "deepseek-chat"),
+        "api_key": config.get("api_key", ""),
+        "base_url": config.get("api_url") or config.get("base_url"),
+    }
+
+
 class WorldbookManager:
     """按需加载武将、卡牌和阶段世界书。"""
 
@@ -344,12 +359,9 @@ class AIDecision:
         usage = {}
         try:
             reply, usage = await self.gateway.call_ai(
-                provider=player.ai_config.get("provider", "deepseek"),
-                model=player.ai_config.get("model", "deepseek-chat"),
-                api_key=player.ai_config.get("api_key", ""),
+                **model_call_kwargs(player),
                 messages=messages,
                 temperature=player.ai_config.get("temperature", 0.8),
-                base_url=player.ai_config.get("api_url") or player.ai_config.get("base_url"),
                 return_usage=True,
                 cache_prefix_len=self.get_session(player)["prefix_len"],
             )
@@ -990,7 +1002,7 @@ class AIGateway:
         return await self.call_ai(**kwargs)
 
 
-__all__ = ["AIDecision", "AIGateway", "WorldbookManager"]
+__all__ = ["AIDecision", "AIGateway", "WorldbookManager", "model_call_kwargs"]
 
 
 if __name__ == "__main__":

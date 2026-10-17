@@ -8,7 +8,7 @@ import random
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Set
 
 from .state_manager import Card, GameState, Player, Phase, card_to_dict
 from .phase_controller import PhaseController
@@ -135,6 +135,8 @@ class MainEngine:
         self._open_prompts: Dict[str, Dict] = {}
         self._abort_reason: Any = None
         self._watchdog_task: Any = None
+        # 后台运行的聊天任务；对局结束时统一取消。
+        self._chat_tasks: Set[asyncio.Task] = set()
         self._game_end_emitted = False
         self._started_at: Any = None
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
@@ -432,6 +434,7 @@ class MainEngine:
             if self._watchdog_task is not None:
                 self._watchdog_task.cancel()
                 self._watchdog_task = None
+            self._cancel_chat_tasks()
 
         await self._emit_game_end_once()
         logger.info(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
@@ -442,15 +445,27 @@ class MainEngine:
     async def _ai_turn(self, player: Player):
         logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
-        await self._run_phases(player)
-
         if self.chat_enabled and random.random() < 0.3:
-            msg = await self.chat_engine.trigger_event_chat(
-                "turn_start", player, {"round": self.game_state.round_number}
-            )
-            if msg:
-                await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg, from_id=player.id)
+            self._spawn_chat("turn_start", player, {"round": self.game_state.round_number})
+        await self._run_phases(player)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    def _spawn_chat(self, event_type: str, player: Player, context: Dict):
+        """台词在后台生成，主循环不等它：模型慢或失败都不会拖住对局。"""
+        task = asyncio.create_task(self._run_chat(event_type, player, context))
+        self._chat_tasks.add(task)
+        task.add_done_callback(self._chat_tasks.discard)
+        return task
+
+    async def _run_chat(self, event_type: str, player: Player, context: Dict):
+        msg = await self.chat_engine.trigger_event_chat(event_type, player, context)
+        if msg and not self.is_game_over() and not self.game_aborted:
+            await self.emit(ENGINE_EVENT.CHAT, from_=player.name, message=msg, from_id=player.id)
+
+    def _cancel_chat_tasks(self):
+        for task in list(self._chat_tasks):
+            task.cancel()
+        self._chat_tasks.clear()
 
     async def _human_turn(self, player: Player):
         logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
