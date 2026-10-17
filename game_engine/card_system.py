@@ -1214,8 +1214,18 @@ class CardSystem:
                 logger.info(f"  → {p.name} 回复1点体力，当前{p.hp}/{p.max_hp}")
         return True
 
+    async def _publish_shown_pool(self, pool):
+        """把临时展示池（五谷丰登的亮牌）同步给引擎；没有真引擎（单测桩）时什么也不做。"""
+        publish = getattr(self.engine, "set_shown_pool", None)
+        if publish is not None and asyncio.iscoroutinefunction(publish):
+            await publish(pool)
+
     async def use_wugu(self, player, card: Card, *, effect_context=None):
-        """五谷丰登：翻开顶牌，各角色从中取一张。"""
+        """五谷丰登：翻开与角色数等量的牌，从使用者起按座次轮流各取一张。
+
+        亮出的牌对全桌公开：每一步都把整池（谁取走了哪张、轮到谁）同步给引擎，
+        界面据此显示，断线重连时也随状态快照恢复。
+        """
         alive = await self.trigger_manager.before_multi_target_trick(
             player, card, self._ordered_group_targets(player, include_source=True),
         )
@@ -1226,45 +1236,69 @@ class CardSystem:
                 revealed.append(self.game_state.deck.pop(0))
         if not revealed:
             return True
+        pool = {
+            "title": "五谷丰登",
+            "source_id": player.id,
+            "source_name": player.name,
+            "order": [p.id for p in alive],
+            "current_id": None,
+            "cards": [
+                {"slot": i, "card": card_to_dict(c, include_id=False),
+                 "picked_by": None, "picked_name": ""}
+                for i, c in enumerate(revealed)
+            ],
+        }
+        slot_of = {id(c): i for i, c in enumerate(revealed)}
+        await self._publish_shown_pool(pool)
         remaining = list(revealed)
-        for p in alive:
-            if not remaining:
-                break
-            if not p.alive or (self.engine is not None and self.engine.game_aborted):
-                continue
-            if effect_context is not None:
-                effect_context.current_target_id = p.id
-                effect_context.next_sequence()
-            if await self.ask_wuxie(card, player, [p]):
-                if effect_context is not None:
-                    effect_context.cancel_target(p.id)
-                continue
-            chosen = None
-            if self.engine:
-                chosen_list = await self.engine.ask_choose_cards(
-                    p, "【五谷丰登】：请选择一张牌",
-                    candidates=remaining, min_n=1, max_n=1,
-                    zone="shown", cancelable=False,
-                    context={"intent": "gain"},
-                )
-                chosen = chosen_list[0] if chosen_list else None
-                if chosen is not None and chosen not in remaining:
-                    # 复核后仍须核对临时展示池；状态变化时落回确定性命中。
-                    chosen = None
-            if chosen is None:
-                if self.engine is not None and self.engine.game_aborted:
-                    logger.info("  → 对局已收摊，五谷丰登停止分发")
+        try:
+            for p in alive:
+                if not remaining:
                     break
-                # AI/托管：取分值最高的牌
-                from .card_table import CARD_TABLE
-                chosen = max(remaining, key=lambda c: CARD_TABLE.get(c.name, CARD_TABLE.get("杀")).discard_keep_score
-                             if CARD_TABLE.get(c.name) else 20)
-            remaining.remove(chosen)
-            p.hand.append(chosen)
-            await self.trigger_manager.on_card_gained(p, [chosen], "五谷丰登")
-            logger.info(f"  → {p.name} 获得【{chosen.name}】")
-        for leftover in remaining:
-            self.game_state.discard_pile.append(leftover)
+                if not p.alive or (self.engine is not None and self.engine.game_aborted):
+                    continue
+                if effect_context is not None:
+                    effect_context.current_target_id = p.id
+                    effect_context.next_sequence()
+                pool["current_id"] = p.id
+                await self._publish_shown_pool(pool)
+                if await self.ask_wuxie(card, player, [p]):
+                    if effect_context is not None:
+                        effect_context.cancel_target(p.id)
+                    continue
+                chosen = None
+                if self.engine:
+                    chosen_list = await self.engine.ask_choose_cards(
+                        p, "【五谷丰登】：请选择一张牌",
+                        candidates=remaining, min_n=1, max_n=1,
+                        zone="shown", cancelable=False,
+                        # pool_slots：每个候选对应展示池里的第几张，界面据此在五谷面板里直接点选。
+                        context={"intent": "gain", "shown_pool": "五谷丰登",
+                                 "pool_slots": [slot_of[id(c)] for c in remaining]},
+                    )
+                    chosen = chosen_list[0] if chosen_list else None
+                    if chosen is not None and chosen not in remaining:
+                        # 复核后仍须核对临时展示池；状态变化时落回确定性命中。
+                        chosen = None
+                if chosen is None:
+                    if self.engine is not None and self.engine.game_aborted:
+                        logger.info("  → 对局已收摊，五谷丰登停止分发")
+                        break
+                    # AI/托管：取分值最高的牌
+                    chosen = max(remaining, key=lambda c: CARD_TABLE.get(c.name, CARD_TABLE.get("杀")).discard_keep_score
+                                 if CARD_TABLE.get(c.name) else 20)
+                remaining.remove(chosen)
+                p.hand.append(chosen)
+                entry = pool["cards"][slot_of[id(chosen)]]
+                entry["picked_by"] = p.id
+                entry["picked_name"] = p.name
+                await self._publish_shown_pool(pool)
+                await self.trigger_manager.on_card_gained(p, [chosen], "五谷丰登")
+                logger.info(f"  → {p.name} 获得【{chosen.name}】")
+            for leftover in remaining:
+                self.game_state.discard_pile.append(leftover)
+        finally:
+            await self._publish_shown_pool(None)
         return True
 
     async def use_jiedao(self, player, card: Card, targets):

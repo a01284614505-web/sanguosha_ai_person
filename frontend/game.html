@@ -7,7 +7,7 @@
     <title>三国杀酒馆 · 对局</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="css/sgs.css?v=20261017c">
-    <link rel="stylesheet" href="css/game.css?v=20261017c">
+    <link rel="stylesheet" href="css/game.css?v=20261017d">
 </head>
 <body class="game-page">
 <div class="battle" id="battle">
@@ -37,6 +37,9 @@
             <div class="phase-banner" id="phaseBanner" aria-live="polite"></div>
             <div class="table-cards" id="tableCards"></div>
         </div>
+
+        <!-- 五谷丰登等临时展示池：亮出的牌全桌可见，标出谁取走了哪张 -->
+        <section class="shown-pool" id="shownPool" hidden aria-live="polite" aria-label="五谷丰登"></section>
 
         <!-- 指向线与特效层 -->
         <svg class="fx-lines" id="fxLines" aria-hidden="true"></svg>
@@ -157,6 +160,6 @@
 <script src="js/ws_client.js?v=20261017c"></script>
 <script src="js/global_settings.js?v=20261017c"></script>
 <script src="js/chat_panel.js?v=20261017c"></script>
-<script src="js/game_main.js?v=20261017c"></script>
+<script src="js/game_main.js?v=20261017d"></script>
 </body>
 </html>
