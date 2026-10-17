@@ -83,6 +83,16 @@ class WorldbookManager:
 
     # ---------- 三层前缀分层：L0 全局 / L1 角色 / L2 局势 ----------
 
+    # 身份代码 → 中文，以及各身份的目标说明（放在 L1 角色层，只对本人可见）。
+    IDENTITY_NAMES = {"lord": "主公", "loyalist": "忠臣", "rebel": "反贼", "spy": "内奸"}
+    IDENTITY_GOALS = {
+        "lord": "消灭所有反贼和内奸，保住自己；忠臣是你的盟友，但身份未公开者不能确定。",
+        "loyalist": "保护主公，消灭所有反贼和内奸；主公濒死时优先用桃救他。",
+        "rebel": "杀死主公即获胜（若场上只剩内奸一人存活，则内奸胜），先集火主公，其次清掉忠臣。",
+        "spy": ("在反贼和忠臣全部阵亡之前，主公阵亡等于你失败。主公体力很低时不要攻击主公，"
+                "他濒死时应考虑用桃救他；先帮弱势的一方，维持局面平衡，最后再与主公单挑。"),
+    }
+
     def build_global_rules(self) -> str:
         """L0 全局层：整局不变，且**与玩家无关**。
 
@@ -97,7 +107,8 @@ class WorldbookManager:
             "- 回合流程：准备 → 判定 → 摸牌 → 出牌 → 弃牌 → 结束。",
             "- 出牌阶段每回合限用1张【杀】（技能可突破）；手牌上限等于当前体力值。",
             "- 体力降到0进入濒死，按座次逐个询问是否使用【桃】；无人施救即阵亡。",
-            "- 身份局胜负：主公与忠臣需杀光反贼与内奸；反贼杀死主公即胜；内奸需最后与主公单挑取胜。",
+            "- 身份局胜负：主公阵亡时：若场上只剩内奸一人存活，内奸胜；否则反贼胜（不论是谁杀死主公）。"
+            "反贼与内奸全部阵亡且主公存活，主公和忠臣胜。",
             "- 身份奖惩：任何角色杀死反贼后摸3张牌；主公杀死忠臣须弃置所有手牌和装备区的牌。",
             "- 属性伤害：火【杀】/雷【杀】、【火攻】、【闪电】造成属性伤害；处于连环状态的角色受到属性伤害时，"
             "其他连环角色依次受到同样的伤害（从当前回合角色起按座次）。",
@@ -125,7 +136,11 @@ class WorldbookManager:
 
     def build_static_worldbook(self, player, game_state=None) -> str:
         """L1 角色层：整局不变，单个玩家专属。"""
-        sections = [f"你是{player.name}，身份：{player.identity or '未知'}"]
+        identity_text = self.IDENTITY_NAMES.get(player.identity, player.identity or "未知")
+        sections = [f"你是{player.name}，身份：{identity_text}"]
+        goal = self.IDENTITY_GOALS.get(player.identity)
+        if goal:
+            sections.append(f"【你的目标】{goal}")
         hero_text = self.get_hero_worldbook(self._hero_id(player))
         if hero_text:
             sections.append(hero_text)
