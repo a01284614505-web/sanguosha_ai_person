@@ -7,6 +7,7 @@ from typing import Dict, List
 
 from .game_stats import clear_damage_source, record_stat
 from .skill_runtime_core import hero_id, reset_turn_flags
+from .skill_runtime_state import SkillStateStore
 from .skills_generated import get_all_skills, get_hero_skills
 
 
@@ -19,14 +20,25 @@ class SkillManager:
         self.registered_skills: Dict[int, List] = {}
         self.handlers = []
         self.activation_log: List[Dict] = []
+        self.skill_state = SkillStateStore()
         if engine is not None:
             self.bind_engine(engine)
 
     def bind_engine(self, engine):
         self.engine = engine
         self.registered_skills.clear()
+        self.skill_state = SkillStateStore()
         for player in engine.game_state.players:
             self.registered_skills[player.id] = get_hero_skills(hero_id(player))
+            for skill in self.registered_skills[player.id]:
+                scope = "current_turn" if skill.name == "制衡" else "game"
+                charges = 1 if skill.name == "替身" else None
+                state = {"awakened": False} if skill.name == "勤学" else None
+                self.skill_state.register(
+                    player.id, skill.skill_id, version_id=getattr(skill, "version_id", None),
+                    source=hero_id(player) or "native", charges=charges,
+                    usage_scope=scope, state=state,
+                )
         self._load_handlers()
         return self
 
@@ -67,13 +79,88 @@ class SkillManager:
         return result
 
     def has_skill(self, player, name, active_only=True):
-        for skill in self.player_skills(player):
-            if skill.name != name or (active_only and skill.implementation_status != "active"):
+        matches = [skill for skill in self.player_skills(player)
+                   if skill.name == name and (not active_only or skill.implementation_status == "active")]
+        if not matches:
+            return False
+        if getattr(player, "flags", {}).get("nonlocked_disabled") and all(
+            skill.skill_type not in ("locked",) for skill in matches
+        ):
+            return False
+        return any(self.skill_state.has_enabled(player.id, skill.skill_id) for skill in matches)
+
+    def _skill_instance(self, player, name):
+        skill = next((item for item in self.player_skills(player) if item.name == name), None)
+        return None if skill is None else self.skill_state.get(
+            player.id, skill.skill_id, version_id=getattr(skill, "version_id", None)
+        )
+
+    def skill_state_value(self, player, name, key, default=None):
+        instance = self._skill_instance(player, name)
+        return default if instance is None else instance.state.get(key, default)
+
+    def set_skill_state(self, player, name, key, value):
+        skill = next((item for item in self.player_skills(player) if item.name == name), None)
+        if skill is None:
+            return 0
+        return self.skill_state.set_state(
+            player.id, skill.skill_id, key, value,
+            version_id=getattr(skill, "version_id", None),
+        )
+
+    def skill_available(self, player, name, *, phase=None, limit=1):
+        instance = self._skill_instance(player, name)
+        if instance is None:
+            return False
+        state = self.engine.game_state
+        current = state.current_player
+        for source in self.skill_state.find(player.id, instance.skill_id):
+            if source.version_id != instance.version_id or not source.enabled:
                 continue
-            if getattr(player, "flags", {}).get("nonlocked_disabled") and skill.skill_type not in ("locked",):
-                return False
-            return True
+            if (source.usage_scope == "current_turn" and current is not player):
+                continue
+            key = source.scope_key(
+                phase=getattr(phase, "value", phase),
+                current_player_id=getattr(current, "id", None),
+                turn_id=getattr(self.engine, "completed_turns", None),
+                round_number=state.round_number,
+                turn_policy="owner",
+            )
+            if source.usage_counts.get(key, 0) < limit and (source.charges is None or source.charges > 0):
+                return True
         return False
+
+    def consume_skill_use(self, player, name, *, phase=None, charges=0, limit=1):
+        instance = self._skill_instance(player, name)
+        if instance is None:
+            return False
+        state = self.engine.game_state
+        current = state.current_player
+        return self.skill_state.consume(
+            player.id, instance.skill_id, version_id=instance.version_id,
+            phase=getattr(phase, "value", phase),
+            current_player_id=getattr(current, "id", None),
+            turn_id=getattr(self.engine, "completed_turns", None),
+            round_number=state.round_number, turn_policy="owner",
+            limit=limit, charges=charges,
+        )
+
+    def gain_skill(self, player, skill_id, *, source, version_id=None, **options):
+        """Register an additional source; identical sources use reference counts."""
+        return self.skill_state.add_source(
+            player.id, skill_id, source, version_id=version_id, **options
+        )
+
+    def lose_skill_source(self, player, skill_id, *, source, version_id=None):
+        return self.skill_state.remove_source(
+            player.id, skill_id, source, version_id=version_id
+        )
+
+    def disable_skill(self, player, skill_id, *, source=None):
+        return self.skill_state.disable(player.id, skill_id, source=source)
+
+    def restore_skill(self, player, skill_id, *, source=None):
+        return self.skill_state.restore(player.id, skill_id, source=source)
 
     def registration_stats(self):
         all_skills = self.all_definitions()
@@ -85,6 +172,8 @@ class SkillManager:
         }
 
     def record(self, player, skill_name, event, **details):
+        if self.engine is not None and self.engine.game_aborted:
+            return None
         entry = {
             "player_id": player.id,
             "player_name": player.name,
@@ -105,25 +194,32 @@ class SkillManager:
         return cards
 
     async def discard_card(self, player, card, reason="skill"):
-        if card not in player.hand:
+        if self.engine is None or card not in player.hand or self.engine.game_aborted:
             return False
         index = player.hand.index(card)
-        player.hand.remove(card)
-        self.engine.game_state.discard_pile.append(card)
+        move = await self.engine.move_card(
+            card, "hand", "discard", from_owner=player,
+            reason=reason, actor_id=player.id,
+        )
+        if move is None:
+            return False
         await self.engine.card_system.notify_card_to_discard(
             player, card, "discard", index, f"{player.name}因{reason}弃置【{card.name}】"
         )
-        await self.on_cards_lost(player, [card], reason)
         await self.on_card_discarded(player, card, reason)
         return True
 
     async def transfer_card(self, source, target, card, reason="skill"):
-        if card not in source.hand:
+        if self.engine is None or self.engine.game_aborted or card not in source.hand:
             return False
-        source.hand.remove(card)
-        target.hand.append(card)
-        await self.on_cards_lost(source, [card], reason)
-        await self.on_card_gained(target, [card], reason)
+        move = await self.engine.move_card(
+            card, "hand", "hand", from_owner=source, to_owner=target,
+            reason=reason, actor_id=source.id, visibility="owner",
+        )
+        if move is None:
+            return False
+        if not self.engine.game_aborted:
+            await self.on_card_gained(target, [card], reason)
         return True
 
     async def ask_confirm(self, player, prompt, **kwargs):
@@ -134,6 +230,9 @@ class SkillManager:
 
     async def ask_choose_cards(self, player, prompt, candidates, **kwargs):
         return await self.engine.ask_choose_cards(player, prompt, candidates, **kwargs)
+
+    async def ask_choose_cards_result(self, player, prompt, candidates, **kwargs):
+        return await self.engine.ask_choose_cards_result(player, prompt, candidates, **kwargs)
 
     async def ask_choose_option(self, player, prompt, choices, **kwargs):
         return await self.engine.ask_choose_option(player, prompt, choices, **kwargs)
@@ -314,14 +413,49 @@ class SkillManager:
         for handler in self.handlers:
             await handler.on_card_gained(player, cards, reason)
 
-    async def on_cards_lost(self, player, cards, reason="unknown"):
-        if not cards:
+    @staticmethod
+    def _is_counted_loss(event):
+        return (
+            event.from_owner is not None
+            and event.from_zone in ("hand", "equipment")
+            and event.to_zone != "temporary"
+            and (event.from_owner != event.to_owner or event.from_zone != event.to_zone)
+        )
+
+    def record_card_move_stats(self, event):
+        """Record an already committed move before any awaited event publication."""
+        player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
+        if event.reason == "use_card":
+            record_stat(self.engine, player, "cards_played")
+        if self._is_counted_loss(event):
+            record_stat(self.engine, player, "cards_lost")
+
+    async def on_card_move(self, card, event, *, stats_recorded=False):
+        """Project statistics and skill hooks from one committed movement fact."""
+        if not stats_recorded:
+            self.record_card_move_stats(event)
+        if self.engine is not None and self.engine.game_aborted:
             return
-        record_stat(self.engine, player, "cards_lost", len(cards))
         for handler in self.handlers:
-            await handler.on_cards_lost(player, cards, reason)
+            await handler.on_card_move(card, event)
+        if not self._is_counted_loss(event):
+            return
+        player = next((p for p in self.engine.game_state.players if p.id == event.from_owner), None)
+        if player is None:
+            return
+        await self.on_cards_lost(player, [card], event.reason, record=False, event=event)
+
+    async def on_cards_lost(self, player, cards, reason="unknown", *, record=True, event=None):
+        if not cards or (self.engine is not None and self.engine.game_aborted):
+            return
+        if record:
+            record_stat(self.engine, player, "cards_lost", len(cards))
+        for handler in self.handlers:
+            await handler.on_cards_lost(player, cards, reason, event=event)
 
     async def on_card_discarded(self, player, card, reason="unknown"):
+        if self.engine is not None and self.engine.game_aborted:
+            return
         current = self.engine.game_state.current_player if self.engine else None
         if current:
             ensure = getattr(current, "flags", {})

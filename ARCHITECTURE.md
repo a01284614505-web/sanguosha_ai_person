@@ -1,7 +1,7 @@
 # AI 三国杀酒馆 · 项目架构
-> 当前开发环境：Windows 10 / Python 3.12  
-> 当前阶段：Stage 5 与 C 档重构 R0–R8 已完成；下一步 Stage 6A（交互原语层）
-> 更新时间：2026-09-12
+> 当前验证环境：Linux / Python 3.12；Windows、Termux 为目标平台
+> 当前阶段：B2 代表场景已通过自动化验收；真人浏览器验收待完成
+> 更新时间：2026-10-12
 > 路线图见 [ROADMAP.md](ROADMAP.md)，现状事实基线见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)
 ## 1. 架构铁律
 ```text
@@ -86,7 +86,7 @@ GameServer 转成 WebSocket 出站消息
 | `update_ai_config` | 局内更新指定 AI 配置 |
 | `ping` | 连接心跳 |
 | `server_info` | 请求服务器能力信息 |
-### 4.2 出站：服务器 → 前端（14 种）
+### 4.2 出站：服务器 → 前端（16 种）
 | 类型 | 用途 |
 |---|---|
 | `pong` | 心跳响应 |
@@ -95,7 +95,9 @@ GameServer 转成 WebSocket 出站消息
 | `game_state` | 完整可见状态更新 |
 | `your_turn` | 真人出牌阶段及合法候选 |
 | `require_response` | 回合外响应与交互原语的请求及合法候选（`selection` 含 mode/min/max/zone/cancelable；多选用 `option_indices` 应答） |
-| `action_result` | 真人操作执行结果 |
+| `action_result` | 真人出牌执行结果；响应提交回执另含 `kind=response`、`request_id`、`status`、`message`。`accepted` 只表示输入已进入当前等待器，最终效果仍由引擎复核 |
+| `selection_result` | 询问最终状态：`resolved/cancelled/timeout/stale/invalid/game_ended` |
+| `card_moved` | 已提交的实体牌移动事实，带区域、原因、来源、可见性和序号 |
 | `ai_action` | AI 回合或出牌展示 |
 | `chat` | 真人或 AI 聊天消息 |
 | `event_notification` | 游戏事件与动画通知 |
@@ -133,8 +135,8 @@ WebSocket：`ws://127.0.0.1:8889`
 ```bash
 # 完整回归（Windows Git Bash 需固定 UTF-8 输出）
 PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
-# 前端内联与外部 JavaScript 语法检查
-python scripts/check_frontend_js.py
+# 一条入口：pytest、前端内联/外部 JS、协议生成一致性、两项 WS 冒烟
+.venv/bin/python scripts/verify_project.py
 ```
 ## 7. 已知边界与后续阶段
 > 逐项事实核定（含实测输出与代码行号）见 [项目现状评估报告](logs/handover/20260912_2230_项目现状评估报告.md)；分阶段计划见 [ROADMAP.md](ROADMAP.md)。
@@ -159,7 +161,7 @@ python scripts/check_frontend_js.py
 | 托管 | CHRONICLE 13.5.3 四种来源只实现第 4 种（规则脚本兜底） |
 | 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
 ### 7.3 下一阶段
-**6C 剩余（武器/防具特效、木牛流马、牌面图）→ 6B 技能交互改造**；7A 代理系统与 7B-4 服务端持久化待排期。
+**B2 请求、牌移动、事件与技能状态最小骨架 → B3 公共规则 → B4 装备/木牛 → B5 技能真人化 → B6 托管/模型 → B7 持久化**；新版 UI 在 B7 发布门槛后接入。B2 代表场景已通过自动化验收：四原语可用模型或规则脚本选索引，再由引擎复核原始候选；隐藏候选和玩家私密对象不进入决策视图；实体牌移动记录统一事实，统计与技能按各自口径投影；技能实例状态和普通/技能杀效果上下文可序列化。其余旧牌区直接写入点及决斗/群体锦囊上下文仍待 B3/B4 迁移，详见 [B2 验收记录](logs/handover/20261013_0016_B2接口验收.md)。
 
 6A 交互原语层与选牌消费者补全已完成（2026-09-13 / 2026-10-03），详见
 [Stage 6A](logs/handover/20260913_0000_Stage6A交互原语层.md) 与

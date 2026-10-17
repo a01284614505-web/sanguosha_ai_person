@@ -13,6 +13,7 @@ const GameUI = {
     latestState: null,
     responseTimer: null,
     activeResponseRequest: null,
+    submittedResponseRequest: null,
     cardAnimationQueue: Promise.resolve(),
     aiSettingProviderList: null
 };
@@ -62,9 +63,9 @@ function getCardSourcePosition(data) {
     var actor = document.getElementById('opp_' + data.actor_id);
     if (actor) {
         var actorRect = actor.getBoundingClientRect();
-        return {x: actorRect.left + actorRect.width / 2 - 30, y: actorRect.top + actorRect.height / 2 - 42};
+        return {x: actorRect.left + actorRect.width / 2 - 52, y: actorRect.top + actorRect.height / 2 - 68};
     }
-    return {x: window.innerWidth / 2 - 30, y: window.innerHeight / 2 - 42};
+    return {x: window.innerWidth / 2 - 52, y: window.innerHeight / 2 - 68};
 }
 
 function enqueueCardAnimation(data) {
@@ -83,20 +84,38 @@ function animateCardToDiscard(data) {
         fly.className = 'flyingCard';
         var suitSym = {spade: '♠', heart: '♥', club: '♣', diamond: '♦'}[card.suit] || '?';
         var col = ['heart', 'diamond'].includes(card.suit) ? 'r' : 'b';
-        fly.innerHTML = '<div class="cs ' + col + '">' + suitSym + (card.rank || '') + '</div><div class="cn">' + (card.name || data.card_name || '?') + '</div>';
+        var art = document.createElement('img');
+        art.className = 'cardArt';
+        art.alt = '';
+        if (typeof card.image === 'string' && /^[a-z0-9_]+$/.test(card.image)) {
+            art.src = 'assets/cards/' + card.image + '.png';
+            art.onerror = function () { fly.classList.remove('hasArt'); };
+            fly.classList.add('hasArt');
+            fly.appendChild(art);
+        }
+        var suit = document.createElement('div');
+        suit.className = 'cs ' + col;
+        suit.textContent = suitSym + (card.rank == null ? '' : card.rank);
+        fly.appendChild(suit);
+        var title = document.createElement('div');
+        title.className = 'cn';
+        title.textContent = card.name || data.card_name || '?';
+        fly.appendChild(title);
         fly.style.left = start.x + 'px';
         fly.style.top = start.y + 'px';
         document.body.appendChild(fly);
 
-        var animationMs = (window.getGlobalSettings ? getGlobalSettings().animation_ms : 1100);
-        var centerPause = Math.round(animationMs * .59);
-        var centerMove = Math.max(260, Math.round(animationMs * .35));
-        var discardMove = Math.max(280, animationMs - centerPause);
-        var centerX = window.innerWidth / 2 - 30;
-        var centerY = Math.max(38, window.innerHeight * .29 - 42);
+        var configuredMs = Number(window.getGlobalSettings ? getGlobalSettings().animation_ms : 1100) || 1100;
+        var centerMove = Math.max(260, Math.round(configuredMs * .3));
+        var centerHold = 500;
+        var discardMove = Math.max(280, configuredMs - centerMove - centerHold);
+        var animationMs = centerMove + centerHold + discardMove;
+        var centerPause = centerMove + centerHold;
+        var centerX = window.innerWidth / 2 - fly.offsetWidth / 2;
+        var centerY = Math.max(38, window.innerHeight * .29 - fly.offsetHeight / 2);
         var pileRect = document.getElementById('discardPile').getBoundingClientRect();
-        var pileX = pileRect.left + pileRect.width / 2 - 30;
-        var pileY = pileRect.top + pileRect.height / 2 - 42;
+        var pileX = pileRect.left + pileRect.width / 2 - fly.offsetWidth / 2;
+        var pileY = pileRect.top + pileRect.height / 2 - fly.offsetHeight / 2;
 
         requestAnimationFrame(function () {
             fly.style.transition = 'all ' + centerMove + 'ms cubic-bezier(.2,.8,.2,1)';
@@ -159,12 +178,16 @@ gameClient.onConnect = function () {
 };
 
 gameClient.onRequireResponse = function (data) {
+    if (!data.responseDeadline) {
+        data.responseDeadline = Date.now() + Math.max(0, Number(data.timeout) || 30) * 1000;
+    }
     GameUI.activeResponseRequest = data;
     GameUI.responseExpired = false;
     var modal = document.getElementById('responseModal');
     var options = document.getElementById('responseOptions');
     var multiSelect = document.getElementById('responseMultiSelect');
     var multiOptions = document.getElementById('responseMultiOptions');
+    var cancelButton = document.getElementById('responseCancel');
     options.innerHTML = '';
     multiOptions.innerHTML = '';
     var titleMap = {
@@ -180,6 +203,7 @@ gameClient.onRequireResponse = function (data) {
     document.getElementById('responseContext').textContent = data.requested_name ? '需要：' + data.requested_name : '';
 
     var sel = data.selection || {};
+    cancelButton.style.display = sel.cancelable && data.kind !== 'respond' ? '' : 'none';
     var isMulti = sel.mode === 'multi';
 
     if (isMulti) {
@@ -231,7 +255,6 @@ gameClient.onRequireResponse = function (data) {
     }
 
     modal.classList.add('show');
-    var left = Math.max(0, Number(data.timeout) || 30);
     var countdown = document.getElementById('responseCountdown');
     clearInterval(GameUI.responseTimer);
     function expireResponse() {
@@ -247,13 +270,13 @@ gameClient.onRequireResponse = function (data) {
     }
     function tick() {
         if (GameUI.responseExpired) return;
+        var left = Math.max(0, Math.ceil((data.responseDeadline - Date.now()) / 1000));
         countdown.textContent = '剩余 ' + Math.max(0, left) + ' 秒';
         if (left <= 0) {
             clearInterval(GameUI.responseTimer);
             expireResponse();
             return;
         }
-        left--;
     }
     tick();
     GameUI.responseTimer = setInterval(tick, 1000);
@@ -262,6 +285,7 @@ gameClient.onRequireResponse = function (data) {
 function submitResponse(index) {
     if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
     var request = GameUI.activeResponseRequest;
+    GameUI.submittedResponseRequest = request;
     GameUI.activeResponseRequest = null;
     clearInterval(GameUI.responseTimer);
     document.getElementById('responseModal').classList.remove('show');
@@ -271,12 +295,24 @@ function submitResponse(index) {
 function submitMultiResponse() {
     if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
     var request = GameUI.activeResponseRequest;
+    GameUI.submittedResponseRequest = request;
     var indices = (GameUI.multiSelected || []).slice();
     GameUI.activeResponseRequest = null;
     GameUI.multiSelected = [];
     clearInterval(GameUI.responseTimer);
     document.getElementById('responseModal').classList.remove('show');
     gameClient.playerAction({type: 'response', request_id: request.request_id, option_indices: indices}, []);
+}
+
+function cancelResponse() {
+    if (!GameUI.activeResponseRequest || GameUI.activeResponseRequest.expired) return;
+    var request = GameUI.activeResponseRequest;
+    GameUI.submittedResponseRequest = request;
+    GameUI.activeResponseRequest = null;
+    GameUI.multiSelected = [];
+    clearInterval(GameUI.responseTimer);
+    document.getElementById('responseModal').classList.remove('show');
+    gameClient.playerAction({type: 'response', request_id: request.request_id, cancel: true}, []);
 }
 
 gameClient.onStateUpdate = function (s) {
@@ -341,13 +377,39 @@ gameClient.onYourTurn = function (data) {
     audioManager.play('click');
 };
 
-gameClient.onActionResult = function (ok) {
+gameClient.onActionResult = function (data) {
+    var ok = !!data.success;
+    if (data.kind === 'response') {
+        var submitted = GameUI.submittedResponseRequest;
+        if (submitted && submitted.request_id === data.request_id) {
+            GameUI.submittedResponseRequest = null;
+            if (data.status === 'invalid' && !GameUI.activeResponseRequest
+                    && Date.now() < submitted.responseDeadline) {
+                gameClient.onRequireResponse(submitted);
+            }
+        }
+        if (!ok) {
+            L('❌ ' + (data.message || '选择未被接收'));
+            showSystemToast(data.message || '选择未被接收');
+        }
+        return;
+    }
     L(ok ? '✅' : '❌');
     if (!ok) {
         GameUI.sel = null;
         renderHand();
         updateButtons();
     }
+};
+
+gameClient.onSelectionResult = function (data) {
+    if (data.status === 'cancelled') L('已取消当前选择');
+    else if (data.status === 'timeout') L('选择超时，已由托管代选');
+    else if (data.status === 'stale') L('候选状态已变化，请重新选择');
+};
+
+gameClient.onCardMoved = function (move) {
+    GameUI.latestCardMove = move || null;
 };
 
 gameClient.onChat = function (data) {
@@ -395,6 +457,10 @@ gameClient.onEndGameAccepted = function () {
 };
 
 gameClient.onGameEnd = function (data) {
+    clearInterval(GameUI.responseTimer);
+    GameUI.activeResponseRequest = null;
+    GameUI.submittedResponseRequest = null;
+    document.getElementById('responseModal').classList.remove('show');
     var state = data.state || GameUI.latestState || {};
     var me = (state.players || []).find(function (p) { return p.id === GameUI.myId; }) || {};
     var result = {

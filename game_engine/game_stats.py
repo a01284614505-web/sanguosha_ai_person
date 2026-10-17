@@ -112,6 +112,8 @@ def record_stat(host, player, key: str, amount: int = 1) -> None:
     """
     if host is None or player is None:
         return
+    if getattr(host, "game_aborted", False) is True:
+        return
     stats = getattr(host, "stats", None)
     add = getattr(stats, "add", None)
     if add is None:

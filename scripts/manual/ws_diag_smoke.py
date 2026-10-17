@@ -34,12 +34,12 @@ async def run():
         while True:
             if time.time() - t0 > DEADLINE_SEC:
                 print(f"SMOKE_FAIL: {DEADLINE_SEC}s 内未决出胜负")
-                break
+                return 1
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=90)
             except asyncio.TimeoutError:
                 print(f"SMOKE_FAIL: 90s 无任何消息（疑似引擎卡死），step={step}")
-                break
+                return 1
             msg = json.loads(raw)
             t = msg.get("type")
             counts[t] += 1
@@ -53,6 +53,8 @@ async def run():
 
             if t == "error":
                 print(f"[ERROR] {json.dumps(msg, ensure_ascii=False)[:400]}")
+                if msg.get("fatal"):
+                    return 1
 
             if t == "your_turn":
                 await ws.send(json.dumps(
@@ -85,6 +87,9 @@ async def run():
                     print(f"[NO-REPLY] require_response 无法应答: {json.dumps(msg, ensure_ascii=False)[:300]}")
 
             if t == "game_end":
+                if msg.get("winner") in (None, "aborted", "draw"):
+                    print(f"SMOKE_FAIL: 非正常胜负 {msg.get('winner')}")
+                    return 1
                 print(f"[step {step}] winner={msg.get('winner')} 用时={time.time()-t0:.1f}s")
                 mvp = msg.get("mvp") or {}
                 stats = msg.get("stats") or {}

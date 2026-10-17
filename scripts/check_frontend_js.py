@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""提取 HTML 内联 <script> 并用 node --check 做语法校验。
+"""检查前端内联与独立 JavaScript 的语法。
 
 用法：
     python scripts/check_frontend_js.py frontend/game.html frontend/settings.html
 
-不传参数时默认检查 frontend 下全部 .html（跳过 .backup_ 副本）。
+不传参数时检查 frontend 下全部 .html 和 js/*.js（跳过 .backup_ 副本）。
 写临时文件到系统临时目录，检查完即删；不修改项目文件。
 """
 
@@ -36,6 +36,17 @@ def inline_blocks(html_text):
 
 
 def check_file(path):
+    if path.suffix.lower() == ".js":
+        result = subprocess.run(
+            ["node", "--check", str(path)], capture_output=True,
+            text=True, encoding="utf-8",
+        )
+        if result.returncode == 0:
+            print(f"{path}: 语法通过")
+            return True
+        print(f"{path}: 语法失败")
+        print((result.stderr or result.stdout).strip())
+        return False
     html_text = path.read_text(encoding="utf-8")
     blocks = inline_blocks(html_text)
     if not blocks:
@@ -77,6 +88,10 @@ def main(argv):
             for path in (PROJECT_ROOT / "frontend").glob("*.html")
             if ".backup_" not in path.name
         )
+        targets.extend(sorted(
+            path for path in (PROJECT_ROOT / "frontend" / "js").rglob("*.js")
+            if ".backup_" not in path.name
+        ))
 
     all_ok = True
     for path in targets:

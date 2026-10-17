@@ -123,14 +123,20 @@ class ShuSkillHandler(FactionSkillHandler):
             if not donor or not target:
                 return False
             card = next(c for c in donor.hand if c.name == "杀")
-            donor.hand.remove(card)
-            self.state.discard_pile.append(card)
-            await self.manager.on_cards_lost(donor, [card], "激将")
+            virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic")
+            context = self.engine._new_effect_context(
+                player, virtual, skill_source="激将", card_cost_ids=[card.id], target=target,
+            )
+            move = await self.engine.move_card(
+                card, "hand", "discard", from_owner=donor,
+                reason="激将", actor_id=player.id, effect_id=context.effect_id,
+            )
+            if move is None:
+                return False
             record_stat(self.engine, donor, "cards_played")
             await self.manager.announce(player, "激将", f"{player.name}发动【激将】，{donor.name}打出【杀】")
             await self.engine.card_system.notify_card_to_discard(donor, card, "respond", message=f"{donor.name}响应【激将】打出【杀】")
-            virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic")
-            return await self.engine.card_system.use_sha(player, virtual, target)
+            return await self.engine.card_system.use_sha(player, virtual, target, effect_context=context)
 
         if name in ("武圣", "龙胆") and variant in ("as_sha", "shan_as_sha"):
             if not indices or not target or not 0 <= indices[0] < len(player.hand):
@@ -139,11 +145,15 @@ class ShuSkillHandler(FactionSkillHandler):
             expected = name == "武圣" and card_color(source) == "red" or name == "龙胆" and source.name == "闪"
             if not expected:
                 return False
-            await self._consume_conversion(player, source, name, "杀")
             virtual = Card(f"skill_{name}_{source.id}", "杀", source.suit, source.rank, "basic")
+            context = self.engine._new_effect_context(
+                player, virtual, skill_source=name, card_cost_ids=[source.id], target=target,
+            )
+            if not await self._consume_conversion(player, source, name, "杀", effect_id=context.effect_id):
+                return False
             if name == "武圣" and source.suit == "diamond":
                 virtual.ignore_distance = True
-            return await self.engine.card_system.use_sha(player, virtual, target)
+            return await self.engine.card_system.use_sha(player, virtual, target, effect_context=context)
 
         if name == "义绝" and variant == "reveal":
             if not indices or not target or not target.hand or not 0 <= indices[0] < len(player.hand):
@@ -176,7 +186,7 @@ class ShuSkillHandler(FactionSkillHandler):
             player, card, "discard", index, f"{player.name}发动【{skill_name}】弃置【{card.name}】"
         )
 
-    async def _consume_conversion(self, player, card, skill_name, as_name):
+    async def _consume_conversion(self, player, card, skill_name, as_name, *, effect_id=None):
         index = player.hand.index(card)
         await self.manager.announce(player, skill_name, f"{player.name}发动【{skill_name}】，将【{card.name}】当【{as_name}】")
         await self.engine._notify_card_ui(
@@ -187,10 +197,14 @@ class ShuSkillHandler(FactionSkillHandler):
             card=card_to_dict(card, name=as_name),
             reason="skill_conversion", discard_count=len(self.state.discard_pile) + 1,
         )
-        player.hand.remove(card)
-        self.state.discard_pile.append(card)
-        await self.manager.on_cards_lost(player, [card], skill_name)
+        move = await self.engine.move_card(
+            card, "hand", "discard", from_owner=player,
+            reason=skill_name, actor_id=player.id, effect_id=effect_id,
+        )
+        if move is None:
+            return False
         record_stat(self.engine, player, "cards_played")
+        return True
 
     async def on_turn_start(self, player):
         flags = ensure_flags(player)
@@ -205,10 +219,12 @@ class ShuSkillHandler(FactionSkillHandler):
     async def before_phase(self, player, phase):
         if phase == Phase.PREPARE:
             # 替身限定技：受伤时自动发动，回复值等量摸牌。
-            flags = ensure_flags(player)
-            if self.has(player, "替身") and player.hp < player.max_hp and "替身" not in flags.setdefault("limited_skills", set()):
+            if (self.has(player, "替身") and player.hp < player.max_hp
+                    and self.manager.skill_available(player, "替身")
+                    and self.manager.consume_skill_use(player, "替身", charges=1)):
                 recovered = player.max_hp - player.hp
-                flags["limited_skills"].add("替身")
+                flags = ensure_flags(player)
+                flags.setdefault("limited_skills", set()).add("替身")
                 await self.manager.recover(player, recovered, player, "替身")
                 self.state.draw_card(player, recovered)
                 await self.manager.announce(player, "替身", f"{player.name}发动【替身】，回复{recovered}点体力并摸{recovered}张牌")

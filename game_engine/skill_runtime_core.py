@@ -195,7 +195,10 @@ class FactionSkillHandler:
     async def on_card_gained(self, player, cards, reason="unknown"):
         return None
 
-    async def on_cards_lost(self, player, cards, reason="unknown"):
+    async def on_card_move(self, card, event):
+        return None
+
+    async def on_cards_lost(self, player, cards, reason="unknown", *, event=None):
         return None
 
     async def on_card_discarded(self, player, card, reason="unknown"):

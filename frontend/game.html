@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>游戏中 - 三国杀酒馆</title>
     <link rel="stylesheet" href="css/main.css?v=20261003a">
-    <link rel="stylesheet" href="css/game.css?v=20261003a">
+    <link rel="stylesheet" href="css/game.css?v=20261012b">
 </head>
 <body class="game-page">
     <div id="opponents"></div>
@@ -46,6 +46,7 @@
             <div id="responseContext" class="response-context"></div>
             <div id="responseCountdown"></div>
             <div id="responseOptions"></div>
+            <button id="responseCancel" class="secondary" onclick="cancelResponse()" style="display:none">取消</button>
             <div id="responseMultiSelect" class="multi-select-container" style="display:none">
                 <div id="responseMultiOptions" class="multi-select-options"></div>
                 <div class="multi-select-footer">
@@ -81,6 +82,6 @@
     <script src="js/audio.js?v=20260813b"></script>
     <script src="js/ws_client.js?v=20260813b"></script>
     <script src="js/global_settings.js?v=20260813b"></script>
-    <script src="js/game_main.js?v=20261003a"></script>
+    <script src="js/game_main.js?v=20261012b"></script>
 </body>
 </html>

@@ -26,6 +26,8 @@ class PhaseController:
         self.skip_phases = set()
 
     async def execute_phase(self, phase: "Phase"):
+        if getattr(self.engine, "game_aborted", False):
+            return
 
         if phase in self.skip_phases:
             self.skip_phases.remove(phase)
@@ -148,7 +150,7 @@ class PhaseController:
         trustee = getattr(self.engine, "_trustee_active", False) if self.engine else False
         if self.engine and not player.is_ai and not trustee:
             try:
-                chosen = await self.engine.ask_choose_cards(
+                choice = await self.engine.ask_choose_cards_result(
                     player,
                     f"弃牌阶段：请弃置 {discard_count} 张手牌",
                     list(player.hand),
@@ -157,7 +159,10 @@ class PhaseController:
                     zone="hand",
                     cancelable=False,
                 )
-                if len(chosen) == discard_count:
+                chosen = choice.get("cards", [])
+                if choice.get("status") == "game_ended":
+                    return
+                if choice.get("status") in ("resolved", "timeout") and len(chosen) == discard_count:
                     discarded = chosen
                 else:
                     discarded = ordered[:discard_count]
@@ -165,10 +170,22 @@ class PhaseController:
                 discarded = ordered[:discard_count]
         else:
             discarded = ordered[:discard_count]
+        # 等待真人选牌期间可能主动结束或被离席看门狗结束。
+        if getattr(self.engine, "game_aborted", False):
+            return
         for card in discarded:
-            self.game_state.discard_card(player, card)
+            if getattr(self.engine, "game_aborted", False):
+                return
+            if self.engine is not None:
+                move = await self.engine.move_card(
+                    card, "hand", "discard", from_owner=player,
+                    reason="hand_limit", actor_id=player.id,
+                )
+                if move is None:
+                    continue
+            else:
+                self.game_state.discard_card(player, card)
             if self.skill_manager:
-                await self.skill_manager.on_cards_lost(player, [card], "hand_limit")
                 await self.skill_manager.on_card_discarded(player, card, "hand_limit")
         logger.info(f"  自动弃置 {len(discarded)} 张牌")
 

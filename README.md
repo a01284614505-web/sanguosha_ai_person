@@ -4,7 +4,7 @@
 
 ## 项目状态
 
-最近批次（2026-10-03）：真人选牌流程补全 + 真实对局统计入库，全量回归 161 项通过。
+最近批次（2026-10-12）：B0/B1 基线与输入中止修复，验收记录见 `logs/handover/`。
 
 - ✅ 引擎与规则：5 人身份局完整流程；27 将 / 54 技能；标准牌堆 108 张 / 军争 53 张 / 合并 161 张可切换
 - ✅ 真人交互：弃牌阶段自己选；过河拆桥 / 顺手牵羊 / 五谷丰登由你选牌（他人手牌隐藏、装备与判定区明牌，被拆的牌明牌展示）
@@ -72,12 +72,9 @@ sanguosha_data/
 ## 测试与验收
 
 ```bash
-python -m pytest -q                     # 全量回归（161 passed）
-python scripts/check_frontend_js.py     # 前端 HTML/JS 语法检查
-
-# 先启动服务器，再跑自驱冒烟（规则 AI，无需 API Key）：
-python scripts/manual/ws_diag_smoke.py
-python scripts/manual/ws_engine_smoke.py
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python scripts/verify_project.py  # pytest、前端 JS、协议同步、两项 WS 冒烟
 ```
 
 ## 架构与约定

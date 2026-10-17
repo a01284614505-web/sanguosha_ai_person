@@ -33,6 +33,9 @@ def option_label(option: dict) -> str:
     """候选项的可读文案（唯一定义处）：前端面板、AI提示词、托管日志共用。"""
     if option.get("label"):
         return option["label"]
+    if option.get("hidden"):
+        owner = option.get("owner")
+        return f"{getattr(owner, 'name', '其他角色')}可提供【{option.get('as_name') or '响应牌'}】"
     card = option.get("card")
     if card is None:
         return "不响应"
@@ -76,8 +79,10 @@ class CardSystem:
             message=message or f"{actor.name}{'打出' if reason == 'respond' else '弃置'}【{card.name}】",
         )
 
-    async def use_card(self, player, card: Card, targets: List = None):
+    async def use_card(self, player, card: Card, targets: List = None, *, effect_context=None):
         """使用卡牌（统一入口）。分发由 CARD_TABLE 的 resolver/usage 驱动。"""
+        if self.engine is not None and self.engine.game_aborted:
+            return False
         spec = CARD_TABLE.get(card.name)
 
         # 锦囊结算前统一走无懈链；无懈本身只作为响应牌进入 ask_wuxie。
@@ -86,6 +91,8 @@ class CardSystem:
             if await self.ask_wuxie(card, player, wuxie_targets):
                 logger.info(f"  → 【{card.name}】被无懈可击抵消")
                 return True
+            if self.engine is not None and self.engine.game_aborted:
+                return False
 
         if spec and spec.usage == "response":
             logger.info(f"{card.name}只能响应使用")
@@ -94,6 +101,9 @@ class CardSystem:
         resolver_name = spec.resolver if spec else None
         if resolver_name:
             method = getattr(self, resolver_name)
+            if resolver_name == "use_sha":
+                return await method(player, card, targets[0] if targets else None,
+                                    effect_context=effect_context)
             if resolver_name in ("use_tiesuo", "use_jiedao"):
                 return await method(player, card, targets if targets else [])
             # 无显式目标的牌（桃/酒/无中生有等，NO_EXTERNAL_TARGET）不传 target 参数；其余单目标。
@@ -104,7 +114,7 @@ class CardSystem:
         logger.info(f"未实现的卡牌: {card.name}")
         return False
     
-    async def use_sha(self, player, card: Card, target):
+    async def use_sha(self, player, card: Card, target, *, effect_context=None):
         """使用杀（完整流程）"""
         if not target:
             logger.info("杀需要指定目标")
@@ -128,6 +138,11 @@ class CardSystem:
         target = await self.trigger_manager.before_card_target(player, target, card)
         if not target:
             return False
+        if effect_context is None and self.engine is not None:
+            effect_context = self.engine._new_effect_context(player, card, target=target)
+        if effect_context is not None:
+            effect_context.current_target_id = target.id
+            effect_context.damage_nature = card.nature or card.effect
         event = {
             'name': 'useCard',
             'card': card,
@@ -135,7 +150,8 @@ class CardSystem:
             'target': target,
             'baseDamage': 1,
             'shanRequired': 1,
-            'nature': card.effect if hasattr(card, 'nature') else None
+            'nature': card.nature or card.effect,
+            'effect_context': effect_context,
         }
         
         # 5. 技能修正目标、响应数和伤害后执行杀的效果
@@ -174,6 +190,8 @@ class CardSystem:
                 requested_name='闪',
                 context={'source': player, 'target': target, 'card': event['card']}
             )
+            if self.engine is not None and self.engine.game_aborted:
+                return False
             
             if result and result.get('bool'):
                 response_card = result.get('card')
@@ -212,6 +230,12 @@ class CardSystem:
         else:
             # 造成伤害
         #     logger.info(f"  ✗ 造成 {base_damage} 点伤害")
+            effect_context = event.get("effect_context")
+            if effect_context is not None:
+                effect_context.current_target_id = target.id
+                effect_context.next_sequence()
+                event["sequence"] = effect_context.sequence
+                event["effect"] = effect_context.to_dict()
             await self.damage(player, target, base_damage, card=event['card'], context=event)
             return True
     
@@ -332,10 +356,9 @@ class CardSystem:
             player, target, f"【过河拆桥】：请选择弃置{target.name}的一张牌",
             reason="过河拆桥", exclude_protected=True,
         )
+        if self.engine is not None and self.engine.game_aborted:
+            return False
         if chosen is None:
-            if self.engine is not None and self.engine.game_aborted:
-                logger.info("  → 对局已收摊，过河拆桥不再结算")
-                return False
             chosen = self._fallback_region_card(target)
         if chosen is None:
             logger.info("目标没有可弃置的牌")
@@ -373,10 +396,9 @@ class CardSystem:
         chosen = await self._choose_region_card(
             player, target, f"【顺手牵羊】：请选择获得{target.name}的一张牌", reason="顺手牵羊",
         )
+        if self.engine is not None and self.engine.game_aborted:
+            return False
         if chosen is None:
-            if self.engine is not None and self.engine.game_aborted:
-                logger.info("  → 对局已收摊，顺手牵羊不再结算")
-                return False
             chosen = self._fallback_region_card(target)
         if chosen is None:
             return False
@@ -433,6 +455,7 @@ class CardSystem:
             options.append({
                 "card": card, "card_index": card_index, "owner": owner,
                 "as_name": as_name, "skill_name": option.get("skill_name"),
+                "hidden": owner is not player,
             })
 
         if not options:
@@ -517,6 +540,8 @@ class CardSystem:
 
     async def damage(self, source, target, amount: int, card=None, context=None):
         """造成伤害"""
+        if (self.engine is not None and self.engine.game_aborted) or not target.alive:
+            return
         damage_info = {
             'source': source,
             'target': target,
@@ -526,6 +551,8 @@ class CardSystem:
         
         # 技能可修正伤害值。
         amount = await self.trigger_manager.modify_damage(source, target, amount, card, context)
+        if self.engine is not None and self.engine.game_aborted:
+            return
         damage_info['amount'] = amount
         # 造成伤害
         if not damage_info['prevented'] and amount > 0:
@@ -538,6 +565,8 @@ class CardSystem:
             logger.info(f"  → {target.name} 体力: {target.hp}/{target.max_hp}")
             
             await self.trigger_manager.after_damage(source, target, amount, card, context)
+            if self.engine is not None and self.engine.game_aborted:
+                return
             
             # 检查濒死
             if target.hp <= 0:
@@ -545,8 +574,12 @@ class CardSystem:
     
     async def enter_dying(self, player):
         """濒死求桃：按座次逐个询问存活角色，每人都可以拒绝。"""
+        if self.engine is not None and self.engine.game_aborted:
+            return
         logger.info(f"  ⚠️ {player.name} 进入濒死状态！HP:{player.hp}")
         while player.hp <= 0:
+            if self.engine is not None and self.engine.game_aborted:
+                return
             rescued = False
             rescuers = [player] + [p for p in self.game_state.players if p.alive and p is not player]
             for rescuer in rescuers:
@@ -561,6 +594,8 @@ class CardSystem:
                     context={'target': player, 'source': rescuer},
                     kind='dying',
                 )
+                if self.engine is not None and self.engine.game_aborted:
+                    return
                 if not (result and result.get('bool')):
                     continue
                 card = result.get('card')
@@ -586,6 +621,8 @@ class CardSystem:
             if not rescued:
                 break
         if player.hp <= 0:
+            if self.engine is not None and self.engine.game_aborted:
+                return
             player.alive = False
             player.identity_revealed = True
             killer_id = pop_kill_credit(self.game_state, player)
@@ -680,6 +717,8 @@ class CardSystem:
                 requested_name="杀",
                 context={"source": other, "target": current, "card": card},
             )
+            if self.engine is not None and self.engine.game_aborted:
+                return False
             if not (result and result.get("bool")):
                 await self.damage(other, current, 1, card=card, context={"reason": "决斗"})
                 return True
@@ -707,6 +746,8 @@ class CardSystem:
                 requested_name="杀",
                 context={"source": player, "target": victim, "card": card},
             )
+            if self.engine is not None and self.engine.game_aborted:
+                return False
             if result and result.get("bool"):
                 response = result.get("card")
                 owner = result.get("owner") or victim
@@ -734,6 +775,8 @@ class CardSystem:
                 requested_name="闪",
                 context={"source": player, "target": victim, "card": card},
             )
+            if self.engine is not None and self.engine.game_aborted:
+                return False
             if result and result.get("bool"):
                 response = result.get("card")
                 owner = result.get("owner") or victim

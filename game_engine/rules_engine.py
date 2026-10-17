@@ -105,7 +105,7 @@ class RulesEngine:
         if target == player:
             return False, "不能对自己使用"
         
-        if not target.hand and not target.equipment:
+        if not target.hand and not target.equipment and not target.judge_area:
             return False, "目标没有牌"
         
         return True, "OK"
@@ -131,7 +131,7 @@ class RulesEngine:
         if distance > 1 and not has_qicai:
             return False, f"距离太远：{distance} > 1"
         
-        if not target.hand and not target.equipment:
+        if not target.hand and not target.equipment and not target.judge_area:
             return False, "目标没有牌"
         
         return True, "OK"

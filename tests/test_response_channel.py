@@ -102,10 +102,11 @@ class ResponseChannelTest(unittest.TestCase):
             task = asyncio.create_task(self.engine.request_response(self.human, request))
             await asyncio.sleep(0)
             rid = self.emitted[0]["request_id"]
-            self.assertTrue(self.engine.submit_response(rid, 99))
+            self.assertFalse(self.engine.submit_response(rid, 99))
+            self.assertTrue(self.engine.submit_response(rid, 1))
             result = await task
             self.assertFalse(result["bool"])
-            print("illegal_index: 索引99 -> bool=False OK")
+            print("illegal_index: 索引99被拒后可改选不响应 OK")
 
         asyncio.run(scenario())
 

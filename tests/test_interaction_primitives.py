@@ -47,7 +47,7 @@ class AskConfirmTest(unittest.TestCase):
             )
             await asyncio.sleep(0)
             req_id = emitted["request_id"]
-            self.engine.submit_response(req_id, [0])
+            self.assertTrue(self.engine.submit_response(req_id, 0))
             result = await task2
             self.assertTrue(result)
             task.cancel()
@@ -64,7 +64,7 @@ class AskConfirmTest(unittest.TestCase):
             )
             await asyncio.sleep(0)
             req_id = emitted[-1]["request_id"]
-            self.engine.submit_response(req_id, [1])
+            self.assertTrue(self.engine.submit_response(req_id, 1))
             result = await task
             self.assertFalse(result)
         asyncio.run(scenario())
