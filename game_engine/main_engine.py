@@ -1698,15 +1698,20 @@ class MainEngine:
         request = self._pending_request_specs[request_id]
         if player_id != request.get("player_id", 0):
             return receipt("invalid", "此请求不属于该玩家")
-        if isinstance(selection, dict) and selection.get("cancel") is True:
+        kind = request.get("kind", "respond")
+        is_multi = kind in ("choose_cards", "choose_players") and request.get("max_n", 1) > 1
+        # 显式取消；另外兼容旧前端：可取消的单选请求收到空数组也视为取消
+        # （此前会被当成"需要单个整数索引"，界面上表现为取消时报参数错误）。
+        wants_cancel = (isinstance(selection, dict) and selection.get("cancel") is True) or (
+            not is_multi and isinstance(selection, list) and not selection
+            and request.get("cancelable", True))
+        if wants_cancel:
             if not request.get("cancelable", True):
                 return receipt("invalid", "此请求不可取消")
             self._note_human_input()
             future.set_result({"cancel": True})
             self._request_outcomes[request_id] = "accepted"
             return receipt("accepted", "已接收取消")
-        kind = request.get("kind", "respond")
-        is_multi = kind in ("choose_cards", "choose_players") and request.get("max_n", 1) > 1
         if is_multi:
             if not isinstance(selection, list):
                 return receipt("invalid", "此请求需要索引数组")
