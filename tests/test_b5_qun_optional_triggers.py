@@ -176,3 +176,32 @@ def test_biyue_decline_skips_optional_end_phase_draw():
 
     engine.skill_manager.draw_cards.assert_not_awaited()
     engine.skill_manager.ask_confirm.assert_awaited_once()
+
+
+def test_biyue_accepts_and_draws_two_when_hand_is_empty():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = handler_for(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, skill: skill == "闭月"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    run(handler.after_phase(player, Phase.END))
+
+    engine.skill_manager.draw_cards.assert_awaited_once_with(player, 2, "闭月")
+
+
+def test_biyue_draws_one_when_hand_is_not_empty():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = handler_for(engine)
+    player = engine.game_state.players[0]
+    player.hand.append(card("b5_biyue_hand", "闪"))
+    handler.has = lambda p, skill: skill == "闭月"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    run(handler.after_phase(player, Phase.END))
+
+    engine.skill_manager.draw_cards.assert_awaited_once_with(player, 1, "闭月")

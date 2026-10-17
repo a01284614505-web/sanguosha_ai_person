@@ -189,3 +189,113 @@ def test_rende_virtual_card_rejects_stale_target_without_spending_once_per_turn_
     assert asyncio.run(engine.skill_manager.handlers[0].execute(owner, action, [])) is False
     assert owner.flags["rende_basic_available"] is True
     assert not owner.flags.get("rende_basic_used")
+
+
+def test_rende_gifts_two_distinct_players_before_virtual_card_becomes_available():
+    engine = engine_for("liubei")
+    owner, first, second = engine.game_state.players[:3]
+    first_card = Card("rende_first", "杀", "club", 3, "basic")
+    second_card = Card("rende_second", "闪", "diamond", 4, "basic")
+    owner.hand.extend([first_card, second_card])
+    handler = engine.skill_manager.handlers[0]
+    give = {"skill_name": "仁德", "variant": "give", "card_indices": [0]}
+    assert asyncio.run(handler.execute(owner, give, [first])) is True
+    assert first_card in first.hand
+    assert owner.flags["rende_count"] == 1
+    assert first.id not in handler.get_actions(owner)[0]["valid_targets"]
+    assert asyncio.run(handler.execute(owner, give, [second])) is True
+    assert second_card in second.hand
+    assert owner.flags["rende_basic_available"] is True
+
+
+def test_tieqi_target_may_give_matching_card_to_avoid_extra_damage():
+    engine = engine_for("machao")
+    source, target = engine.game_state.players[:2]
+    handler = engine.skill_manager.handlers[0]
+    matching = Card("tieqi_match", "闪", "heart", 5, "basic")
+    target.hand.append(matching)
+    handler.manager.judge = AsyncMock(return_value=Card("tieqi_judge", "杀", "heart", 8, "basic"))
+    engine.ask_confirm = AsyncMock(return_value=True)
+    engine.ask_choose_cards = AsyncMock(return_value=[matching])
+    event = {"shanRequired": 1, "baseDamage": 1}
+    asyncio.run(handler.before_sha(source, target, Card("tieqi_sha", "杀", "spade", 7, "basic"), event))
+    assert matching in source.hand and matching not in target.hand
+    assert event == {"shanRequired": 1, "baseDamage": 1}
+    assert target.flags["nonlocked_disabled"] is True
+
+
+def test_jizhi_accept_draws_and_optional_basic_discard_increases_hand_limit():
+    engine = engine_for("huangyueying")
+    owner = engine.game_state.players[0]
+    handler = engine.skill_manager.handlers[0]
+    top = Card("jizhi_top", "闪", "diamond", 6, "basic")
+    engine.game_state.deck.insert(0, top)
+    engine.ask_confirm = AsyncMock(side_effect=[True, True])
+    asyncio.run(handler.after_card_used(owner, Card("jizhi_trick", "无中生有", "heart", 7, "trick"), [], True))
+    assert top in engine.game_state.discard_pile
+    assert top not in owner.hand
+    assert owner.flags["hand_limit_bonus"] == 1
+
+
+def test_wusheng_and_longdan_offer_only_valid_conversion_cards():
+    wusheng = engine_for("guanyu")
+    owner = wusheng.game_state.players[0]
+    red = Card("wusheng_red", "桃", "heart", 3, "basic")
+    black = Card("wusheng_black", "桃", "spade", 4, "basic")
+    owner.hand.extend([red, black])
+    options = wusheng.skill_manager.handlers[0].response_options(owner, "杀")
+    assert [option["card"] for option in options if option["skill_name"] == "武圣"] == [red]
+
+    longdan = engine_for("zhaoyun")
+    owner = longdan.game_state.players[0]
+    sha = Card("longdan_sha", "杀", "club", 5, "basic")
+    shan = Card("longdan_shan", "闪", "diamond", 6, "basic")
+    tao = Card("longdan_tao", "桃", "heart", 7, "basic")
+    wine = Card("longdan_wine", "酒", "spade", 8, "basic")
+    owner.hand.extend([sha, shan, tao, wine])
+    handler = longdan.skill_manager.handlers[0]
+    assert [option["card"] for option in handler.response_options(owner, "闪")] == [sha]
+    assert [option["card"] for option in handler.response_options(owner, "杀")] == [shan]
+    assert [option["card"] for option in handler.response_options(owner, "桃")] == [wine]
+    assert [option["card"] for option in handler.response_options(owner, "酒")] == [tao]
+
+
+def test_paoxiao_dodges_accumulate_damage_then_spend_tokens():
+    engine = engine_for("zhangfei")
+    owner, target = engine.game_state.players[:2]
+    handler = engine.skill_manager.handlers[0]
+    sha = Card("paoxiao_sha", "杀", "spade", 9, "basic")
+    asyncio.run(handler.on_turn_start(owner))
+    assert owner.max_sha == 999
+    asyncio.run(handler.on_sha_dodged(owner, target, sha, {}))
+    asyncio.run(handler.on_sha_dodged(owner, target, sha, {}))
+    assert asyncio.run(handler.modify_damage(owner, target, 1, sha)) == 3
+    assert owner.flags.get("pao_tokens", 0) == 0
+    assert asyncio.run(handler.modify_damage(owner, target, 1, sha)) == 1
+
+
+def test_kongcheng_mashu_and_qicai_passive_boundaries():
+    kongcheng = engine_for("zhugeliang")
+    owner, attacker = kongcheng.game_state.players[:2]
+    handler = kongcheng.skill_manager.handlers[0]
+    assert handler.can_target(attacker, owner, "杀")
+    assert handler.can_target(attacker, owner, "决斗")
+    assert handler.can_target(attacker, owner, "火攻") is None
+    owner.hand.append(Card("kongcheng_card", "桃", "heart", 1, "basic"))
+    assert handler.can_target(attacker, owner, "杀") is None
+
+    mashu = engine_for("machao")
+    assert mashu.skill_manager.handlers[0].modify_distance(mashu.game_state.players[0],
+                                                             mashu.game_state.players[1], 2) == 1
+
+    qicai = engine_for("huangyueying")
+    owner = qicai.game_state.players[0]
+    armor = Card("qicai_armor", "八卦阵", "club", 2, "equipment")
+    handler = qicai.skill_manager.handlers[0]
+    assert handler.protect_card(owner, armor, "other_discard_equipment") is True
+    assert handler.protect_card(owner, armor, "discard") is False
+    grain = Card("qicai_grain", "兵粮寸断", "spade", 10, "trick")
+    owner.hand.append(grain)
+    qicai.game_state.current_phase = Phase.PLAY
+    assert qicai.game_state.get_distance(owner, qicai.game_state.players[2]) > 1
+    assert qicai.rules.can_play_card(owner, grain, [qicai.game_state.players[2]])[0] is True

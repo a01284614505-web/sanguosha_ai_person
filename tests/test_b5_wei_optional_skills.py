@@ -318,3 +318,78 @@ def test_yiji_decline_does_not_draw_or_ask_distribution_targets():
 
     engine.skill_manager.draw_cards.assert_not_awaited()
     engine.skill_manager.ask_choose_players.assert_not_awaited()
+
+
+def test_fankui_can_decline_without_touching_sources_cards():
+    engine = game()
+    handler = get_wei(engine)
+    source, target = engine.game_state.players[:2]
+    source_card = card("b5_fankui_decline", "桃", "heart")
+    source.hand.append(source_card)
+    handler.has = lambda p, skill: p is target and skill == "反馈"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=False)
+
+    run(handler.after_damage(source, target, 1))
+
+    assert source.hand == [source_card]
+    assert target.hand == []
+
+
+def test_tiandu_can_claim_the_resolved_judgment_card():
+    engine = game()
+    handler = get_wei(engine)
+    player = engine.game_state.players[0]
+    judged = card("b5_tiandu_claim", "闪", "heart")
+    handler.has = lambda p, skill: p is player and skill == "天妒"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+
+    claimed = run(handler.after_judge(player, judged, {"reason": "test"}))
+
+    assert claimed is True
+    assert judged in player.hand
+
+
+def test_luoshen_takes_consecutive_black_judgments_then_stops_on_red():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = get_wei(engine)
+    player = engine.game_state.players[0]
+    black1 = card("b5_luoshen_black1", "杀", "spade")
+    black2 = card("b5_luoshen_black2", "闪", "club")
+    red = card("b5_luoshen_red", "桃", "heart")
+    following = card("b5_luoshen_following", "杀", "diamond")
+    engine.game_state.deck = [black1, black2, red, following]
+    handler.has = lambda p, skill: p is player and skill == "洛神"
+
+    run(handler.before_phase(player, Phase.PREPARE))
+
+    assert player.hand == [black1, black2]
+    assert engine.game_state.discard_pile[-1] is red
+    assert engine.game_state.deck == [following]
+    assert player.flags["luoshen_exempt"] == 2
+
+
+def test_luoshen_with_empty_deck_does_not_add_exemption():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = get_wei(engine)
+    player = engine.game_state.players[0]
+    engine.game_state.deck.clear()
+    handler.has = lambda p, skill: p is player and skill == "洛神"
+
+    run(handler.before_phase(player, Phase.PREPARE))
+
+    assert player.hand == []
+    assert "luoshen_exempt" not in player.flags
+
+
+def test_fankui_with_source_without_cards_does_not_prompt():
+    engine = game()
+    handler = get_wei(engine)
+    source, target = engine.game_state.players[:2]
+    handler.has = lambda p, skill: p is target and skill == "反馈"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+
+    run(handler.after_damage(source, target, 1))
+
+    engine.skill_manager.ask_confirm.assert_not_awaited()

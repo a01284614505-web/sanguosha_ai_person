@@ -975,6 +975,9 @@ class CardSystem:
         if not target or target == player:
             logger.info(f"{card.name}需要指定其他角色")
             return False
+        if any(existing.name == card.name for existing in target.judge_area):
+            logger.info(f"{target.name}判定区已有【{card.name}】")
+            return False
 
         # 放入目标判定区
         if not hasattr(target, 'judge_area'):
@@ -1115,8 +1118,11 @@ class CardSystem:
         targets = await self.trigger_manager.before_multi_target_trick(source, card, targets)
         effect_context = self._effect_context(source, card, existing=effect_context)
         for victim in list(targets):
-            if self.engine is not None and self.engine.game_aborted:
-                return False
+            if self.engine is not None:
+                if self.engine._abort_reason:
+                    return False
+                if self.game_state.game_over:
+                    return True
             if not victim.alive:
                 continue
             # 藤甲令南蛮与万箭对该目标无效，无需索取响应牌。
@@ -1129,16 +1135,22 @@ class CardSystem:
                 if effect_context is not None:
                     effect_context.cancel_target(victim.id)
                 continue
-            if self.engine is not None and self.engine.game_aborted:
-                return False
+            if self.engine is not None:
+                if self.engine._abort_reason:
+                    return False
+                if self.game_state.game_over:
+                    return True
             result = await self.choose_to_respond(
                 victim, f"【{card.name}】：请打出一张【{requested_name}】",
                 card_filter=lambda c: c.name == requested_name,
                 requested_name=requested_name,
                 context={"source": source, "target": victim, "card": card},
             )
-            if self.engine is not None and self.engine.game_aborted:
-                return False
+            if self.engine is not None:
+                if self.engine._abort_reason:
+                    return False
+                if self.game_state.game_over:
+                    return True
             context = {"source": source, "target": victim, "card": card,
                        "effect_context": effect_context}
             if await self._consume_response(victim, result, card.name, context):

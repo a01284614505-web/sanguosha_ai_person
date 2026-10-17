@@ -197,3 +197,147 @@ def test_qinxue_choice_is_asked_after_forced_awakening():
     assert player.max_hp == 3
     engine.skill_manager.ask_choose_option.assert_awaited_once()
     engine.skill_manager.draw_cards.assert_awaited_once_with(player, 2, "勤学")
+
+
+def test_keji_accepts_when_no_sha_and_does_not_prompt_after_sha_use():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = get_wu(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, name: name == "克己"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+
+    result = run(handler.before_phase(player, Phase.DISCARD))
+    assert result == {"skip_default": True}
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+
+    engine.skill_manager.ask_confirm.reset_mock()
+    player.flags["sha_used_this_turn"] = True
+    result = run(handler.before_phase(player, Phase.DISCARD))
+    assert result is None
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+
+
+def test_botu_accepts_eligible_end_turn_and_respects_round_cap():
+    from game_engine.state_manager import Phase
+    engine = game()
+    handler = get_wu(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, name: name == "博图"
+    player.flags["turn_discard_suits"] = {"spade", "club", "heart", "diamond"}
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+
+    run(handler.after_phase(player, Phase.END))
+    assert player.flags["extra_turn"] is True
+    assert player.flags[f"botu_round_{engine.game_state.round_number}"] == 1
+
+    player.flags[f"botu_round_{engine.game_state.round_number}"] = 3
+    engine.skill_manager.ask_confirm.reset_mock()
+    player.flags.pop("extra_turn", None)
+    run(handler.after_phase(player, Phase.END))
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+    assert not player.flags.get("extra_turn")
+
+
+def test_lianying_selects_exact_recipients_after_confirmation():
+    engine = game()
+    handler = get_wu(engine)
+    player, recipient = engine.game_state.players[:2]
+    handler.has = lambda p, name: name == "连营" and p is player
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.ask_choose_players = AsyncMock(return_value=[recipient])
+    engine.skill_manager.draw_cards = AsyncMock(return_value=[])
+
+    run(handler.on_cards_lost(player, [card("b5_lianying_accept", "闪")]))
+
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+    engine.skill_manager.ask_choose_players.assert_awaited_once()
+    engine.skill_manager.draw_cards.assert_awaited_once_with(recipient, 1, "连营")
+
+
+def test_qinxue_can_choose_recovery_after_forced_awakening():
+    engine = game()
+    handler = get_wu(engine)
+    player = engine.game_state.players[0]
+    handler.has = lambda p, name: name == "勤学"
+    player.hand = [card(f"b5_qinxue_recover_{i}", "杀") for i in range(6)]
+    player.hp = 2
+    engine.skill_manager.ask_choose_option = AsyncMock(return_value={"key": "recover"})
+    engine.skill_manager.recover = AsyncMock(return_value=1)
+
+    run(handler._try_qinxue(player))
+
+    engine.skill_manager.recover.assert_awaited_once_with(player, 1, player, "勤学")
+    engine.skill_manager.ask_choose_option.assert_awaited_once()
+
+
+def test_jiuyuan_can_decline_recovery_transfer_and_preserve_normal_recovery():
+    engine = game()
+    handler = get_wu(engine)
+    target, lord = engine.game_state.players[:2]
+    target.identity = "rebel"
+    target.hero = {"faction": "wu"}
+    target.hp = 2
+    lord.identity = "lord"
+    lord.hp = 1
+    lord.max_hp = 4
+    engine.game_state.current_player = target
+    handler.has = lambda p, name: p is lord and name == "救援"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=False)
+    engine.skill_manager.draw_cards = AsyncMock()
+
+    run(handler.on_recover(target, 1, target, "test"))
+
+    assert target.hp == 2
+    assert lord.hp == 1
+    engine.skill_manager.draw_cards.assert_not_awaited()
+
+
+def test_liuli_decline_preserves_cost_card_and_original_target():
+    engine = game()
+    handler = get_wu(engine)
+    source, target = engine.game_state.players[:2]
+    cost = card("b5_liuli_decline", "闪", "club")
+    target.hand.append(cost)
+    handler.has = lambda p, name: name == "流离" and p is target
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=False)
+
+    result = run(handler.before_card_target(source, target, card("b5_liuli_incoming", "杀")))
+
+    assert result is target
+    assert target.hand == [cost]
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+
+
+def test_liuli_without_an_alternative_target_does_not_prompt():
+    engine = game()
+    handler = get_wu(engine)
+    source, target = engine.game_state.players[:2]
+    target.hand.append(card("b5_liuli_no_alt", "闪"))
+    handler.has = lambda p, name: name == "流离" and p is target
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+    engine.skill_manager.modify_distance = lambda _p, _t, _d: 10
+
+    result = run(handler.before_card_target(source, target, card("b5_liuli_sha_no_alt", "杀")))
+
+    assert result is target
+    engine.skill_manager.ask_confirm.assert_not_awaited()
+    assert len(target.hand) == 1
+
+
+def test_jiuyuan_ineligible_recovery_does_not_prompt():
+    engine = game()
+    handler = get_wu(engine)
+    target, lord = engine.game_state.players[:2]
+    target.identity = "rebel"
+    target.hero = {"faction": "wu"}
+    target.hp = 2
+    lord.identity = "lord"
+    lord.hp = lord.max_hp = 4
+    engine.game_state.current_player = target
+    handler.has = lambda p, name: p is lord and name == "救援"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=True)
+
+    run(handler.on_recover(target, 1, target, "test"))
+
+    engine.skill_manager.ask_confirm.assert_not_awaited()

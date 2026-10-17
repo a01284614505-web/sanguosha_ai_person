@@ -112,6 +112,36 @@ class RulesEngine:
             return False, "本回合已经使用过酒"
         return True, "OK"
 
+    def _can_play_delayed_trick(self, player, card, targets: List) -> Tuple[bool, str]:
+        if not targets or len(targets) != 1:
+            return False, "延时锦囊需要指定一名目标"
+        target = targets[0]
+        if target is player or not target.alive:
+            return False, "延时锦囊目标必须是存活的其他角色"
+        if any(existing.name == card.name for existing in target.judge_area):
+            return False, "目标判定区已有同名延时锦囊"
+        return True, "OK"
+
+    def can_play_lebu(self, player, card, targets: List) -> Tuple[bool, str]:
+        return self._can_play_delayed_trick(player, card, targets)
+
+    def can_play_bingliang(self, player, card, targets: List) -> Tuple[bool, str]:
+        legal, reason = self._can_play_delayed_trick(player, card, targets)
+        if not legal:
+            return legal, reason
+        distance = self.get_distance(player, targets[0])
+        if self.skill_manager:
+            distance = self.skill_manager.modify_distance(player, targets[0], distance)
+        has_qicai = bool(self.skill_manager and self.skill_manager.has_skill(player, "奇才"))
+        if distance > 1 and not has_qicai:
+            return False, f"兵粮寸断目标距离太远：{distance} > 1"
+        return True, "OK"
+
+    def can_play_shandian(self, player, card) -> Tuple[bool, str]:
+        if any(existing.name == "闪电" for existing in player.judge_area):
+            return False, "判定区已有闪电"
+        return True, "OK"
+
     def can_play_huogong(self, player, card, targets: List) -> Tuple[bool, str]:
         if not targets or len(targets) != 1:
             return False, "火攻需要指定一名目标"

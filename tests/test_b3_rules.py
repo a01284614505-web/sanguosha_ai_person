@@ -32,6 +32,45 @@ def card(tag, name, nature=None):
     return Card(tag, name, "spade", 5, "trick", nature=nature)
 
 
+def test_delayed_trick_legality_rejects_existing_same_name_before_play():
+    engine = game()
+    source, target = engine.game_state.players[:2]
+    engine.game_state.current_player = source
+    engine.game_state.current_phase = Phase.PLAY
+    lightning = card("b3_lightning_second", "闪电")
+    source.hand.append(lightning)
+    source.judge_area.append(card("b3_lightning_first", "闪电"))
+    assert engine.rules.can_play_card(source, lightning, [])[0] is False
+    assert all(action.get("card", {}).get("name") != "闪电"
+               for action in engine.get_available_actions(source))
+
+    delayed = card("b3_lebu_second", "乐不思蜀")
+    source.hand.append(delayed)
+    target.judge_area.append(card("b3_lebu_first", "乐不思蜀"))
+    assert engine.rules.can_play_card(source, delayed, [target])[0] is False
+    assert engine.rules.can_play_card(source, delayed, [engine.game_state.players[2]])[0] is True
+
+    grain = card("b3_bingliang", "兵粮寸断")
+    source.hand.append(grain)
+    assert engine.rules.can_play_card(source, grain, [target])[0] is True
+    assert engine.rules.can_play_card(source, grain, [engine.game_state.players[2]])[0] is False
+
+
+def test_group_attack_that_kills_lord_reports_success_and_stops_remaining_targets():
+    engine = game()
+    lord, loyalist, _other_rebel, source, spy = engine.game_state.players
+    spy.alive = False
+    lord.hp = 1
+    engine.card_system.ask_wuxie = AsyncMock(return_value=False)
+    engine.card_system.choose_to_respond = AsyncMock(return_value={"bool": False})
+    attack = card("b3_nanman_win", "南蛮入侵")
+
+    assert run(engine.card_system.use_nanman(source, attack)) is True
+    assert engine.game_state.game_over is True
+    assert engine.game_state.winner == "rebel"
+    assert loyalist.hp == loyalist.max_hp
+
+
 def test_delayed_wuxie_occurs_before_judgment_and_preserves_deck():
     engine = game()
     source, target = engine.game_state.players[:2]

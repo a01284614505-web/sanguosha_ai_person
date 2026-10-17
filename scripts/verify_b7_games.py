@@ -15,6 +15,12 @@ from game_engine import MainEngine
 DECKS = {"standard": 108, "extra": 53, "combined": 161}
 HEROES = ("liubei", "guanyu", "zhangfei", "zhugeliang", "zhaoyun",
           "machao", "huangyueying")
+AI_HEROES = {
+    "wei": ("caocao", "simayi", "xiahoudun", "zhangliao", "xuchu", "guojia", "zhenji"),
+    "shu": HEROES,
+    "wu": ("sunquan", "ganning", "lvmeng", "huanggai", "zhouyu", "daqiao", "luxun"),
+    "qun": ("huatuo", "lvbu", "diaochan", "huaxiong", "yuanshao", "zhangjiao"),
+}
 IDENTITIES = ("lord", "loyalist", "rebel", "spy")
 
 
@@ -34,10 +40,19 @@ async def one_game(deck_id, index):
     seed = 20261017 + index * 103 + list(DECKS).index(deck_id) * 1009
     random.seed(seed)
     identity = IDENTITIES[index % len(IDENTITIES)]
+    game_index = list(DECKS).index(deck_id) * 10 + index
+    selected_hero = HEROES[index % len(HEROES)]
+    ai_heroes = []
+    for faction, pool in AI_HEROES.items():
+        position = (game_index + (1 if faction == "shu" else 0)) % len(pool)
+        if pool[position] == selected_hero:
+            position = (position + 1) % len(pool)
+        ai_heroes.append(pool[position])
     config = MainEngine.normalize_config({
         "mode": "5人身份局",
-        "selected_hero": {"id": HEROES[index % len(HEROES)]},
-        "ais": [{"name": f"AI{seat}", "api_key": ""} for seat in range(1, 5)],
+        "selected_hero": {"id": selected_hero},
+        "ais": [{"name": f"AI{seat}", "api_key": "", "hero": {"id": hero_id}}
+                for seat, hero_id in enumerate(ai_heroes, start=1)],
         "identity_card": {"use": True, "identity": identity},
         "deck_id": deck_id,
         "max_turns": 120,
@@ -45,6 +60,9 @@ async def one_game(deck_id, index):
         "turn_delay": 0,
     })
     engine = MainEngine(config)
+    actual_ai_heroes = [p.hero.get("id") for p in engine.game_state.players[1:]]
+    if actual_ai_heroes != ai_heroes:
+        raise AssertionError(f"{deck_id}/{index}: AI hero configuration changed: {actual_ai_heroes!r}")
     engine.set_trustee(True, source="rules")
     game_ends = []
     invalid_actions = []
@@ -76,7 +94,7 @@ async def one_game(deck_id, index):
     if invalid_actions:
         raise AssertionError(f"{deck_id}/{index}: illegal actions {invalid_actions!r}")
     return {"deck": deck_id, "seed": seed, "identity": identity,
-            "hero": HEROES[index % len(HEROES)], "winner": winner,
+            "hero": selected_hero, "ai_heroes": actual_ai_heroes, "winner": winner,
             "turns": engine.completed_turns, "card_count": len(ids),
             "declined_skills": len(declined_skills)}
 
@@ -87,9 +105,14 @@ async def main():
     for deck_id in DECKS:
         for index in range(10):
             results.append(await one_game(deck_id, index))
+    covered_heroes = {hero for result in results for hero in result["ai_heroes"]}
+    expected_heroes = {hero for pool in AI_HEROES.values() for hero in pool}
+    if covered_heroes != expected_heroes:
+        raise AssertionError(f"AI hero coverage incomplete: {sorted(expected_heroes - covered_heroes)}")
     print(json.dumps({"games": len(results), "normal": sum(r["winner"] != "draw" for r in results),
                       "draw": sum(r["winner"] == "draw" for r in results),
                       "declined_skills": sum(r["declined_skills"] for r in results),
+                      "ai_heroes_covered": len(covered_heroes),
                       "results": results}, ensure_ascii=False, indent=2))
 
 
