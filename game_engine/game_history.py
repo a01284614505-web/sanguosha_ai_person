@@ -135,7 +135,10 @@ class GameHistoryStore:
             profile = data["profiles"].setdefault(profile_id, _empty_profile())
             profile["total_games"] += 1
             reward = None
-            if player_won is True:
+            cheat = payload.get("cheat") is True
+            if cheat:
+                pass  # 作弊局：照常记入历史，但不影响连胜与身份卡
+            elif player_won is True:
                 profile["win_streak"] += 1
                 if profile["win_streak"] % 2 == 0:
                     profile["identity_cards"] += 1
@@ -157,11 +160,12 @@ class GameHistoryStore:
                 "rounds": self._round_of(payload),
                 "stats": (human or {}).get("stats") or {},
                 "status": "interrupted" if winner == "aborted" else "completed",
+                "cheat": cheat,
             }
             profile["history"].insert(0, record)
             profile["history"] = profile["history"][:100]
             receipt = {"profile": dict(profile), "reward": reward, "player_won": player_won,
-                       "player_identity": identity}
+                       "player_identity": identity, "cheat": cheat}
             data["games"][game_id] = {"profile_id": profile_id, "receipt": receipt}
             self._save(data)
             return dict(receipt)

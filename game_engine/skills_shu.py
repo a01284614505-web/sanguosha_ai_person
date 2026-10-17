@@ -228,7 +228,7 @@ class ShuSkillHandler(FactionSkillHandler):
             shown = shown_cards[0]
             if shown not in target.hand:
                 return True
-            await self.manager.announce(player, "义绝", f"{target.name}因【义绝】展示{shown.suit}{shown.rank}【{shown.name}】")
+            await self.manager.announce(player, "义绝", f"{target.name}因【义绝】展示" + {"spade": "♠", "heart": "♥", "club": "♣", "diamond": "♦"}.get(shown.suit, "") + f"{shown.rank}【{shown.name}】")
             if card_color(shown) == "black":
                 flags = ensure_flags(target)
                 flags["cannot_use_hand"] = True

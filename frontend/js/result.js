@@ -24,6 +24,7 @@
         document.getElementById('resultSubtitle').textContent = decided
             ? SGS.WINNER[r.winner] + '获胜'
             : (r.message || '本局已结束');
+        if (r.cheat) document.getElementById('resultSubtitle').textContent += '（作弊局，不计连胜与身份卡）';
         document.getElementById('totalRounds').textContent = r.total_rounds || 0;
         document.getElementById('gameDuration').textContent = formatDuration(r.duration);
         document.getElementById('yourIdentity').textContent = identityName(r.player_identity);
@@ -72,7 +73,7 @@
                     '<td><div class="who"><div class="mini-portrait">' + SGS.heroImgHTML(hero.id, hero.name || p.hero_name) + '</div>' +
                     '<div><b>' + esc(p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b><small>' + esc(p.hero_name || '') + (p.alive ? '' : ' · 阵亡') + '</small></div></div></td>' +
                     '<td>' + SGS.identitySeal(p.identity) + '</td>' +
-                    cols.map(c => '<td>' + (s[c[0]] || 0) + '</td>').join('') + '</tr>';
+                    cols.map(c => '<td data-label="' + c[1] + '">' + (s[c[0]] || 0) + '</td>').join('') + '</tr>';
             }).join('') + '</tbody></table>';
     }
 
@@ -92,4 +93,10 @@
         location.href = cfg && Array.isArray(cfg.ais) ? 'select_hero.html' : 'index.html';
     });
     document.getElementById('backToLobbyBtn').addEventListener('click', () => { location.href = 'index.html'; });
+    // 本局日志（服务端自动保存；无痕模式时没有）。
+    const logBtn = document.getElementById('viewLogBtn');
+    if (logBtn) {
+        if (result.game_id && result.log_saved) logBtn.href = 'logs.html?game=' + encodeURIComponent(result.game_id);
+        else logBtn.hidden = true;
+    }
 })();

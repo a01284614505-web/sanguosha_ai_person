@@ -6,6 +6,7 @@ logs/runtime/*.log
 logs/runtime/*.err
 logs/runtime/*.jsonl
 logs/runtime/game_history.json
+logs/runtime/game_logs/
 logs/*.pid
 data/deck_settings.json
 *.backup*

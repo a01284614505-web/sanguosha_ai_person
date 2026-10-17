@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#17110c">
     <title>三国杀酒馆 · 大厅</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
-    <link rel="stylesheet" href="css/sgs.css?v=20261017c">
-    <link rel="stylesheet" href="css/pages.css?v=20261017c">
+    <link rel="stylesheet" href="css/sgs.css?v=20261017d">
+    <link rel="stylesheet" href="css/pages.css?v=20261017d">
     <!-- 主题脚本放在 head：先于页面渲染应用暖纸/夜墨，避免闪烁 -->
-    <script src="js/card_info.js?v=20261017c"></script>
-    <script src="js/sgs_common.js?v=20261017c"></script>
+    <script src="js/card_info.js?v=20261017d"></script>
+    <script src="js/sgs_common.js?v=20261017d"></script>
 </head>
 <body>
 <div class="page">
@@ -78,6 +78,8 @@
                     </select>
                 </div>
                 <label class="check"><input type="checkbox" id="chatEnabled" checked> 席间聊天（AI 会在对局中说话）</label>
+                <label class="check"><input type="checkbox" id="cheatMode"> 作弊模式（可看 AI 的思考理由；开局后锁定，本局不计连胜）</label>
+                <label class="check"><input type="checkbox" id="hideDeadIdentity"> 阵亡身份暗置（自定义规则，官方为阵亡亮明）</label>
                 <div class="start-row">
                     <button class="btn primary big" id="startGameBtn" type="button">开始游戏</button>
                     <div class="start-hint"><span class="conn-dot" id="connDot"></span><span id="connText">正在连接游戏服务…</span></div>
@@ -129,8 +131,8 @@
     </form>
 </dialog>
 
-<script src="js/protocol.js?v=20261017c"></script>
-<script src="js/global_settings.js?v=20261017c"></script>
-<script src="js/lobby.js?v=20261017c"></script>
+<script src="js/protocol.js?v=20261017d"></script>
+<script src="js/global_settings.js?v=20261017d"></script>
+<script src="js/lobby.js?v=20261017d"></script>
 </body>
 </html>

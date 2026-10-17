@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17110c">
+    <title>三国杀酒馆 · 对局日志</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="stylesheet" href="css/sgs.css?v=20261017d">
+    <link rel="stylesheet" href="css/pages.css?v=20261017d">
+    <script src="js/card_info.js?v=20261017d"></script>
+    <script src="js/sgs_common.js?v=20261017d"></script>
+</head>
+<body>
+<div class="page">
+    <header class="topbar">
+        <a class="logo" href="index.html" aria-label="返回大厅"><span class="logo-seal">杀</span><span class="logo-text gold-text">三国杀酒馆</span></a>
+        <nav aria-label="主导航"><a href="index.html">大厅</a><a href="history.html">历史</a><a href="logs.html" aria-current="page">日志</a><a href="settings.html">设置</a><button class="icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button></nav>
+    </header>
+    <main>
+        <section class="result-hero"><h1 class="brush gold-text">对局日志</h1><p>每局结束自动保存。设置里可开无痕模式，或选择是否记录 AI 的思考过程。</p></section>
+
+        <section class="frame log-panel" id="listView">
+            <div class="log-toolbar" id="normalBar">
+                <span class="muted" id="logSummary">正在读取…</span>
+                <span class="log-tools">
+                    <button class="btn small" type="button" id="selectModeBtn">选择</button>
+                    <button class="btn small danger" type="button" id="deleteAllBtn">全部删除</button>
+                </span>
+            </div>
+            <div class="log-toolbar" id="selectBar" hidden>
+                <span id="selectedCount">已选 0 局</span>
+                <span class="log-tools">
+                    <button class="btn small" type="button" id="selectAllBtn">全选</button>
+                    <button class="btn small danger" type="button" id="deleteSelectedBtn" disabled>删除所选</button>
+                    <button class="btn small" type="button" id="cancelSelectBtn">取消</button>
+                </span>
+            </div>
+            <p class="muted log-tip">提示：手机上长按一条日志可进入多选。</p>
+            <div class="log-items" id="logItems" role="list"></div>
+        </section>
+
+        <section class="frame log-panel" id="detailView" hidden>
+            <div class="log-toolbar">
+                <button class="btn small" type="button" id="backBtn">‹ 返回列表</button>
+                <span class="log-tools">
+                    <a class="btn small" id="downloadBtn" href="#" download>下载</a>
+                    <button class="btn small danger" type="button" id="deleteOneBtn">删除</button>
+                </span>
+            </div>
+            <div id="detailBody"></div>
+        </section>
+    </main>
+</div>
+<script src="js/global_settings.js?v=20261017d"></script>
+<script src="js/logs_page.js?v=20261017d"></script>
+</body>
+</html>

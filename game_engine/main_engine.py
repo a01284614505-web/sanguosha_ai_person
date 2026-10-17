@@ -142,6 +142,15 @@ class MainEngine:
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
         chat_cfg = game_config.get("chat")
         self.chat_enabled = not (isinstance(chat_cfg, dict) and chat_cfg.get("enabled") is False)
+        # 开局锁定的两个选项：对局中途不可改（服务器不提供修改入口）。
+        # 作弊模式：真人可看到 AI 的公开理由（不含手牌与隐藏身份）；本局不计连胜与身份卡。
+        self.cheat_mode = game_config.get("cheat_mode") is True
+        # 阵亡暗置：阵亡角色的身份不对任何人公开（奖惩仍按真实身份结算）。默认官方规则亮明。
+        self.hide_dead_identity = game_config.get("hide_dead_identity") is True
+        # 局后日志用：每次 AI 决策的完整理由（不实时下发，只在对局结束后按设置写入日志）。
+        self.decision_log: List[Dict] = []
+        self.chat_log: List[Dict] = []
+        self._log_seq = 0
 
         logger.info(f"\n{'=' * 60}")
         logger.info("  🎮 引擎v2初始化")
@@ -164,9 +173,14 @@ class MainEngine:
             except Exception as exc:
                 logger.info(f"[事件异常] {event_type}: {exc}")
 
+    def next_log_seq(self) -> int:
+        """局后日志里时间线、聊天、思考共用的先后序号，用来按发生顺序穿插展示。"""
+        self._log_seq += 1
+        return self._log_seq
+
     async def log_event(self, message: str, **data):
         entry = {"message": message, **data}
-        self.game_log.append(entry)
+        self.game_log.append({**entry, "round": self.game_state.round_number, "seq": self.next_log_seq()})
         await self.emit(ENGINE_EVENT.EVENT_NOTIFICATION, **entry)
 
     async def move_card(
@@ -195,6 +209,36 @@ class MainEngine:
             # 防具/宝物失去装备区的效果观察同一条已提交移动事实。
             await self.card_system.on_equipment_left(from_owner, card, event)
         return event
+
+    async def draw_cards(self, player: Player, count: int, reason: str = "draw") -> List:
+        """从摸牌堆顶摸 count 张：逐张走 move_card（统计/事件一致），牌堆空时先洗弃牌堆。
+
+        摸完发一次 draw 动画通知：真人看到自己摸到的牌面，别人的只显示张数（牌背）。
+        """
+        drawn = []
+        for _ in range(max(0, int(count))):
+            if self.game_aborted or not self.game_state.refill_deck_if_empty():
+                break
+            card = self.game_state.deck[0]
+            moved = await self.move_card(
+                card, "deck", "hand", to_owner=player, reason=reason,
+                actor_id=player.id, visibility="owner",
+            )
+            if moved is None:
+                break
+            drawn.append(card)
+        if drawn and not self.game_aborted:
+            own = player is self.human_player()
+            await self._notify_card_ui(
+                event_kind="draw", actor_id=player.id, actor_name=player.name,
+                count=len(drawn), reason=reason,
+                cards=[card_to_dict(c) for c in drawn] if own else None,
+                deck_count=len(self.game_state.deck),
+                message=f"{player.name}摸了{len(drawn)}张牌" + (
+                    "" if reason in ("draw", "摸牌阶段") else
+                    "（击杀奖励）" if reason == "kill_rebel_reward" else f"（{reason}）"),
+            )
+        return drawn
 
     async def announce_judge(self, player: Player, card, judge_for: str, effective=None, result_text: str = ""):
         """判定结果通知：前端在牌桌中央展示判定牌与“生效/失效”，并等待动画 ACK 后再继续结算。
@@ -226,7 +270,7 @@ class MainEngine:
         if self.game_aborted:
             return
         entry = {"event_kind": "card_to_discard", "await_ui": True, **data}
-        self.game_log.append(entry)
+        self.game_log.append({**entry, "round": self.game_state.round_number, "seq": self.next_log_seq()})
         await self.emit(ENGINE_EVENT.CARD_ANIMATION, **entry)
 
     async def _execute_phase_with_ui(self, phase: Phase):
@@ -338,6 +382,8 @@ class MainEngine:
             "deck_count": len(gs.deck),
             "discard_count": len(gs.discard_pile),
             "game_over": gs.game_over,
+            "cheat_mode": self.cheat_mode,
+            "hide_dead_identity": self.hide_dead_identity,
             "winner": gs.winner,
             "trustee": self.trustee_status(),
         }
@@ -658,15 +704,25 @@ class MainEngine:
         if own_decision and (self._trustee_source == "rules" or self._trustee_degraded):
             meta = {}
         failure = getattr(self.ai_decision, "last_failure", {}).get(player.id)
-        reason = (getattr(self.ai_decision, "last_reasoning", {}).get(player.id, "")
-                  if own_decision and meta else "")
+        private_reason = getattr(self.ai_decision, "last_reasoning", {}).get(player.id, "") if meta else ""
+        # 作弊模式（开局锁定）下，AI 的公开理由也推给真人；否则只公开真人自己托管的理由。
+        reveal = own_decision or (self.cheat_mode and player.is_ai)
+        reason = private_reason if reveal else ""
+        if isinstance(choice, dict) and hasattr(self.ai_decision, "format_action"):
+            full_choice = self.ai_decision.format_action(choice)
+        else:
+            full_choice = choice.get("type", "") if isinstance(choice, dict) else ("放弃" if choice is None else str(choice)[:100])
+        # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。
+        self.decision_log.append({
+            "seq": self.next_log_seq(), "round": self.game_state.round_number, "player_id": player.id, "player_name": player.name,
+            "kind": kind, "model": meta.get("model"), "reason": private_reason[:400],
+            "choice": str(full_choice)[:200], "validation": validation,
+            "elapsed_ms": meta.get("elapsed_ms"),
+        })
         if not reason:
             reason = "模型结果已由引擎复核" if meta.get("model") and not failure else "按规则选择合法候选"
-        if own_decision:
-            if isinstance(choice, dict):
-                final_choice = self.ai_decision.format_action(choice) if hasattr(self.ai_decision, "format_action") else choice.get("type", "")
-            else:
-                final_choice = str(choice)[:100]
+        if reveal:
+            final_choice = full_choice
         else:
             final_choice = choice.get("type", "已选择") if isinstance(choice, dict) else "已选择" if choice is not None else "放弃"
         await self.emit(
@@ -679,6 +735,7 @@ class MainEngine:
             candidate_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
             worldbook_hits=meta.get("worldbook_hits") or [], reason=reason[:200],
             final_choice=final_choice, validation=validation,
+            cheat=bool(self.cheat_mode and player.is_ai and private_reason),
         )
 
     # ---------- 玩家输入 ----------
@@ -1991,6 +2048,8 @@ class MainEngine:
             stats=self.stats.snapshot(),
             mvp=self.stats.mvp(self.game_state.players),
             duration=duration,
+            cheat=self.cheat_mode,
+            total_rounds=self.game_state.round_number,
         )
         return True
     async def request_end_game(self, reason: str = "玩家主动结束游戏"):
