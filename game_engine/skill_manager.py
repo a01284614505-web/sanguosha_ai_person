@@ -6,6 +6,7 @@ import logging
 from importlib import import_module
 from typing import Dict, List
 
+from . import card_flow
 from .game_stats import clear_damage_source, record_stat
 from .skill_runtime_core import hero_id, reset_turn_flags
 from .skill_runtime_state import SkillStateStore
@@ -267,9 +268,11 @@ class SkillManager:
 
     async def judge(self, player, reason="skill"):
         state = self.engine.game_state
-        if not state.refill_deck_if_empty():
+        judge_reason = f"判定【{reason}】"
+        revealed = await card_flow.reveal_top(self.engine, state, player, 1, reason=judge_reason)
+        if not revealed:
             return None
-        card = state.deck.pop(0)
+        card = revealed[0]
         card = await self.before_judge(player, card, {"reason": reason})
         # 技能判定（洛神、刚烈、雷击等）也走判定框；是否“生效”由各技能自行解读，这里不下结论。
         announce = getattr(self.engine, "announce_judge", None)
@@ -279,7 +282,8 @@ class SkillManager:
                 await pending
         claimed = await self.after_judge(player, card, {"reason": reason})
         if not claimed:
-            state.discard_pile.append(card)
+            await card_flow.release_shown(self.engine, state, card, "discard",
+                                          reason=f"{judge_reason}结算", actor_id=player.id)
             await self.on_card_discarded(player, card, "judge")
         return card
 

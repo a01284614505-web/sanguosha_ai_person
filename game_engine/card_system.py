@@ -7,6 +7,7 @@ import asyncio
 import logging
 from typing import List, Callable
 
+from . import card_flow
 from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
 from .game_stats import mark_damage_source, pop_kill_credit, record_stat
 from .state_manager import Card, card_to_dict
@@ -1223,10 +1224,10 @@ class CardSystem:
             player, card, self._ordered_group_targets(player, include_source=True),
         )
         effect_context = self._effect_context(player, card, existing=effect_context)
-        revealed = []
-        for _ in alive:
-            if self.game_state.deck:
-                revealed.append(self.game_state.deck.pop(0))
+        # 亮出的牌先进使用者的展示区（公开），取走/弃置时再走牌移动；牌堆空了不洗牌。
+        revealed = await card_flow.reveal_top(
+            self.engine, self.game_state, player, len(alive),
+            reason="五谷丰登亮牌", refill=False)
         if not revealed:
             return True
         pool = {
@@ -1281,16 +1282,21 @@ class CardSystem:
                     chosen = max(remaining, key=lambda c: CARD_TABLE.get(c.name, CARD_TABLE.get("杀")).discard_keep_score
                                  if CARD_TABLE.get(c.name) else 20)
                 remaining.remove(chosen)
-                p.hand.append(chosen)
+                await card_flow.release_shown(
+                    self.engine, self.game_state, chosen, "hand",
+                    to_owner=p, reason="五谷丰登", actor_id=p.id)
                 entry = pool["cards"][slot_of[id(chosen)]]
                 entry["picked_by"] = p.id
                 entry["picked_name"] = p.name
                 await self._publish_shown_pool(pool)
                 await self.trigger_manager.on_card_gained(p, [chosen], "五谷丰登")
                 logger.info(f"  → {p.name} 获得【{chosen.name}】")
-            for leftover in remaining:
-                self.game_state.discard_pile.append(leftover)
         finally:
+            # 没被取走的牌（含中途收摊/异常）一律进弃牌堆，不能卡在展示区。
+            for leftover in remaining:
+                await card_flow.release_shown(
+                    self.engine, self.game_state, leftover, "discard",
+                    reason="五谷丰登剩余", actor_id=player.id)
             await self._publish_shown_pool(None)
         return True
 
