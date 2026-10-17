@@ -16,12 +16,14 @@ from game_engine import MainEngine
 from game_engine.config_validator import sanitize_client_config
 from game_engine.game_history import GameHistoryStore, validate_profile_id
 from game_engine.model_catalog import ModelListError, list_models
+from game_engine.game_logs import GameLogStore, build_game_log, validate_game_id
 from game_engine.identity_system import IdentitySystem
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
 HISTORY_PATH = Path(os.environ.get("SANGUOSHA_HISTORY_PATH") or BASE_DIR / "logs/runtime/game_history.json")
+GAME_LOG_DIR = Path(os.environ.get("SANGUOSHA_GAME_LOG_DIR") or BASE_DIR / "logs/runtime/game_logs")
 # 运行中的 GameServer；HTTP 线程只读取它，用于局内“拉取模型”沿用该 AI 已保存的 Key。
 ACTIVE_SERVER = None
 
@@ -52,6 +54,7 @@ class GameServer:
         self.viewers = {}           # game_id -> 当前观看的 ws（可在重连时替换）
         self.finished = {}          # game_id -> {"profile_id", "game_end"}：无人观看时结束的结果
         self.history = GameHistoryStore(history_path or HISTORY_PATH)
+        self.game_logs = GameLogStore(GAME_LOG_DIR)
         self.animation_waiters = {}
         self.animation_seq = 0
         self.grace_tasks = {}       # game_id -> 断线宽限计时任务
@@ -287,6 +290,9 @@ class GameServer:
         if human is not None:
             payload["from"] = human.name
             payload["from_id"] = human.id
+        if engine is not None:
+            engine.chat_log.append({"seq": engine.next_log_seq(), "round": engine.game_state.round_number, "from": payload["from"],
+                                    "kind": "human", "message": message})
         await self.send(ws, payload)
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
@@ -345,6 +351,9 @@ class GameServer:
                     data["history_error"] = "战绩保存失败，请检查服务器日志"
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
+            if event == OUTBOUND.CHAT and engine is not None:
+                engine.chat_log.append({"seq": engine.next_log_seq(), "round": engine.game_state.round_number, "from": data.get("from"),
+                                        "kind": "ai", "message": str(data.get("message", ""))[:200]})
             if event == ENGINE_EVENT.CARD_MOVE and isinstance(data.get("move"), dict):
                 move = dict(data["move"])
                 owner_id = move.get("to_owner") if move.get("to_owner") is not None else move.get("from_owner")
@@ -352,6 +361,8 @@ class GameServer:
                 if move.get("visibility") != "public" and owner_id != 0:
                     move["card_id"] = None
                 data["move"] = move
+            if event == ENGINE_EVENT.GAME_END and engine is not None:
+                data["log_saved"] = self._save_game_log(engine, data)
             message = {"type": ENGINE_EVENT_MAP.get(event, event), **data}
             if event == ENGINE_EVENT.GAME_END and engine is not None:
                 self.finished[gid] = {"profile_id": engine.game_config.get("profile_id"),
@@ -362,6 +373,20 @@ class GameServer:
             if ws is not None:
                 await self.send(ws, message)
         return handler
+
+    def _save_game_log(self, engine, game_end):
+        """对局结束自动保存日志；开局时设了无痕模式则跳过。失败只记服务器日志，不影响结算。"""
+        settings = engine.game_config.get("global_settings") or {}
+        if settings.get("log_incognito") is True:
+            return False
+        try:
+            record = build_game_log(engine, game_end,
+                                    include_thinking=settings.get("log_include_thinking") is not False)
+            self.game_logs.save(record)
+            return True
+        except (OSError, ValueError, TypeError) as exc:
+            logging.getLogger(__name__).error("对局日志保存失败: %s", type(exc).__name__)
+            return False
 
     def _animation_handler(self, gid):
         async def handler(**data):
@@ -444,6 +469,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
                     {"success": False, "message": f"{type(exc).__name__}: {exc}"},
                 )
             return
+        if request_path == "/api/logs" or request_path.startswith("/api/logs/"):
+            self._handle_logs_get(request_path, parse_qs(parsed.query))
+            return
         if request_path == "/api/providers":
             self._send_json(200, {"success": True, "providers": MainEngine.providers()})
             return
@@ -457,6 +485,55 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         super().do_GET()
+    def _log_store(self):
+        server = ACTIVE_SERVER
+        return server.game_logs if server is not None else GameLogStore(GAME_LOG_DIR)
+
+    def _handle_logs_get(self, request_path, query):
+        try:
+            profile_id = validate_profile_id((query.get("profile_id") or [None])[0])
+            store = self._log_store()
+            if request_path == "/api/logs":
+                self._send_json(200, {"success": True, "logs": store.list(profile_id)})
+                return
+            game_id = validate_game_id(request_path[len("/api/logs/"):])
+            record = store.get(profile_id, game_id)
+            if record is None:
+                self._send_json(404, {"success": False, "message": "日志不存在或已删除"})
+                return
+            if (query.get("download") or [""])[0] == "1":
+                body = json.dumps(record, ensure_ascii=False, indent=2).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="sanguosha_{game_id}.json"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self._send_json(200, {"success": True, "log": record})
+        except ValueError as exc:
+            self._send_json(400, {"success": False, "message": str(exc)})
+        except OSError as exc:
+            logging.getLogger(__name__).error("读取对局日志失败: %s", type(exc).__name__)
+            self._send_json(500, {"success": False, "message": "日志读取失败"})
+
+    def _handle_logs_delete(self):
+        try:
+            body = self._read_json_body()
+            profile_id = validate_profile_id(body.get("profile_id"))
+            ids = body.get("game_ids") or []
+            if not isinstance(ids, list):
+                raise ValueError("game_ids 必须是数组")
+            removed = self._log_store().delete(profile_id, ids, delete_all=body.get("all") is True)
+            self._send_json(200, {"success": True, "removed": removed})
+        except json.JSONDecodeError:
+            self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
+        except ValueError as exc:
+            self._send_json(400, {"success": False, "message": str(exc)})
+        except OSError as exc:
+            logging.getLogger(__name__).error("删除对局日志失败: %s", type(exc).__name__)
+            self._send_json(500, {"success": False, "message": "删除失败"})
+
     def _saved_ai_key(self, body):
         """局内调整 AI 时 Key 可留空：按 game_id + 座位取服务器上已保存的 Key（不回传）。"""
         server = ACTIVE_SERVER
@@ -494,6 +571,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path.split("?")[0] == "/api/models":
             self._handle_list_models()
+            return
+        if self.path.split("?")[0] == "/api/logs/delete":
+            self._handle_logs_delete()
             return
         if self.path.split("?")[0] != "/api/switch_deck":
             self.send_error(404)

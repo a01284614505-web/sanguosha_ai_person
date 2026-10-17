@@ -79,6 +79,9 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
         if deck_id not in DECKS:
             raise ValueError(f"未知牌堆ID: {requested_deck}")
         cfg["deck_id"] = deck_id
+    # 开局锁定的布尔选项：只接受 true，其它值一律视为关闭。
+    cfg["cheat_mode"] = cfg.get("cheat_mode") is True
+    cfg["hide_dead_identity"] = cfg.get("hide_dead_identity") is True
     cfg.setdefault("max_turns", 300)
     cfg.setdefault("human_action_timeout", 120)
     cfg.setdefault("phase_delay", 0.05)

@@ -19,7 +19,9 @@
         default_temperature: 0.8,
         sfx_enabled: true,
         sfx_volume: 0.5,
-        theme: 'dark'
+        theme: 'dark',
+        log_incognito: false,
+        log_include_thinking: true
     };
 
     window.getGlobalSettings = function () {
@@ -107,6 +109,12 @@
                     <label class="gs-row"><span>音量</span><input id="gsVolume" type="range" min="0" max="1" step="0.05"></label>
                 </div>
                 <div class="gs-section">
+                    <h4>对局日志</h4>
+                    <label class="gs-row"><span>无痕模式</span><span><input id="gsLogIncognito" type="checkbox">对局结束后不保存日志（开局时的设置生效）</span></label>
+                    <label class="gs-row"><span>思考过程</span><span><input id="gsLogThinking" type="checkbox">日志里包含 AI 每一步的理由</span></label>
+                    <div class="gs-actions" style="justify-content:flex-start;margin-top:4px"><button class="secondary" id="gsOpenLogs" type="button">管理对局日志</button></div>
+                </div>
+                <div class="gs-section">
                     <h4>新座位的默认模型</h4>
                     <label class="gs-row"><span>提供方</span><select id="gsProvider"></select></label>
                     <label class="gs-row"><span>模型名称</span><input id="gsModel"></label>
@@ -129,6 +137,11 @@
         document.addEventListener('keydown', e => { if (e.key === 'Escape') window.closeGlobalSettings(); });
         document.getElementById('gsSave').onclick = saveFromForm;
         document.getElementById('gsOpenManager').onclick = () => { location.href = 'settings.html'; };
+        document.getElementById('gsOpenLogs').onclick = () => {
+            // 对局中离开页面会打断观看（对局本身在服务器上继续），先确认。
+            if (document.getElementById('battle') && !confirm('离开对局页去看日志？对局会在后台继续，可从大厅回来。')) return;
+            location.href = 'logs.html';
+        };
     }
 
     async function loadStats() {
@@ -186,6 +199,8 @@
         document.getElementById('gsTemperature').value = s.default_temperature;
         document.getElementById('gsWorldbook').checked = !!s.worldbook_enabled;
         document.getElementById('gsCustomWorldbook').checked = !!s.custom_worldbook_enabled;
+        document.getElementById('gsLogIncognito').checked = !!s.log_incognito;
+        document.getElementById('gsLogThinking').checked = s.log_include_thinking !== false;
         loadStats();
     }
 
@@ -202,7 +217,9 @@
             default_model: document.getElementById('gsModel').value.trim() || 'deepseek-chat',
             default_temperature: Number.isFinite(temperature) ? temperature : 0.8,
             worldbook_enabled: document.getElementById('gsWorldbook').checked,
-            custom_worldbook_enabled: document.getElementById('gsCustomWorldbook').checked
+            custom_worldbook_enabled: document.getElementById('gsCustomWorldbook').checked,
+            log_incognito: document.getElementById('gsLogIncognito').checked,
+            log_include_thinking: document.getElementById('gsLogThinking').checked
         });
         window.closeGlobalSettings();
         if (window.SGS) SGS.toast('设置已保存');

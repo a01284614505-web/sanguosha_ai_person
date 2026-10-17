@@ -886,7 +886,9 @@ class CardSystem:
             if self.engine is not None and self.engine.game_aborted:
                 return
             player.alive = False
-            player.identity_revealed = True
+            # 官方规则阵亡亮明身份；开局选了“阵亡暗置”则保持隐藏（奖惩仍按真实身份结算）。
+            if not getattr(self.engine, "hide_dead_identity", False):
+                player.identity_revealed = True
             killer_id = pop_kill_credit(self.game_state, player)
             killer = next((p for p in self.game_state.players if p.id == killer_id), None)
             if killer is not None:
@@ -932,22 +934,15 @@ class CardSystem:
     async def _settle_identity_death(self, victim, killer):
         """身份奖惩在阵亡清牌之后结算，胜负紧接着检查。"""
         if killer is not None and killer.alive and victim.identity == "rebel":
-            drawn = []
-            for _ in range(3):
-                if not self.game_state.refill_deck_if_empty():
-                    break
-                card = self.game_state.deck[0]
-                if self.engine is not None:
-                    moved = await self.engine.move_card(
-                        card, "deck", "hand", to_owner=killer,
-                        reason="kill_rebel_reward", actor_id=killer.id,
-                        visibility="owner",
-                    )
-                    if moved is None:
+            if self.engine is not None and hasattr(self.engine, "draw_cards"):
+                drawn = await self.engine.draw_cards(killer, 3, "kill_rebel_reward")
+            else:
+                drawn = []
+                for _ in range(3):
+                    if not self.game_state.refill_deck_if_empty():
                         break
-                else:
                     killer.hand.append(self.game_state.deck.pop(0))
-                drawn.append(card)
+                    drawn.append(killer.hand[-1])
             if drawn:
                 await self.trigger_manager.on_card_gained(killer, drawn, "kill_rebel_reward")
         elif killer is not None and killer.alive and killer.identity == "lord" and victim.identity == "loyalist":
@@ -1031,12 +1026,10 @@ class CardSystem:
     async def use_wuzhongshengyou(self, player, card: Card):
         """使用无中生有"""
         # 摸2张牌
-        drawn = []
-        for _ in range(2):
-            if self.game_state.deck:
-                drawn_card = self.game_state.deck.pop(0)
-                player.hand.append(drawn_card)
-                drawn.append(drawn_card)
+        if self.engine is not None and hasattr(self.engine, "draw_cards"):
+            drawn = await self.engine.draw_cards(player, 2, "无中生有")
+        else:
+            drawn = self.game_state.draw_card(player, 2)
 
         if drawn:
             logger.info(f"  → {player.name} 摸了{len(drawn)}张牌")
