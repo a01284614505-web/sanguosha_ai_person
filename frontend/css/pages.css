@@ -129,7 +129,7 @@
     font-family: var(--font-kai);
 }
 .ai-tabs button[aria-selected="true"] { border-color: var(--gold); color: var(--heading); background: rgba(201, 163, 90, .14); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 .form-grid .full { grid-column: 1 / -1; }
 .sync-box { margin-top: 14px; padding: 10px 12px; border: 1px dashed var(--field-line); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 13px; }
 .sync-box > span { color: var(--text-dim); }

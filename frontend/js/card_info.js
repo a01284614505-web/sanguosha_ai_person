@@ -65,7 +65,7 @@
         '赤兔': { type: '坐骑', horse: '-1', text: HORSE_MINUS },
         '大宛': { type: '坐骑', horse: '-1', text: HORSE_MINUS },
         '紫骍': { type: '坐骑', horse: '-1', text: HORSE_MINUS },
-        '骅骝': { type: '坐骑', horse: '-1', text: HORSE_MINUS }
+        '骅骝': { type: '坐骑', horse: '+1', text: HORSE_PLUS }
     };
 
     // 卡牌名 -> 插画文件名（frontend/assets/cards/<key>.png），与 card_table.source_key 一致
@@ -90,7 +90,7 @@
         ['延时锦囊', ['乐不思蜀', '兵粮寸断', '闪电']],
         ['武器', ['诸葛连弩', '雌雄双股剑', '青釭剑', '古锭刀', '寒冰剑', '青龙偃月刀', '丈八蛇矛', '贯石斧', '方天画戟', '朱雀羽扇', '麒麟弓']],
         ['防具与宝物', ['八卦阵', '仁王盾', '白银狮子', '藤甲', '木牛流马']],
-        ['坐骑', ['绝影', '的卢', '爪黄飞电', '赤兔', '大宛', '紫骍', '骅骝']]
+        ['坐骑', ['绝影', '的卢', '爪黄飞电', '骅骝', '赤兔', '大宛', '紫骍']]
     ];
 
     global.SGS_CARD_INFO = CARD_INFO;

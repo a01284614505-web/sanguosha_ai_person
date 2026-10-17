@@ -46,6 +46,11 @@
             this.dialog.addEventListener('click', (e) => { if (e.target === this.dialog) this.dialog.close(); });
             this.form.addEventListener('submit', (e) => { e.preventDefault(); this.saveCurrent(); this.dialog.close(); toast('已保存'); });
             this.form.elements.provider.addEventListener('change', (e) => this.onProviderChange(e.target.value));
+            const f = this.form.elements;
+            this.modelPicker = SGS.attachModelPicker(f.model, () => ({
+                provider: f.provider.value, api_url: f.apiUrl.value.trim(), api_key: f.apiKey.value.trim()
+            }));
+            ['provider', 'apiUrl', 'apiKey'].forEach(n => f[n].addEventListener('change', () => this.modelPicker && this.modelPicker.reset()));
             document.getElementById('syncBtn').addEventListener('click', () => this.syncAPIConfig());
 
             this.loadUserData();
@@ -183,6 +188,7 @@
 
         // 把当前席的配置填进表单。
         fillForm() {
+            if (this.modelPicker) this.modelPicker.reset();
             const a = this.aiConfigs[this.current];
             const f = this.form.elements;
             f.name.value = a.name;

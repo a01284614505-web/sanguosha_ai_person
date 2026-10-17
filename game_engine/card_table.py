@@ -161,7 +161,7 @@ CARD_TABLE: Dict[str, CardSpec] = {
               equipment_slot="minus_horse"),
     "骅骝": _c("equipment", {"min": 0, "max": 0, "type": "self"},
               resolver="use_equipment", image="hualiu", keep=50, source_key="hualiu",
-              equipment_slot="minus_horse"),
+              equipment_slot="plus_horse"),  # 军争的骅骝是 +1 马（防御马），与牌堆数据 sub_type 一致
 
     # 木牛流马使用独立宝物槽，扣置牌再使用独立的 treasure 牌区。
     "木牛流马": _c("equipment", {"min": 0, "max": 0, "type": "self"},
