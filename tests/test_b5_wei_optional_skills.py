@@ -629,3 +629,35 @@ def test_all_hidden_card_choice_never_calls_model_and_uses_injected_rng():
     expected = random.Random(7).sample(range(3), 1)
     assert picked == expected
     ai._call_with_session.assert_not_awaited()
+
+
+# ---- T0-11 ----
+
+def test_guicai_asks_when_owner_holds_a_club_for_own_bingliang_judgment():
+    engine = game()
+    handler = get_wei(engine)
+    owner = engine.game_state.players[1]
+    club = card("t11_club", "杀", "club")
+    owner.hand.append(club)
+    original = card("t11_judged", "杀", "spade")  # 非梅花：兵粮寸断将生效
+    handler.has = lambda p, name: p is owner and name == "鬼才"
+    engine.skill_manager.ask_confirm = AsyncMock(return_value=False)
+
+    result = run(handler.before_judge(owner, original, {"reason": "兵粮寸断"}))
+
+    assert result is original
+    engine.skill_manager.ask_confirm.assert_awaited_once()
+    assert owner in engine.skill_manager.ask_confirm.await_args.args
+
+
+def test_jiu_action_text_warns_it_only_buffs_the_next_sha():
+    from game_engine.ai_decision import AIDecision
+    text = AIDecision.format_action({
+        "type": "play_card", "card_index": 2,
+        "card": {"name": "酒"}, "requires_target": False,
+    })
+    assert "只对本回合下一张【杀】生效" in text
+    assert "没有收益" in text
+    plain = AIDecision.format_action({
+        "type": "play_card", "card_index": 1, "card": {"name": "杀"}})
+    assert "只对本回合下一张" not in plain

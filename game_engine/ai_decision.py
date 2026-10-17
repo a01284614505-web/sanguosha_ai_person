@@ -491,6 +491,8 @@ class AIDecision:
         if action_type == "play_card":
             card = action.get("card") or {}
             text = f"使用手牌#{action.get('card_index')}【{card.get('name', '未知')}】"
+            if card.get("name") == "酒":
+                text += "（只对本回合下一张【杀】生效；手里没有能出的【杀】时使用没有收益）"
             if action.get("requires_target"):
                 if action.get("target_count") == 2:
                     text += f"，合法目标对={action.get('valid_target_pairs', [])}"
