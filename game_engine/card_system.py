@@ -181,12 +181,54 @@ class CardSystem:
             message=message or f"{actor.name}{'打出' if reason == 'respond' else '弃置'}【{card.name}】",
         )
 
+    # ---------- 行为账本（Stage T · T1）----------
+
+    def _ledger_record(self, source, target, kind, label, weight=None):
+        """向 engine.ledger 记一条公开行为；没有引擎 / 账本（单测桩）时什么也不做。"""
+        ledger = getattr(self.engine, "ledger", None)
+        if ledger is None or source is None or (target is None and kind != "group"):
+            return None
+        return ledger.record(self.game_state.round_number, source.id,
+                             None if target is None else target.id, kind, label, weight)
+
+    def _ledger_record_card(self, player, card, spec, targets) -> List:
+        """牌指定目标时按 CARD_TABLE.ledger_kind 记账，返回已记条目（出牌失败时撤销）。
+
+        杀由 use_sha 在目标确定处自己记（要区分流离转移），这里跳过；
+        群体牌只记一条不归属的 group；借刀杀人：指使者→最终目标敌意，指使者→被借刀者低权重敌意。
+        """
+        if spec is None or spec.ledger_kind == "none" or spec.resolver == "use_sha" or spec.usage == "response":
+            return []
+        kind, entries = spec.ledger_kind, []
+        if kind == "group":
+            entries.append(self._ledger_record(player, None, "group", card.name))
+        elif kind == "borrow":
+            if targets and len(targets) == 2:
+                weapon_owner, victim = targets
+                entries.append(self._ledger_record(player, victim, "hostile", "借刀"))
+                entries.append(self._ledger_record(player, weapon_owner, "hostile", "借刀夺武器", 0.5))
+        elif kind in ("hostile", "friendly"):
+            seen = set()
+            for target in targets or []:
+                if target.id in seen:
+                    continue
+                seen.add(target.id)
+                entries.append(self._ledger_record(player, target, kind, card.name, spec.ledger_weight))
+        return [e for e in entries if e is not None]
+
     async def use_card(self, player, card: Card, targets: List = None, *, effect_context=None):
         """使用卡牌（统一入口）。分发由 CARD_TABLE 的 resolver/usage 驱动。"""
         if self.engine is not None and self.engine.game_aborted:
             return False
         spec = CARD_TABLE.get(card.name)
+        entries = self._ledger_record_card(player, card, spec, targets)
+        success = await self._use_card_resolve(player, card, targets, spec, effect_context)
+        if not success and entries:
+            # 出牌失败时牌会退回手牌，不能留下一条没发生的行为。
+            self.engine.ledger.remove(entries)
+        return success
 
+    async def _use_card_resolve(self, player, card, targets, spec, effect_context):
         # 延时锦囊先进入判定区，判定阶段生效前才询问无懈。
         group_trick = bool(spec and spec.target_rule.get("type") in ("all", "all_others"))
         delayed_trick = bool(spec and spec.resolver in ("use_bingliang", "use_lebu", "use_shandian"))
@@ -267,7 +309,8 @@ class CardSystem:
             logger.info(f"本回合已使用{player.sha_count}次杀")
             return False
         
-        # 3. 技能可转移目标（如流离）。
+        # 3. 技能可转移目标（如流离）。指定目标即记敌意（对流离，记的是原杀来源→大乔）。
+        self._ledger_record(player, target, "hostile", "杀")
         target = await self.trigger_manager.before_card_target(player, target, card)
         if not target:
             return False
@@ -721,6 +764,11 @@ class CardSystem:
                 if response_card in source_cards:
                     raise AssertionError("无懈响应消费后仍留在原牌区")
                 responded = True
+                # 无懈链逐层记受益者：奇数层抵消锦囊，保护原目标；偶数层抵消上一层无懈，等于帮锦囊使用者。
+                # 无目标的锦囊（无中生有等）没有「被保护者」，不记。
+                beneficiaries = (targets or []) if layer % 2 == 1 else [source]
+                for beneficiary in beneficiaries:
+                    self._ledger_record(owner, beneficiary, "protect", "无懈保护")
                 current_source = responder
                 canceled = not canceled
                 break
@@ -880,6 +928,8 @@ class CardSystem:
                 # 治疗归属与统计一致：记给实际提供桃的角色（owner），不是被询问者。
                 await self.trigger_manager.on_recover(player, 1, owner, 'dying_rescue')
                 logger.info(f"  🍑 {owner.name}救援{player.name}，体力回复至{player.hp}")
+                # 救援是最强的站队信号（高权重）；自救不记，「没救」更不记。
+                self._ledger_record(owner, player, "friendly", "救援", 3.0)
                 rescued = True
                 break
             if not rescued:
@@ -1379,11 +1429,16 @@ class CardSystem:
 
     async def use_huogong(self, player, card: Card, target):
         """火攻：目标亮一张手牌，若与出牌者弃置同花色的牌，造成1点伤害。"""
-        if not target or not target.hand:
+        if not target:
             return False
         target = await self.trigger_manager.before_card_target(player, target, card)
-        if not target or not target.hand:
+        if not target:
             return False
+        if not target.hand:
+            # 出牌时目标有手牌，但无懈链中目标把最后一张手牌打出去了：火攻已使用，只是落空。
+            # 返回 False 会把已消耗无懈的这张火攻退回手牌（既不合规则，也会被判成非法出牌）。
+            logger.info(f"  → {target.name}已无手牌，火攻落空")
+            return True
         if self.engine is not None:
             choice = await self.engine.ask_choose_cards(
                 target, "【火攻】：请选择展示的一张手牌", list(target.hand),

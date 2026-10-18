@@ -80,6 +80,7 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
             continue
         timeline.append({"seq": entry.get("seq"), "round": entry.get("round"), "kind": entry.get("event_kind") or "log",
                          "text": str(message)[:300]})
+    ledger = getattr(engine, "ledger", None)
     decisions = []
     if include_thinking:
         decisions = [dict(d) for d in getattr(engine, "decision_log", [])]
@@ -109,6 +110,8 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "chat": list(getattr(engine, "chat_log", []))[-1000:],
         "decisions": decisions[-2000:],
         "token_usage": _token_usage_summary(engine),
+        # 行为账本流水（Stage T · T1）：均为公开事实，不含手牌区牌名与任何隐藏信息。
+        "ledger": ledger.snapshot() if ledger is not None else [],
     }
 
 

@@ -94,6 +94,9 @@ class RuntimeSkill:
     description: str = ""
     faction: str = ""
     implementation_status: str = "active"
+    # 行为账本（Stage T · T1）：none / friendly / counter / transfer 等，取值同 behavior_ledger.KINDS。
+    # 只为方案 6.2 表里涉及的技能填写（仁德、遗计、流离、刚烈、反馈）。
+    ledger_kind: str = "none"
 
     def public_dict(self) -> Dict[str, Any]:
         return {

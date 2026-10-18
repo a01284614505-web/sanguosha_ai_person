@@ -25,16 +25,21 @@ class CardSpec:
     source_key: Optional[str] = None      # noname 源码英文标识（extract 工具反查用）
     weapon_range: int = 1                 # 武器攻击距离（仅 equipment_slot=="weapon" 时有效）
     equipment_slot: Optional[str] = None  # weapon / armor / plus_horse / minus_horse
+    # 行为账本（Stage T · T1）：none 不记 / hostile 指定目标=敌意 / friendly 指定目标=友好 /
+    # group 群体牌（只记一条不归属的群体事件）/ borrow 借刀杀人（两个目标，规则特殊）。
+    ledger_kind: str = "none"
+    ledger_weight: float = 1.0            # 该牌记入账本时的权重（铁索连环意图不明确，取 0.5）
 
 
 def _c(card_type, target_rule, *, wuxie=False, resolver=None, usage="play",
        image=None, keep=20, priority=0, source_key=None,
-       weapon_range=1, equipment_slot=None):
+       weapon_range=1, equipment_slot=None, ledger="none", ledger_weight=1.0):
     return CardSpec(
         card_type=card_type, target_rule=target_rule,
         wuxie_targetable=wuxie, resolver=resolver, usage=usage,
         image=image, discard_keep_score=keep, play_priority=priority,
         source_key=source_key, weapon_range=weapon_range, equipment_slot=equipment_slot,
+        ledger_kind=ledger, ledger_weight=ledger_weight,
     )
 
 
@@ -46,7 +51,7 @@ NO_EXTERNAL_TARGET = ("self", "self_or_dying", "all", "all_others")
 CARD_TABLE: Dict[str, CardSpec] = {
     # ---- 基本牌 ----
     "杀": _c("basic", {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
-             resolver="use_sha", image="sha", keep=50, priority=2, source_key="sha"),
+             resolver="use_sha", image="sha", keep=50, priority=2, source_key="sha", ledger="hostile"),
     "闪": _c("basic", {"type": "self"}, usage="response", image="shan", keep=80, source_key="shan"),
     "桃": _c("basic", {"min": 1, "max": 1, "type": "self_or_dying"},
              resolver="use_tao", image="tao", keep=100, priority=3, source_key="tao"),
@@ -55,35 +60,35 @@ CARD_TABLE: Dict[str, CardSpec] = {
 
     # ---- 锦囊：已实现 ----
     "过河拆桥": _c("trick", {"min": 1, "max": 1, "type": "other", "distance_limit": None},
-                  wuxie=True, resolver="use_guohe", image="guohe", priority=1, source_key="guohe"),
+                  wuxie=True, resolver="use_guohe", image="guohe", priority=1, source_key="guohe", ledger="hostile"),
     "顺手牵羊": _c("trick", {"min": 1, "max": 1, "type": "other", "distance_limit": 1},
-                  wuxie=True, resolver="use_shunshou", image="shunshou", priority=1, source_key="shunshou"),
+                  wuxie=True, resolver="use_shunshou", image="shunshou", priority=1, source_key="shunshou", ledger="hostile"),
     "无中生有": _c("trick", {"type": "self"},
                   wuxie=True, resolver="use_wuzhongshengyou", image="wuzhongshengyou", source_key="wuzhong"),
     "铁索连环": _c("trick", {"min": 1, "max": 2, "type": "any"},
-                  wuxie=True, resolver="use_tiesuo", image="tiesuo", source_key="tiesuo"),
+                  wuxie=True, resolver="use_tiesuo", image="tiesuo", source_key="tiesuo", ledger="hostile", ledger_weight=0.5),
     "兵粮寸断": _c("trick", {"min": 1, "max": 1, "type": "other"},
-                  wuxie=True, resolver="use_bingliang", image="bingliang", source_key="bingliang"),
+                  wuxie=True, resolver="use_bingliang", image="bingliang", source_key="bingliang", ledger="hostile"),
     "乐不思蜀": _c("trick", {"min": 1, "max": 1, "type": "other"},
-                  wuxie=True, resolver="use_lebu", image="lebu", source_key="lebu"),
+                  wuxie=True, resolver="use_lebu", image="lebu", source_key="lebu", ledger="hostile"),
 
     # ---- 锦囊：已实现（6C 补全）----
     "决斗": _c("trick", {"min": 1, "max": 1, "type": "other"},
-               wuxie=True, resolver="use_juedou", image="juedou", priority=1, source_key="juedou"),
+               wuxie=True, resolver="use_juedou", image="juedou", priority=1, source_key="juedou", ledger="hostile"),
     "南蛮入侵": _c("trick", {"type": "all_others"},
-                  wuxie=True, resolver="use_nanman", image="nanman", priority=1, source_key="nanman"),
+                  wuxie=True, resolver="use_nanman", image="nanman", priority=1, source_key="nanman", ledger="group"),
     "万箭齐发": _c("trick", {"type": "all_others"},
-                  wuxie=True, resolver="use_wanjian", image="wanjian", priority=1, source_key="wanjian"),
+                  wuxie=True, resolver="use_wanjian", image="wanjian", priority=1, source_key="wanjian", ledger="group"),
     "桃园结义": _c("trick", {"type": "all"},
-                  wuxie=True, resolver="use_taoyuan", image="taoyuan", priority=1, source_key="taoyuan"),
+                  wuxie=True, resolver="use_taoyuan", image="taoyuan", priority=1, source_key="taoyuan", ledger="group"),
     "五谷丰登": _c("trick", {"type": "all"},
-                  wuxie=True, resolver="use_wugu", image="wugu", priority=1, source_key="wugu"),
+                  wuxie=True, resolver="use_wugu", image="wugu", priority=1, source_key="wugu", ledger="group"),
     "借刀杀人": _c("trick", {"min": 2, "max": 2, "type": "other"},
-                  wuxie=True, resolver="use_jiedao", image="jiedao", priority=1, source_key="jiedao"),
+                  wuxie=True, resolver="use_jiedao", image="jiedao", priority=1, source_key="jiedao", ledger="borrow"),
     "闪电": _c("trick", {"type": "self"},
               wuxie=True, resolver="use_shandian", image="shandian", source_key="shandian"),
     "火攻": _c("trick", {"min": 1, "max": 1, "type": "other"},
-              wuxie=True, resolver="use_huogong", image="huogong", priority=1, source_key="huogong"),
+              wuxie=True, resolver="use_huogong", image="huogong", priority=1, source_key="huogong", ledger="hostile"),
 
     # ---- 锦囊：只能响应 ----
     "无懈可击": _c("trick", {"type": "trick_card"}, usage="response",

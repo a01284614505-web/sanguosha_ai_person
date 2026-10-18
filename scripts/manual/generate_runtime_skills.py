@@ -11,6 +11,13 @@ for hero in json.loads((ROOT / "data/heroes.json").read_text(encoding="utf-8")):
     FACTION_BY_HERO[hero["id"]] = {"魏": "wei", "蜀": "shu", "吴": "wu", "群": "qun"}.get(hero["faction"], hero["faction"])
 
 
+# 行为账本（Stage T · T1）：技能对应的账本类型，其余技能默认 none。
+LEDGER_KIND_BY_SKILL = {
+    "simayi_反馈": "counter", "xiahoudun_刚烈": "counter", "guojia_遗计": "friendly",
+    "liubei_仁德": "friendly", "daqiao_流离": "transfer",
+}
+
+
 def generate(active_factions):
     skills = json.loads((ROOT / "data/skills.json").read_text(encoding="utf-8"))
     lines = [
@@ -37,6 +44,7 @@ def generate(active_factions):
             f"            forced={bool(skill.get('is_forced'))!r}, limited={bool(skill.get('is_limited'))!r},",
             f"            description={skill['description']!r}, faction={faction!r},",
             f"            implementation_status={status!r},",
+            *([f"            ledger_kind={LEDGER_KIND_BY_SKILL[skill['id']]!r},"] if skill["id"] in LEDGER_KIND_BY_SKILL else []),
             "        )",
             "",
         ])

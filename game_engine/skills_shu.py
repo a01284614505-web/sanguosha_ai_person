@@ -95,7 +95,8 @@ class ShuSkillHandler(FactionSkillHandler):
             if not card:
                 return False
             await self.manager.announce(player, "仁德", f"{player.name}发动【仁德】，交给{target.name}一张牌")
-            await self.manager.transfer_card(player, target, card, "仁德")
+            if await self.manager.transfer_card(player, target, card, "仁德"):
+                self.manager.ledger_record("仁德", player, target)   # 只记「给了谁」，不记牌名
             flags = ensure_flags(player)
             flags.setdefault("rende_targets", []).append(target.id)
             flags["rende_count"] = flags.get("rende_count", 0) + 1

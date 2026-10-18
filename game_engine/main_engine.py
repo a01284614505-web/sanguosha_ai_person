@@ -27,6 +27,7 @@ from .config_validator import normalize_ai, normalize_config
 from .deck_manager import DeckManager
 from .game_stats import GameStats, record_stat
 from .effect_context import EffectContext
+from .behavior_ledger import BehaviorLedger
 
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,8 @@ class MainEngine:
         self.game_state.init_game(game_config)
         self.stats = GameStats(self.game_state.players)
 
+        # 行为账本（Stage T · T1）：只记公开行为，牌 / 技能结算确定目标处写入，AI 决策与局后日志读取。
+        self.ledger = BehaviorLedger()
         self.skill_manager = SkillManager(self)
         self.trigger_manager = self.skill_manager  # 兼容卡牌系统旧参数名
         self.phase_controller = PhaseController(self.game_state, self.skill_manager, engine=self)

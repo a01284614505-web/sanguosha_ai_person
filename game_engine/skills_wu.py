@@ -372,6 +372,8 @@ class WuSkillHandler(FactionSkillHandler):
                     if cost and new_target in new_targets:
                         cost_card, zone = cost
                         if await self._discard_region_card(target, cost_card, zone, "流离", target):
+                            # 原杀来源→大乔的敌意已由 use_sha 在指定目标时记下；这里只记大乔的转移选择。
+                            self.manager.ledger_record("流离", target, new_target)
                             await self.manager.announce(target, "流离", f"{target.name}发动【流离】，将【杀】转移给{new_target.name}")
                             return new_target
         # 谦逊：成为其他角色普通锦囊唯一目标时暂存所有手牌。

@@ -34,6 +34,7 @@ class Skill_simayi_03(RuntimeSkill):
             forced=False, limited=False,
             description='每当你受到1点伤害后，你可以获得伤害来源的一张牌。', faction='wei',
             implementation_status='active',
+            ledger_kind='counter',
         )
 
 class Skill_simayi_04(RuntimeSkill):
@@ -56,6 +57,7 @@ class Skill_xiahoudun_05(RuntimeSkill):
             forced=False, limited=False,
             description='当你受到1点伤害后，你可进行判定，若结果为：红色，你对伤害来源造成1点伤害；黑色，你弃置伤害来源一张牌。', faction='wei',
             implementation_status='active',
+            ledger_kind='counter',
         )
 
 class Skill_xiahoudun_06(RuntimeSkill):
@@ -111,6 +113,7 @@ class Skill_guojia_10(RuntimeSkill):
             forced=False, limited=False,
             description='当你受到1点伤害后，你可以摸两张牌，然后可以将至多两张手牌交给其他角色。', faction='wei',
             implementation_status='active',
+            ledger_kind='friendly',
         )
 
 class Skill_zhenji_11(RuntimeSkill):
@@ -144,6 +147,7 @@ class Skill_liubei_13(RuntimeSkill):
             forced=False, limited=False,
             description='出牌阶段，你可以将至少一张手牌交给其他角色，然后你于此阶段内不能再以此法交给该角色牌；若你于此阶段内给出的牌首次达到两张，你可以视为使用一张基本牌。', faction='shu',
             implementation_status='active',
+            ledger_kind='friendly',
         )
 
 class Skill_liubei_14(RuntimeSkill):
@@ -430,6 +434,7 @@ class Skill_daqiao_39(RuntimeSkill):
             forced=False, limited=False,
             description='当你成为【杀】的目标时，你可以弃置一张牌并将此【杀】转移给攻击范围内的一名其他角色（不能是此【杀】的使用者）。', faction='wu',
             implementation_status='active',
+            ledger_kind='transfer',
         )
 
 class Skill_luxun_40(RuntimeSkill):

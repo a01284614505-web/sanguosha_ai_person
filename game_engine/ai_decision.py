@@ -458,17 +458,30 @@ class AIDecision:
             situation += "\n\n" + custom
 
         action_lines = [f"{i}. {self.format_action(action)}" for i, action in enumerate(available_actions)]
+        # 区块顺序固定：行为账本（引擎事实）→ 发言（未验证）→（T2 起）本人判断。
+        ledger_block = self._build_ledger_block()
         chat_block = self._build_table_chat_block(player)
         return f"""{situation}
 
 当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
-{chat_block}
+{ledger_block}{chat_block}
 合法操作列表（索引从0开始）：
 {chr(10).join(action_lines)}
 
 只返回JSON：
 {{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由"}}
 目标必须来自所选操作的合法目标列表。不能新增操作、卡牌或目标。"""
+
+    def _build_ledger_block(self) -> str:
+        """【引擎确认·行为账本】区块：全桌公开行为的聚合摘要，只进出牌决策，不进响应 / 选择。
+
+        账本只含公开事实（谁对谁出了什么牌 / 技能），没有任何手牌或隐藏身份；账本为空时整块省略。
+        """
+        ledger = getattr(self.engine, "ledger", None)
+        if ledger is None:
+            return ""
+        text = ledger.summarize(self.engine.game_state)
+        return ("\n" + text + "\n") if isinstance(text, str) and text else ""
 
     CHAT_BLOCK_MAX = 10   # 每次决策最多带上的新发言条数
 
@@ -630,8 +643,40 @@ class AIDecision:
             enemies = [p for p in candidates if not (p.identity_revealed and p.identity == "spy")]
 
         pool = enemies or candidates
-        pool.sort(key=lambda p: (p.hp, len(p.hand), p.id))
+        ledger_key = self._ledger_target_key(player, pool, candidates)
+        pool.sort(key=lambda p: (*ledger_key(p), p.hp, len(p.hand), p.id))
         return [pool[0].id]
+
+    def _ledger_target_key(self, player, pool, candidates):
+        """规则AI按行为账本排序目标（方案 6.5）。只用公开信息（账本、可见血量）和自己的身份。
+
+        返回 key(p) -> 元组，越小越优先；账本里没有相关记录时全部为 0，退回原有排序。
+        - 主公 / 忠臣：优先打对主公敌意最高的座位；
+        - 反贼：已按公开身份优先主公；其次打对主公友好（救援 / 无懈保护 / 给牌）最高的座位；
+        - 内奸：优先打当前较强一方（按对主公的立场把存活者分成两侧，比较血量总和）里的人。
+        """
+        ledger = getattr(self.engine, "ledger", None)
+        lord = next((p for p in self.engine.game_state.players
+                     if p.alive and p.identity_revealed and p.identity == "lord"), None)
+        if ledger is None or lord is None or not hasattr(ledger, "stance_toward") or player is None:
+            return lambda p: (0,)
+
+        def stance(p):
+            return 0.0 if p.id == lord.id else ledger.stance_toward(p.id, lord.id)
+
+        if player.identity in ("lord", "loyalist"):
+            return lambda p: (-stance(p),)
+        if player.identity == "rebel":
+            return lambda p: (stance(p),)
+        if player.identity == "spy":
+            alive = [p for p in self.engine.game_state.players if p.alive and p.id != player.id]
+            pro = sum(p.hp for p in alive if p.id == lord.id or stance(p) < 0)
+            anti = sum(p.hp for p in alive if p.id != lord.id and stance(p) > 0)
+            if pro == anti:
+                return lambda p: (0,)
+            stronger_pro = pro > anti
+            return lambda p: (0 if (stance(p) < 0 if stronger_pro else stance(p) > 0) and p.id != lord.id else 1,)
+        return lambda p: (0,)
 
     def simple_ai_decision(self, player, available_actions: List[Dict]) -> Dict:
         if not available_actions:
