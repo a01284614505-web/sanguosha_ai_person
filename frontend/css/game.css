@@ -920,6 +920,12 @@
 .thought p { margin: 4px 0; white-space: pre-wrap; color: var(--text); }
 .thought small { color: var(--text-dim); }
 #thoughtsModal .dialog-body { width: min(92vw, 520px); }
+.notes-box { margin-bottom: 10px; }
+.notes-title { margin: 0 0 6px; font-size: 14px; color: var(--text); }
+.notes-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.notes-table th, .notes-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--inset); color: var(--text); }
+.notes-table th { color: var(--text-dim); font-weight: normal; }
+.notes-table tr.locked td { color: var(--text-dim); }
 @media (max-width: 760px) {
     .peek-log { top: auto; bottom: 46%; right: 8px; font-size: 13px; }
     .cheat-peek { width: 15px; height: 24px; top: 30%; font-size: 13px; }

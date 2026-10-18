@@ -144,6 +144,9 @@ class GameClient {
             case 'decision_trace':
                 if (this.onDecisionTrace) this.onDecisionTrace(data);
                 break;
+            case Protocol.OUTBOUND.COGNITIVE_NOTES:
+                if (this.onCognitiveNotes) this.onCognitiveNotes(data);
+                break;
             case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
                 break;
@@ -210,6 +213,7 @@ GameClient.prototype.onError = null;
 GameClient.prototype.onAIConfigUpdated = null;
 GameClient.prototype.onTrusteeStatus = null;
 GameClient.prototype.onDecisionTrace = null;
+GameClient.prototype.onCognitiveNotes = null;
 GameClient.prototype.onEndGameAccepted = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;

@@ -9,6 +9,7 @@
  *   history  历史页
  *   game     对局：开局、回合倒计时与技能选取/取消、座位点击、托管、战报页签与决策轨迹
  *   chat     席间聊天：切席间页签、发一句话、断言只出现一次且为真人样式
+ *   cheat    作弊局认知笔记：非作弊局没有 "›"；勾选作弊模式开局后 AI 座位出现 "›"，点开有笔记区块（规则 AI 显示"无笔记"）
  * 往后加新组：在 GROUPS 里加一项 {name, run}，用 pass()/skip() 记录，需要对局时调用 ensureGame()。
  *
  * 运行（先起服务器，8888 HTTP / 8889 WS；务必用隔离的战绩与日志路径）：
@@ -78,8 +79,10 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     aria: [...document.querySelectorAll('#idCardChoices [data-identity]')].filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.dataset.identity)
   }));
   // 开一局：大厅 -> 点身份印选主公 -> 开始 -> 选刘备 -> 进入对局页。返回是否点了身份印。
-  const startGame = async () => {
+  const startGame = async (opts = {}) => {
     await gotoLobby();
+    // 同一标签页里上一局的 activeGame 会让 game.html 走"重连"而不是新开局；要新开一局就先清掉。
+    await page.evaluate(() => { try { sessionStorage.removeItem('activeGame'); } catch (_) {} });
     await page.locator('#playerName').fill(PLAYER_NAME);
     let usedSeal = false;
     try {
@@ -87,6 +90,9 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
       await page.locator('#idCardChoices [data-identity="主公"]').click();
       usedSeal = true;
     } catch (_) { /* 没有身份卡就随机身份，回合可能来得晚，turnWait 兜底 */ }
+    // 作弊模式勾选会被大厅记在本地偏好里，所以每次开局都显式设置，不依赖上一局；
+    // 放在点「开始」之前，避开大厅初始化期间按偏好重置复选框。
+    await page.locator('#cheatMode').setChecked(!!opts.cheat);
     await page.locator('#startGameBtn').click();
     await page.waitForURL('**/select_hero.html');
     await page.locator('.hero-card[data-id="liubei"]').click();
@@ -257,6 +263,31 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     pass('empty-chat placeholder removed', await page.locator('#chatList .chat-empty').count() === 0);
     const bad = await page.locator('.toast.bad').allInnerTexts();
     pass('no error toast after sending', !bad.some(t => /没连上/.test(t)), JSON.stringify(bad));
+  }});
+
+  GROUPS.push({name: 'cheat', run: async () => {
+    // 非作弊局：AI 座位没有 "›"，前端也没有收到任何笔记。
+    await startGame({cheat: false});
+    pass('non-cheat game reports cheat_mode=false', await page.evaluate(() => window.GameUI.state && window.GameUI.state.cheat_mode === false));
+    pass('non-cheat game has no cheat-peek "›" on any seat', await page.locator('.cheat-peek').count() === 0);
+    pass('non-cheat game client holds no cognitive notes', await page.evaluate(() => Object.keys(window.GameUI.notes || {}).length === 0));
+    // 作弊局：勾选作弊模式开局。
+    await startGame({cheat: true});
+    await page.waitForFunction(() => window.GameUI.state && window.GameUI.state.cheat_mode === true, null, {timeout: 10000}).catch(() => {});
+    pass('cheat game reports cheat_mode=true', await page.evaluate(() => window.GameUI.state && window.GameUI.state.cheat_mode === true));
+    await page.waitForSelector('.cheat-peek', {timeout: 10000});
+    const peeks = await page.locator('.cheat-peek').count();
+    pass('every AI seat shows the "›" peek button (4 AI seats)', peeks === 4, 'count=' + peeks);
+    pass('"›" is not shown on my own seat', await page.evaluate(() => !document.querySelector('.cheat-peek[data-peek-seat="' + window.GameUI.meId + '"]')));
+    await page.locator('.cheat-peek').first().click();
+    await page.waitForSelector('#thoughtsModal[open]', {timeout: 5000});
+    const modalText = await page.locator('#thoughtsModal').innerText();
+    pass('peek dialog opens with a 认知笔记 section', await page.locator('#thoughtsNotes').count() === 1 && /认知笔记/.test(modalText), modalText.slice(0, 80));
+    // 本环境没有 API Key：全部是规则 AI，不写笔记，应显示"无笔记"提示而不是表格。
+    pass('rule AI shows the 无笔记 hint', /无笔记/.test(await page.locator('#thoughtsNotes').innerText()));
+    pass('rule AI shows no notes table', await page.locator('#thoughtsNotes .notes-table').count() === 0);
+    await page.locator('#thoughtsModal [data-close]').click();
+    pass('peek dialog closes', await page.locator('#thoughtsModal[open]').count() === 0);
   }});
 
   // ---- 执行 -----------------------------------------------------------------------------

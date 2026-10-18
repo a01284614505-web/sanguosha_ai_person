@@ -26,7 +26,7 @@ class INBOUND:
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，20 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，21 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -50,6 +50,8 @@ class OUTBOUND:
     GAME_RESUMED = "game_resumed"
     # 重连失败：对局已不存在（服务器重启或已清理）或不属于该档案。
     RESUME_FAILED = "resume_failed"
+    # 认知笔记（Stage T · T2）：仅作弊局由服务器构造并下发；非作弊局根本不存在这条消息。
+    COGNITIVE_NOTES = "cognitive_notes"
 
 
 class ENGINE_EVENT:
@@ -67,6 +69,7 @@ class ENGINE_EVENT:
     GAME_END = "game_end"
     TRUSTEE_STATUS = "trustee_status"
     DECISION_TRACE = "decision_trace"
+    COGNITIVE_NOTES = "cognitive_notes"
     # 特化事件：卡牌动画，经专用 handler 转发（await_ui ACK 机制），不在 ENGINE_EVENTS 循环注册。
     CARD_ANIMATION = "card_animation"
 
@@ -93,6 +96,7 @@ ENGINE_EVENTS = (
     ENGINE_EVENT.GAME_END,
     ENGINE_EVENT.TRUSTEE_STATUS,
     ENGINE_EVENT.DECISION_TRACE,
+    ENGINE_EVENT.COGNITIVE_NOTES,
 )
 
 # Provider 清单（8 家）。default_url 均为 OpenAI 兼容端点；

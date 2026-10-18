@@ -45,10 +45,10 @@ class ProtocolSyncTest(unittest.TestCase):
             },
         )
 
-    def test_outbound_types_are_twenty(self):
+    def test_outbound_types_are_twenty_one(self):
         self.assertEqual(
-            len(protocol.ALL_OUTBOUND), 20,
-            f"出站消息类型应为 20 种，当前 {len(protocol.ALL_OUTBOUND)} 种: {protocol.ALL_OUTBOUND}",
+            len(protocol.ALL_OUTBOUND), 21,
+            f"出站消息类型应为 21 种，当前 {len(protocol.ALL_OUTBOUND)} 种: {protocol.ALL_OUTBOUND}",
         )
         self.assertEqual(
             set(protocol.ALL_OUTBOUND),
@@ -57,7 +57,7 @@ class ProtocolSyncTest(unittest.TestCase):
                 "require_response", "action_result", "selection_result", "card_moved", "ai_action", "chat",
                 "event_notification", "ai_config_updated", "end_game_accepted",
                 "game_end", "trustee_status", "decision_trace", "error",
-                "game_resumed", "resume_failed",
+                "game_resumed", "resume_failed", "cognitive_notes",
             },
         )
 
