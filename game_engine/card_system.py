@@ -715,7 +715,9 @@ class CardSystem:
             return {"bool": False}
         return result
 
-    async def ask_wuxie(self, card, source, targets=None) -> bool:
+    _USER_UNSET = object()
+
+    async def ask_wuxie(self, card, source, targets=None, *, trick_user=_USER_UNSET) -> bool:
         """询问无懈可击链，返回 True 表示当前锦囊最终被无懈。
 
         不设人为深度上限：每层必须真实消耗一张无懈，标准牌堆总数保证终止。
@@ -766,7 +768,14 @@ class CardSystem:
                 responded = True
                 # 无懈链逐层记受益者：奇数层抵消锦囊，保护原目标；偶数层抵消上一层无懈，等于帮锦囊使用者。
                 # 无目标的锦囊（无中生有等）没有「被保护者」，不记。
-                beneficiaries = (targets or []) if layer % 2 == 1 else [source]
+                # 判定阶段的延时锦囊 source 是被判定者，偶数层的受益者要由调用方给出 trick_user
+                # （查不到使用者就传 None：不记，不猜）。
+                if layer % 2 == 1:
+                    beneficiaries = targets or []
+                elif trick_user is self._USER_UNSET:
+                    beneficiaries = [source]
+                else:
+                    beneficiaries = [trick_user] if trick_user is not None else []
                 for beneficiary in beneficiaries:
                     self._ledger_record(owner, beneficiary, "protect", "无懈保护")
                 current_source = responder

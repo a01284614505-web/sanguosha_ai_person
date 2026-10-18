@@ -1,8 +1,7 @@
 """Stage T · T1 行为账本验收复核（验收代理新增）。
 
 - 无 xfail 的用例：验证 6.3 信息边界在「阵亡暗置 / 阵亡明置」两种开局下都成立。
-- strict xfail 的用例：复现验收中发现的运行代码缺陷，缺陷修复后 xfail 会变成 XPASS 并报错，届时去掉标记即可。
-  这些用例不改运行代码；原因见每条 reason。
+- 原 strict xfail 两条已按调度裁定处理：缺陷 1 已修成普通测试，缺陷 2 改为断言当前（认可的）行为。
 """
 
 import asyncio
@@ -110,18 +109,16 @@ def test_review_summary_identity_tag_depends_only_on_lord_flag_not_on_death():
     assert _seat_tagged(text, 1)
 
 
-# ───────────── 6.3 / 6.2 复核：无懈链、借刀（strict xfail，复现缺陷） ─────────────
+# ───────────── 6.3 / 6.2 复核：无懈链、借刀（缺陷已修，见交接） ─────────────
 
-@pytest.mark.xfail(strict=True, reason=(
-    "缺陷：判定阶段无懈（phase_controller.execute_judge:101）传入 source=被判定者，"
-    "ask_wuxie 第 2、4… 层把 `owner→source` 记为 protect，等于把偶数层无懈记成"
-    "「保护被判定者」。实际偶数层是帮乐不思蜀/兵粮寸断的使用者（6.2：偶数层等于帮锦囊使用者）。"
-    "使用者信息在 execute_judge 中不可得，修法需要把使用者传入。"))
-def test_review_delayed_trick_wuxie_layer2_does_not_protect_judged_victim():
+def test_review_delayed_trick_wuxie_layer2_backs_the_trick_user_not_the_victim():
     engine = game()
     p0, victim, p2, p3 = engine.game_state.players[:4]
     lebu = card("lebu", "乐不思蜀", "heart")
-    victim.judge_area.append(lebu)
+    # 真实路径：p0 出乐不思蜀，经 move_card 放入 victim 判定区（记录 actor）。
+    engine.game_state.discard_pile.append(lebu)
+    run(engine.card_system._use_delayed_trick(p0, lebu, victim))
+    engine.ledger.entries.clear()
     p2.hand.append(card("wx1", "无懈可击", "club"))
     p3.hand.append(card("wx2", "无懈可击", "spade"))
     engine.card_system.responder = scripted_responder({2: {"无懈可击"}, 3: {"无懈可击"}})
@@ -130,19 +127,29 @@ def test_review_delayed_trick_wuxie_layer2_does_not_protect_judged_victim():
     assert (2, victim.id, "protect", "无懈保护") in rows(engine)
     # 第 2 层：3 号抵消 2 号的无懈 → 应当是帮乐不思蜀的使用者，不是保护被判定者。
     assert (3, victim.id, "protect", "无懈保护") not in rows(engine)
+    assert (3, p0.id, "protect", "无懈保护") in rows(engine)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "缺陷：借刀杀人的「借刀夺武器」敌意（指使者→执行者，低权重）在出牌时无条件记账"
-    "（card_system._ledger_record_card 的 borrow 分支），不论执行者是否出杀、武器是否真的被夺走。"
-    "6.2 写的是「指使者 → 被借刀者 hostile（低权重，夺武器）」，执行者出杀时不该有这条。"
-    "现有 test_jiedao_attributes_to_instigator… 把这种情况当成了预期结果。"))
-def test_review_jiedao_records_no_weapon_hostility_when_executor_complies():
+def test_review_delayed_trick_wuxie_layer2_records_nothing_when_user_unknown():
+    engine = game()
+    p0, victim, p2, p3 = engine.game_state.players[:4]
+    lebu = card("lebu2", "乐不思蜀", "heart")
+    victim.judge_area.append(lebu)                         # 没有放置记录：使用者不可得
+    p2.hand.append(card("wx1", "无懈可击", "club"))
+    p3.hand.append(card("wx2", "无懈可击", "spade"))
+    engine.card_system.responder = scripted_responder({2: {"无懈可击"}, 3: {"无懈可击"}})
+    run(engine.phase_controller.execute_judge(victim, lebu))
+    assert rows(engine) == [(2, victim.id, "protect", "无懈保护")]
+
+
+def test_review_jiedao_records_weapon_hostility_at_play_time_even_when_executor_complies():
     engine = game()
     p0, p1, p2 = engine.game_state.players[:3]
     p1.equipment["weapon"] = card("w", "诸葛连弩", "club")
     p1.hand.append(card("sha_exec", "杀"))
     engine.card_system.responder = scripted_responder({1: {"杀"}})
     run(engine.card_system.use_card(p0, card("jd", "借刀杀人"), [p1, p2]))
+    # 调度裁定：指定某人的武器本身就是带敌意的选择（方案 6.2），出牌即记，不看执行者是否出杀。
     assert p1.equipment.get("weapon") is not None          # 武器没有被夺走
-    assert not any(e.label == "借刀夺武器" for e in engine.ledger.entries)
+    weapon = [e for e in engine.ledger.entries if e.label == "借刀夺武器"]
+    assert [(e.source_id, e.target_id, e.kind, e.weight) for e in weapon] == [(0, 1, "hostile", 0.5)]

@@ -92,13 +92,23 @@ class PhaseController:
                      if (candidate := players[(start + offset) % len(players)]).alive
                      and all(card.name != "闪电" for card in candidate.judge_area)), None)
 
+    def _delayed_trick_user(self, delayed_card):
+        """延时锦囊的使用者：取放入判定区那次牌移动的 actor。查不到（如闪电）返回 None，行为账本不记。"""
+        events = getattr(self.game_state, "card_move_events", None) or []
+        placed = [e for e in events
+                  if e.card_id == delayed_card.id and e.reason == "place_delayed_trick"]
+        if not placed:
+            return None
+        return next((p for p in self.game_state.players if p.id == placed[-1].actor_id), None)
+
     async def execute_judge(self, player: "Player", delayed_card):
         if delayed_card not in player.judge_area or not player.alive:
             return
 
         # 延时锦囊在此时询问无懈，成功抵消后不翻判定牌；闪电继续传递。
         card_system = getattr(self.engine, "card_system", None)
-        if card_system is not None and await card_system.ask_wuxie(delayed_card, player, [player]):
+        if card_system is not None and await card_system.ask_wuxie(
+                delayed_card, player, [player], trick_user=self._delayed_trick_user(delayed_card)):
             if delayed_card.name == "闪电":
                 next_player = self._next_lightning_target(player)
                 if next_player is not None:
