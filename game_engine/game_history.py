@@ -285,10 +285,11 @@ class GameHistoryStore:
                     if fallback_id > 4 and self._ai_id(player.get("ai_id")) is None:
                         continue
                     ai_id = self._ai_id(player.get("ai_id")) or f"ai_{fallback_id}"
-                    ai = ai_players.setdefault(ai_id, {"id": ai_id, "name": DEFAULT_AI_NAMES[int(ai_id[-1]) - 1],
+                    ai = ai_players.setdefault(ai_id, {"id": ai_id,
+                                                       "name": str(player.get("name") or DEFAULT_AI_NAMES[int(ai_id[-1]) - 1])[:16],
                                                        "stats": {}, "history": [], "equipped_title": None})
-                    ai["name"] = str(player.get("name") or ai["name"])[:16]
-                    ai_won = winner == "lord" and player.get("identity") in ("lord", "loyalist") or winner == player.get("identity")
+                    # 对局开始后的档案改名不能被终局的旧名字覆盖。
+                    ai_won = winner in ("lord", "rebel", "spy") and ((winner == "lord" and player.get("identity") in ("lord", "loyalist")) or winner == player.get("identity"))
                     old_title_ids = {item["id"] for item in title_view(ai.get("stats"), ai.get("equipped_title"))["earned"]}
                     ai["stats"] = update_player_stats(ai.get("stats"), player, payload, ai_won,
                                                        previous_streak=(ai.get("stats") or {}).get("win_streak", 0),

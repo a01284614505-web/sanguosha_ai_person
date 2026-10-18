@@ -75,7 +75,9 @@
                 const s = p.stats || {};
                 const hero = p.hero || {};
                 const isMe = p.id === r.player_id || (r.player_id == null && !p.is_ai);
-                const title = p.title || (p.ai_config && p.ai_config.title) || (isMe && r.profile && r.profile.titles && r.profile.titles.equipped);
+                const account = (r.ai_players || []).find(a => a.id === (p.ai_id || (p.ai_config && p.ai_config.ai_id)));
+                const title = isMe && r.profile && r.profile.titles ? r.profile.titles.equipped
+                    : account && account.titles ? account.titles.equipped : p.title || (p.ai_config && p.ai_config.title);
                 return '<tr class="' + (isMe ? 'me ' : '') + (p.alive ? '' : 'dead') + '">' +
                     '<td><div class="who"><div class="mini-portrait">' + SGS.heroImgHTML(hero.id, hero.name || p.hero_name) + '</div>' +
                     '<div><b>' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b>' +

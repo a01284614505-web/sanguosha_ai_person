@@ -225,7 +225,7 @@
         const badge = title
             ? '<span class="ai-title-badge title-' + esc(title.tier || '普通') + '" title="' + esc(title.name) + '">' + esc(title.name) + '</span>' : '';
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>' + badge + idSeal + '</div>' + cheatPeek +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-labels">' + badge + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span></span>' + idSeal + '</div>' + cheatPeek +
             '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
             (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
@@ -1532,7 +1532,13 @@
     };
 
     gameClient.onChatRejected = function (data) {
-        if (G.state && G.state.cheat_mode) (G.blockedChat || (G.blockedChat = [])).push(data);
+        if (!G.state || !G.state.cheat_mode) return;
+        (G.blockedChat || (G.blockedChat = [])).push(data);
+        const dlg = document.getElementById('thoughtsModal');
+        if (dlg && dlg.open && Number(dlg.dataset.seat) === data.player_id) {
+            dlg.querySelector('#thoughtsBody').insertAdjacentHTML('beforeend',
+                '<p class="muted">发言被拦截：' + esc(data.text) + ' · ' + esc(data.detail) + '</p>');
+        }
     };
 
     gameClient.onCognitiveNotes = function (data) {

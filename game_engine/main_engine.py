@@ -375,6 +375,7 @@ class MainEngine:
                         "worldbook": (p.hero or {}).get("worldbook", {}),
                     },
                     "is_ai": p.is_ai,
+                    "ai_id": p.ai_config.get("ai_id") if p.is_ai else None,
                     "title": (p.ai_config.get("title") if p.is_ai else p.title),
                     "ai_config": {
                         # 没填 Key 的座位实际由规则 AI 代打，界面据此显示“规则 AI”而不是模型名。

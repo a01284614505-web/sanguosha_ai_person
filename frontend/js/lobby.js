@@ -161,6 +161,7 @@
             const sessionKeys = store.sget('lobbyKeys', []);
             const profileSaved = store.get('lobbyAIProfiles', {});
             const migrateLegacy = !store.get('lobbyAIMigrated', false) && Array.isArray(saved);
+            const migrations = [];
             this.assignments = store.get('lobbyAISeats', this.aiRoster.map(p => p.id));
             if (!Array.isArray(this.assignments) || this.assignments.length !== 4 || this.assignments.some(id => !this.aiRoster.some(p => p.id === id))) {
                 this.assignments = this.aiRoster.map(p => p.id);
@@ -171,16 +172,18 @@
                 const merged = Object.assign(base, old);
                 if (!merged.apiKey && (sessionKeys[profile.id] || (Array.isArray(sessionKeys) && sessionKeys[i]))) merged.apiKey = sessionKeys[profile.id] || sessionKeys[i];
                 if (!this.providers.some(p => p.value === merged.provider)) merged.provider = base.provider;
-                if (migrateLegacy && !(profileSaved && profileSaved[profile.id]) && old.name) {
+                if (migrateLegacy && old.name) {
                     profile.name = String(old.name).slice(0, 16);
-                    SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) }).catch(() => {});
+                    const migration = SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) }).then(() => true).catch(() => false);
+                    migrations.push(migration);
+                    this.pendingProfileSaves.push(migration);
                 }
                 merged.name = profile.name || base.name;
                 merged.aiId = profile.id;
                 merged.title = (profile.titles && profile.titles.equipped) || null;
                 return merged;
             });
-            if (migrateLegacy) store.set('lobbyAIMigrated', true);
+            if (migrateLegacy) Promise.all(migrations).then(results => store.set('lobbyAIMigrated', results.every(Boolean)));
         }
 
         // 保存四席配置。Key 默认只放 sessionStorage（关掉标签页即清除）；勾选“记住 Key”才写进 localStorage。
@@ -283,7 +286,7 @@
                 profile.name = this.aiConfigs[this.current].name;
                 const pendingSave = SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) })
                     .then(() => true)
-                    .catch(() => { toast('名称已保存在本机，服务端档案暂不可用', { bad: true }); return false; });
+                    .catch(() => { store.set('lobbyAIMigrated', false); toast('名称已保存在本机，服务端档案暂不可用', { bad: true }); return false; });
                 this.pendingProfileSaves.push(pendingSave);
             }
             this.savePrefs();
@@ -336,6 +339,7 @@
         async startGame() {
             this.savePrefs();
             if (this.dialog.open) this.saveCurrent();
+            if (!store.get('lobbyAIMigrated', false)) this.restoreAIConfigs();
             const pending = this.pendingProfileSaves.splice(0);
             if (pending.length && (await Promise.all(pending)).some(ok => !ok)) {
                 toast('AI 名称未能保存到档案，请检查连接后重试', { bad: true });

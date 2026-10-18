@@ -873,6 +873,8 @@ class AIDecision:
         def label(value):
             pid = value.get("id") if isinstance(value, dict) else getattr(value, "id", value)
             return player_label(game_state, pid)
+        if "card_source" in context and context["card_source"] is None:
+            parts.append("锦囊原始来源：引擎未记录")
         for key, title in (("card_source", "锦囊原始来源"), ("source", "当前来源"),
                            ("target", "目标"), ("dying", "濒死者")):
             if context.get(key) is not None:

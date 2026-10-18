@@ -11,6 +11,7 @@ from . import card_flow
 from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET, card_label, damage_text
 from .game_stats import mark_damage_source, pop_kill_credit, record_stat
 from .state_manager import Card, card_to_dict
+from .seats import player_label
 
 
 logger = logging.getLogger(__name__)
@@ -730,6 +731,9 @@ class CardSystem:
         if source not in players:
             return False
         current_source = source
+        card_source = source if trick_user is self._USER_UNSET else trick_user
+        spec = CARD_TABLE.get(card.name)
+        context_targets = targets or ([source] if spec and spec.target_rule.get("type") == "self" else [])
         canceled = False
         layer = 0
         while True:
@@ -742,11 +746,14 @@ class CardSystem:
                     continue
                 result = await self.choose_to_respond(
                     responder,
-                    f"{current_source.name}使用【{card.name}】，是否使用【无懈可击】？",
+                    ((f"{player_label(self.game_state, card_source.id) if card_source is not None else '来源未记录'}"
+                      f"的【{card.name}】，目标：" + "、".join(player_label(self.game_state, t.id) for t in context_targets)
+                      + "，是否使用【无懈可击】？") if layer == 1 else
+                     f"{player_label(self.game_state, current_source.id)}打出第{layer - 1}层【无懈可击】，是否继续反无懈？"),
                     card_filter=lambda c: c.name == '无懈可击',
                     requested_name='无懈可击',
                     # 被抵消的锦囊名、当前是第几层无懈都是公开信息，AI 据此判断该不该拦。
-                    context={"source": current_source, "card_source": source, "targets": targets or [], "card": card,
+                    context={"source": current_source, "card_source": card_source, "targets": context_targets, "card": card,
                              "card_name": card.name, "layer": layer},
                     kind="wuxie",
                 )

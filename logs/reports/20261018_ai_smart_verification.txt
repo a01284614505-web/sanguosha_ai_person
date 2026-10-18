@@ -1,0 +1,41 @@
+AI智能 P0–P5 整合验收（2026-10-18 UTC）
+
+pytest: 772 passed, 50 subtests passed in 18.49s
+前端JS: 全部通过
+Python compileall、协议同步、git diff --check: PASS
+
+真实浏览器：1440x1000 / 390x844；隔离档案为合成称号展示夹具，规则AI开局，无真实模型API调用。
+[
+  {
+    "viewport": "desktop",
+    "seat_swap": [
+      "ai_2",
+      "ai_1",
+      "ai_3",
+      "ai_4"
+    ],
+    "lord_id": 2,
+    "lord_seat": 1,
+    "title_badges": 3,
+    "history_no_overflow": true,
+    "js_errors": []
+  },
+  {
+    "viewport": "mobile",
+    "seat_swap": [
+      "ai_2",
+      "ai_1",
+      "ai_3",
+      "ai_4"
+    ],
+    "lord_id": 2,
+    "lord_seat": 1,
+    "title_badges": 3,
+    "history_no_overflow": true,
+    "js_errors": []
+  }
+]
+
+PASS: failed migration is not marked complete; reload retries; server names and per-account local models preserved
+四字称号无裁切、减少动态流光关闭：两视口均PASS。截图：/tmp/ai-smart-browser-artifacts/
+真实模型策略质量与 thinking 开/关对比：未执行，按用户授权统一待验。

@@ -437,8 +437,11 @@ class GameServer:
                 continue  # 主公全局公开，不可能获得“深藏不露”。
             reveal_round = None
             guessed_correctly = False
-            public_seats = getattr(engine.game_state, "_public_seats", {}) or {}
-            seat = int(public_seats.get(player.id, getattr(player, "seat", player.id + 1)))
+            seat = seat_of(engine.game_state, player.id)
+            if seat is None:
+                continue
+            guessed_correctly = any(event.get("target_id") == player.id and event.get("guess") == player.identity
+                                    for event in getattr(notes, "high_guess_events", []))
             for round_number, rows in by_round.items():
                 for snapshot in rows:
                     notes_by_seat = snapshot.get("notes") or {}
