@@ -82,6 +82,7 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
         cfg["deck_id"] = deck_id
     # 开局锁定的布尔选项：只接受 true，其它值一律视为关闭。
     cfg["cheat_mode"] = cfg.get("cheat_mode") is True
+    cfg["ai_spectate"] = cfg.get("ai_spectate", True) is True
     cfg["hide_dead_identity"] = cfg.get("hide_dead_identity") is True
     # 热闹程度：缺省为正常档；给了就必须是合法档位（非法值直接拒绝，不静默回落）。
     cfg["chat_level"] = normalize_level(cfg.get("chat_level") or DEFAULT_CHAT_LEVEL)

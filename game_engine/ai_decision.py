@@ -533,7 +533,7 @@ class AIDecision:
     def quote_chat_entry(entry: Dict) -> str:
         """一条桌面发言的引用包装（决策区块与聊天回合共用）：引号被换掉，发言无法伪装成系统消息。"""
         def quote(value) -> str:
-            return str(value).replace("「", "『").replace("」", "』").replace("\n", " ").replace("\r", " ")
+            return str(value).translate(str.maketrans({"【": "〔", "】": "〕"})).replace("「", "『").replace("」", "』").replace("\n", " ").replace("\r", " ")
 
         tag = {"human": "（玩家）", "spectator": "（观战）"}.get(entry["kind"], " ")
         return f"「{entry['from_id'] + 1}号 {quote(entry['name'])}{tag}说：{quote(entry['text'])}」"

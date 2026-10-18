@@ -16,7 +16,7 @@
             this.providers = [];
             this.aiConfigs = [];
             this.current = 0;
-            this.prefs = Object.assign({ playerName: '', chatEnabled: true, chatLevel: 'normal', rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
+            this.prefs = Object.assign({ playerName: '', chatEnabled: true, aiSpectate: true, chatLevel: 'normal', rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
             this.dialog = document.getElementById('aiDialog');
             this.form = document.getElementById('aiForm');
             this.init();
@@ -30,6 +30,9 @@
             const chat = document.getElementById('chatEnabled');
             chat.checked = this.prefs.chatEnabled !== false;
             chat.addEventListener('change', () => this.savePrefs());
+            const spectate = document.getElementById('aiSpectate');
+            spectate.checked = this.prefs.aiSpectate !== false;
+            spectate.addEventListener('change', () => this.savePrefs());
             const level = document.getElementById('chatLevel');
             level.value = ['quiet', 'normal', 'lively'].includes(this.prefs.chatLevel) ? this.prefs.chatLevel : 'normal';
             level.addEventListener('change', () => this.savePrefs());
@@ -82,6 +85,7 @@
         savePrefs() {
             this.prefs.playerName = document.getElementById('playerName').value.trim();
             this.prefs.chatEnabled = document.getElementById('chatEnabled').checked;
+            this.prefs.aiSpectate = document.getElementById('aiSpectate').checked;
             this.prefs.chatLevel = document.getElementById('chatLevel').value;
             this.prefs.cheatMode = document.getElementById('cheatMode').checked;
             this.prefs.hideDeadIdentity = document.getElementById('hideDeadIdentity').checked;
@@ -294,6 +298,7 @@
                     model: (ais[0] && ais[0].model) || (first ? first.default_model : 'deepseek-chat')
                 },
                 global_settings: window.getGlobalSettings ? getGlobalSettings() : {},
+                ai_spectate: document.getElementById('aiSpectate').checked,
                 chat_level: document.getElementById('chatLevel').value,
                 cheat_mode: document.getElementById('cheatMode').checked,
                 hide_dead_identity: document.getElementById('hideDeadIdentity').checked,
