@@ -165,9 +165,11 @@ def test_jiedao_attributes_to_instigator_and_not_to_the_forced_executor():
     p1.hand.append(card("sha_exec", "杀"))
     engine.card_system.responder = scripted_responder({1: {"杀"}})
     run(engine.card_system.use_card(p0, card("jd", "借刀杀人"), [p1, p2]))
-    assert rows(engine) == [(0, 2, "hostile", "借刀"), (0, 1, "hostile", "借刀夺武器")]
+    # 2026-10-18 用户裁定：取武器中性，只记指使者→最终目标，不记指使者→被借刀者。
+    assert rows(engine) == [(0, 2, "hostile", "借刀")]
     weights = {e.label: e.weight for e in engine.ledger.entries}
-    assert weights == {"借刀": 1.0, "借刀夺武器": WEIGHT_LOW}
+    assert weights == {"借刀": 1.0}
+    assert not any(e.target_id == 1 for e in engine.ledger.entries)
     # 被迫出杀的执行者(1号)对最终目标(2号)没有任何敌意记录。
     assert not any(e.source_id == 1 and e.target_id == 2 for e in engine.ledger.entries)
 
@@ -178,7 +180,7 @@ def test_jiedao_executor_declines_then_weapon_is_taken_still_no_executor_entry()
     p1.equipment["weapon"] = card("w", "诸葛连弩", "club")
     engine.card_system.responder = None
     run(engine.card_system.use_card(p0, card("jd2", "借刀杀人"), [p1, p2]))
-    assert [r[:2] for r in rows(engine)] == [(0, 2), (0, 1)]
+    assert [r[:2] for r in rows(engine)] == [(0, 2)]  # 取武器不带敌意（2026-10-18 裁定）
     assert p0.hand and p0.hand[0].name == "诸葛连弩"
 
 

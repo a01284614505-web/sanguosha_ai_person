@@ -17,7 +17,7 @@ from .state_manager import Card, GameState, Player, Phase, card_to_dict
 from .phase_controller import PhaseController
 from .skill_manager import SkillManager
 from .card_system import CardSystem, make_pass_option, option_label
-from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
+from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET, card_label
 from .rules_engine import RulesEngine
 from .ai_decision import AIDecision
 from .identity_system import IdentitySystem
@@ -326,7 +326,7 @@ class MainEngine:
                     card=card_to_dict(card),
                     reason="hand_limit",
                     discard_count=before_discard + offset,
-                    message=f"{player.name}因手牌上限弃置【{card.name}】",
+                    message=f"{player.name}因手牌上限弃置{card_label(card)}",
                 )
 
     # ---------- 状态序列化 ----------
@@ -1988,6 +1988,15 @@ class MainEngine:
                     }
                 )
 
+        # 军争重铸：出牌阶段可把可重铸的牌（铁索连环）置入弃牌堆并摸一张牌；不是使用，无目标、不可被无懈。
+        for i, card in enumerate(player.hand):
+            spec = CARD_TABLE.get(card.name)
+            if spec is not None and spec.recast:
+                actions.append({"type": "recast", "card_index": i,
+                                "card": card_to_dict(card, include_id=False),
+                                "requires_target": False, "valid_targets": [],
+                                "text": f"重铸{card_label(card)}"})
+
         # 木牛流马存牌是装备主动操作，输入索引始终指向真正手牌。
         if (getattr(player.equipment.get("treasure"), "name", None) == "木牛流马"
                 and not player.flags.get("muniu_stored_this_turn")):
@@ -2046,7 +2055,7 @@ class MainEngine:
                 )
                 effect_context.last_hand_card = source_zone == "hand" and len(player.hand) == 1
                 await self._notify_card_ui(
-                    message=f"{player.name}使用【{card.name}】"
+                    message=f"{player.name}使用{card_label(card)}"
                     + (f"，目标：{'、'.join(t.name for t in targets)}" if targets else ""),
                     system_text=f"[‘{player.name}’{card.name}！]",
                     actor_id=player.id,
@@ -2091,6 +2100,9 @@ class MainEngine:
                     await self.skill_manager.after_card_used(player, card, targets, success)
                 return success
 
+            if action_type == "recast":
+                return await self._execute_recast(player, action)
+
             if action_type == "use_skill":
                 target_ids = target_ids or []
                 legal = next((candidate for candidate in self.get_available_actions(player)
@@ -2126,6 +2138,34 @@ class MainEngine:
 
             traceback.print_exc()
             return False
+
+    async def _execute_recast(self, player: Player, action: Dict) -> bool:
+        """重铸：引擎按合法操作列表复核 → 手牌移入弃牌堆（reason 重铸）→ 摸一张牌。
+
+        重铸不是“使用”：不走 use_card、不询问无懈可击、不记行为账本、不计入出牌统计。"""
+        index = action.get("card_index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return False
+        legal = next((a for a in self.get_available_actions(player)
+                      if a.get("type") == "recast" and a.get("card_index") == index), None)
+        if legal is None or not 0 <= index < len(player.hand):
+            logger.info("  ❌ 重铸不在当前合法操作列表")
+            return False
+        card = player.hand[index]
+        await self._notify_card_ui(
+            message=f"{player.name}重铸{card_label(card)}（置入弃牌堆，摸一张牌）",
+            actor_id=player.id, actor_name=player.name, source_name=player.name,
+            card_name=card.name, card_index=index, card=card_to_dict(card),
+            reason="recast", discard_count=len(self.game_state.discard_pile) + 1,
+        )
+        if self.game_aborted:
+            return False
+        move = await self.move_card(card, "hand", "discard", from_owner=player,
+                                    reason="重铸", actor_id=player.id)
+        if move is None:
+            return False
+        await self.draw_cards(player, 1, reason="重铸")
+        return True
 
     async def _emit_game_end_once(self):
         if self._game_end_emitted:

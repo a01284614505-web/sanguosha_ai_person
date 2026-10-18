@@ -25,6 +25,25 @@
     // 卡牌插画与说明来自 card_info.js；这里保留最小兜底，防止脚本加载顺序出错时整页白屏。
     const CARD_ART = global.SGS_CARD_ART || { '杀': 'sha', '闪': 'shan', '桃': 'tao' };
     const CARD_INFO = global.SGS_CARD_INFO || {};
+    // 属性杀：牌名仍是“杀”，属性来自牌的 nature 字段（fire / thunder）。牌面写“火杀 / 雷杀”。
+    const NATURE_INFO = global.SGS_NATURE_INFO || {
+        fire: { name: '火杀', type: '基本', text: '' }, thunder: { name: '雷杀', type: '基本', text: '' }
+    };
+    const NATURE_SHORT = { fire: '火', thunder: '雷' };
+    /** 只有【杀】带属性；返回 'fire' / 'thunder' / ''。 */
+    function natureOf(card) {
+        return card && card.name === '杀' && NATURE_INFO[card.nature] ? card.nature : '';
+    }
+    /** 日志用的带括号牌名：火【杀】、雷【杀】、【闪】。 */
+    function bracketName(card) {
+        const n = natureOf(card);
+        return (n ? NATURE_SHORT[n] : '') + '【' + ((card && card.name) || '') + '】';
+    }
+    /** 牌面/日志用的显示名：火杀、雷杀，其余原样。 */
+    function displayName(card) {
+        const n = natureOf(card);
+        return n ? NATURE_INFO[n].name : ((card && card.name) || '');
+    }
 
     // 延时锦囊在判定区里显示的单字
     const DELAYED = { '乐不思蜀': '乐', '兵粮寸断': '兵', '闪电': '电' };
@@ -68,7 +87,7 @@
     function cardLabel(card) {
         if (!card) return '';
         const s = suitInfo(card.suit);
-        return s.sym + rankText(card.rank) + ' ' + (card.name || '');
+        return s.sym + rankText(card.rank) + ' ' + displayName(card);
     }
 
     function cardArtURL(name) {
@@ -98,10 +117,14 @@
             return '<div class="' + cls.join(' ') + '" ' + attrs + '></div>';
         }
         const name = card.name || '?';
+        const nature = natureOf(card);
+        const shown = nature ? NATURE_INFO[nature].name : name;
+        if (nature) cls.push('nat-' + nature);
         const s = suitInfo(card.suit);
         const art = cardArtURL(name);
         let typeTag = '';
-        if (DELAYED[name]) typeTag = '<span class="c-type delay">延时</span>';
+        if (nature) typeTag = '<span class="c-nature ' + nature + '">' + NATURE_SHORT[nature] + '</span>';
+        else if (DELAYED[name]) typeTag = '<span class="c-type delay">延时</span>';
         else if (card.card_type === 'trick') typeTag = '<span class="c-type trick">锦囊</span>';
         else if (card.card_type === 'equipment') typeTag = '<span class="c-type equipment">装备</span>';
         const artHTML = art
@@ -114,13 +137,14 @@
         const detail = opts.noDetail ? '' : cardDetailAttrs(card);
         return '<div class="' + cls.join(' ') + '" ' + attrs + ' ' + detail + ' aria-label="' + esc(cardLabel(card)) + '">' +
             artHTML + corner + typeTag + asTag +
-            '<div class="c-name' + (name.length > 3 ? ' long' : '') + '">' + esc(name) + '</div></div>';
+            '<div class="c-name' + (shown.length > 3 ? ' long' : '') + '">' + esc(shown) + '</div></div>';
     }
 
     /** 详情浮窗需要的数据属性（牌名、花色、点数）。 */
     function cardDetailAttrs(card) {
         if (!card || !card.name) return '';
         return 'data-card-name="' + esc(card.name) + '"' +
+            (natureOf(card) ? ' data-card-nature="' + natureOf(card) + '"' : '') +
             (card.suit ? ' data-card-suit="' + esc(card.suit) + '"' : '') +
             (card.rank ? ' data-card-rank="' + esc(card.rank) + '"' : '');
     }
@@ -335,22 +359,25 @@
         },
 
         content(t) {
-            if (t.dataset.cardName) return cardDetailHTML(t.dataset.cardName, t.dataset.cardSuit, t.dataset.cardRank);
+            if (t.dataset.cardName) return cardDetailHTML(t.dataset.cardName, t.dataset.cardSuit, t.dataset.cardRank, t.dataset.cardNature);
             if (t.dataset.skillName) return skillDetailHTML(t.dataset.skillName, t.dataset.skillDesc, t.dataset.skillType);
             return '';
         }
     };
 
     /** 卡牌详情：小牌面 + 名称 + 类型/射程 + 效果；引擎未实现的特效如实注明。 */
-    function cardDetailHTML(name, suit, rank) {
-        const info = CARD_INFO[name] || {};
+    function cardDetailHTML(name, suit, rank, nature) {
+        const nat = natureOf({ name: name, nature: nature });
+        // 火杀 / 雷杀：标题与说明用属性杀自己的条目，没有时退回普通【杀】
+        const info = (nat && NATURE_INFO[nat].text) ? NATURE_INFO[nat] : (CARD_INFO[name] || {});
+        const title = nat ? NATURE_INFO[nat].name : name;
         const s = suitInfo(suit);
-        const face = cardHTML({ name: name, suit: suit, rank: rank, card_type: info.type === '基本' ? 'basic' : (/武器|防具|坐骑|宝物/.test(info.type || '') ? 'equipment' : 'trick') }, { noDetail: true });
+        const face = cardHTML({ name: name, nature: nat, suit: suit, rank: rank, card_type: info.type === '基本' ? 'basic' : (/武器|防具|坐骑|宝物/.test(info.type || '') ? 'equipment' : 'trick') }, { noDetail: true });
         const tags = [info.type ? '<span class="dp-tag">' + esc(info.type) + '</span>' : ''];
         if (info.range) tags.push('<span class="dp-tag">攻击范围 ' + info.range + '</span>');
         if (info.horse) tags.push('<span class="dp-tag">距离 ' + esc(info.horse) + '</span>');
         const meta = s.sym ? s.name + ' ' + rankText(rank) : '';
-        return '<div class="dp-head">' + face + '<div><h4>' + esc(name) + '</h4><div>' + tags.join('') + '</div>' +
+        return '<div class="dp-head">' + face + '<div><h4>' + esc(title) + '</h4><div>' + tags.join('') + '</div>' +
             (meta ? '<div class="dp-meta">' + esc(meta) + '</div>' : '') + '</div></div>' +
             '<div>' + esc(info.text || '暂无说明。') + '</div>' +
             (info.pending ? '<div class="dp-note">本项目引擎暂未实现这件装备的特效' + (info.range ? '，目前只生效攻击范围' : '') + '。</div>' : '');
@@ -535,7 +562,7 @@
         SUIT, CARD_ART, CARD_INFO, DELAYED, EQUIP_SLOT, EQUIP_ORDER, IDENTITY, WINNER, PHASE, PHASE_ORDER, PHASE_SHORT, SKILL_TAG,
         esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs,
         identitySeal, factionSeal, heroImageURL, heroImgHTML, imgFallback, icon, hydrateIcons,
-        applyTheme, toggleTheme, Detail, cardDetailHTML, skillDetailHTML, store, toast, fetchJSON, attachModelPicker, identityCardHTML
+        applyTheme, toggleTheme, Detail, cardDetailHTML, natureOf, displayName, bracketName, NATURE_INFO, skillDetailHTML, store, toast, fetchJSON, attachModelPicker, identityCardHTML
     };
     global.SGS = SGS;
 

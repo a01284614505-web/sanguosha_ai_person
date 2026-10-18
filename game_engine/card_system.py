@@ -8,7 +8,7 @@ import logging
 from typing import List, Callable
 
 from . import card_flow
-from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
+from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET, card_label, damage_text
 from .game_stats import mark_damage_source, pop_kill_credit, record_stat
 from .state_manager import Card, card_to_dict
 
@@ -40,7 +40,9 @@ def option_label(option: dict) -> str:
     card = option.get("card")
     if card is None:
         return "不响应"
-    base = f"{SUIT_SYMBOLS.get(getattr(card, 'suit', ''), '')}{getattr(card, 'rank', '')} {card.name}"
+    # 属性杀写成 火【杀】/雷【杀】，AI 与真人都能看出响应牌的属性；普通牌保持原样。
+    name_text = card_label(card) if getattr(card, "nature", None) else card.name
+    base = f"{SUIT_SYMBOLS.get(getattr(card, 'suit', ''), '')}{getattr(card, 'rank', '')} {name_text}"
     skill = option.get("skill_name")
     if skill:
         return f"{base} →（{skill}）当{option.get('as_name') or card.name}"
@@ -162,6 +164,7 @@ class CardSystem:
     async def notify_card_to_discard(self, actor, card, reason="use", card_index=None, message=None):
         if not self.ui_notifier:
             return
+        shown = card_label(card)
         action_text = {
             "respond": f"[‘{actor.name}’{card.name}！]",
             "discard": f"[‘{actor.name}’弃置‘{card.name}’]",
@@ -178,7 +181,7 @@ class CardSystem:
             card=card_to_dict(card),
             reason=reason,
             discard_count=len(self.game_state.discard_pile),
-            message=message or f"{actor.name}{'打出' if reason == 'respond' else '弃置'}【{card.name}】",
+            message=message or f"{actor.name}{'打出' if reason == 'respond' else '弃置'}{shown}",
         )
 
     # ---------- 行为账本（Stage T · T1）----------
@@ -195,7 +198,7 @@ class CardSystem:
         """牌指定目标时按 CARD_TABLE.ledger_kind 记账，返回已记条目（出牌失败时撤销）。
 
         杀由 use_sha 在目标确定处自己记（要区分流离转移），这里跳过；
-        群体牌只记一条不归属的 group；借刀杀人：指使者→最终目标敌意，指使者→被借刀者低权重敌意。
+        群体牌只记一条不归属的 group；借刀杀人：指使者→最终目标敌意，取武器不带敌意（2026-10-18 用户裁定：可能是借队友的刀打敌人），不记指使者→被借刀者。
         """
         if spec is None or spec.ledger_kind == "none" or spec.resolver == "use_sha" or spec.usage == "response":
             return []
@@ -204,9 +207,8 @@ class CardSystem:
             entries.append(self._ledger_record(player, None, "group", card.name))
         elif kind == "borrow":
             if targets and len(targets) == 2:
-                weapon_owner, victim = targets
+                _weapon_owner, victim = targets  # 被借刀者不入账：取武器是中性的
                 entries.append(self._ledger_record(player, victim, "hostile", "借刀"))
-                entries.append(self._ledger_record(player, weapon_owner, "hostile", "借刀夺武器", 0.5))
         elif kind in ("hostile", "friendly"):
             seen = set()
             for target in targets or []:
@@ -337,8 +339,9 @@ class CardSystem:
         }
         # 青釭剑只在本次杀的目标结算中忽略防具；朱雀羽扇转化普通杀的属性。
         event["ignore_armor"] = weapon_name == "青釭剑"
-        if weapon_name == "朱雀羽扇" and not event["nature"]:
+        if weapon_name == "朱雀羽扇" and not event["nature"] and card.name == "杀":
             event["nature"] = "fire"
+            await self._notify_gain(f"{player.name}的【朱雀羽扇】发动：普通【杀】视为火【杀】")
         
         # 5. 技能修正目标、响应数和伤害后执行杀的效果
         await self.trigger_manager.before_sha(player, target, card, event)
@@ -845,6 +848,10 @@ class CardSystem:
                 record_stat(self.engine, source, "damage_dealt", amount)
             mark_damage_source(self.game_state, target, source)
             logger.info(f"  → {target.name} 体力: {target.hp}/{target.max_hp}")
+            # 战报：写明属性与来源；铁索传导的伤害单独标注。
+            dealer = f"（{source.name}造成）" if source is not None and source is not target else ""
+            via = "（铁索连环传导）" if context.get("chain_transfer") else ""
+            await self._notify_gain(f"{target.name}受到{damage_text(amount, nature)}{dealer}{via}，体力{target.hp}/{target.max_hp}")
             
             await self.trigger_manager.after_damage(source, target, amount, card, context)
             if self.engine is not None and self.engine.game_aborted:
@@ -1131,7 +1138,7 @@ class CardSystem:
             self.game_state.discard_pile.append(card)
             await self.trigger_manager.on_cards_lost(owner, [card], reason)
         await self.notify_card_to_discard(owner, card, "respond", index,
-                                          f"{owner.name}打出【{result.get('as_name') or card.name}】响应{reason}")
+                                          f"{owner.name}打出{card_label(card, name=result.get('as_name'))}响应{reason}")
         self._record_played(owner)
         await self.trigger_manager.on_card_discarded(owner, card, reason)
         await self.trigger_manager.on_card_responded(
@@ -1495,7 +1502,7 @@ class CardSystem:
             await self.notify_card_to_discard(player, discarded, "discard", idx,
                                                f"{player.name}弃置【{discarded.name}】发动火攻")
             await self.trigger_manager.on_card_discarded(player, discarded, "火攻")
-            await self.damage(player, target, 1, card=card, context={"reason": "火攻"})
+            await self.damage(player, target, 1, card=card, context={"reason": "火攻", "nature": "fire"})
         return True
 
     async def use_equipment(self, player, card: Card):

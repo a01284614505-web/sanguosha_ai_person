@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .card_system import option_label
-from .card_table import CARD_TABLE
-from .card_text import CARD_TEXT
+from .card_table import CARD_TABLE, card_label
+from .card_text import CARD_TEXT, NATURE_CARD_TEXT
 from .hero_registry import HeroRegistry
 from .protocol import PROVIDERS
 
@@ -101,6 +101,8 @@ class WorldbookManager:
             "- 身份奖惩：任何角色杀死反贼后摸3张牌；主公杀死忠臣须弃置所有手牌和装备区的牌。",
             "- 属性伤害：火【杀】/雷【杀】、【火攻】、【闪电】造成属性伤害；处于连环状态的角色受到属性伤害时，"
             "其他连环角色依次受到同样的伤害（从当前回合角色起按座次）。",
+            "- 火【杀】对【藤甲】伤害 +1，雷【杀】对【藤甲】照常 1 点；【藤甲】只挡普通【杀】、【南蛮入侵】、【万箭齐发】。",
+            "- 重铸：出牌阶段可把【铁索连环】重铸（置入弃牌堆并摸一张牌，不算使用，不能被【无懈可击】响应）。",
             "",
             "【卡牌效果表】（括号内为武器攻击范围）",
         ]
@@ -111,6 +113,8 @@ class WorldbookManager:
             reach = (f"（范围{spec.weapon_range}）"
                      if spec is not None and spec.equipment_slot == "weapon" else "")
             lines.append(f"- 【{name}】{card_type}{reach}：{text}")
+        for nature, (alias, card_type, text) in NATURE_CARD_TEXT.items():
+            lines.append(f"- {card_label(None, name='杀', nature=nature)}（{alias}）{card_type}：{text}")
 
         lines += [
             "",
@@ -192,7 +196,8 @@ class WorldbookManager:
             sections.append("你的场上区域：" + own_zones.lstrip("，"))
 
         if player.hand:
-            hand = "、".join(f"{i}:{c.name}({c.suit}{c.rank})" for i, c in enumerate(player.hand))
+            hand = "、".join(f"{i}:{card_label(c)}({c.suit}{c.rank})" if getattr(c, "nature", None)
+                            else f"{i}:{c.name}({c.suit}{c.rank})" for i, c in enumerate(player.hand))
             sections.append(f"你的手牌：{hand}")
         return "\n\n".join(sections)
 
@@ -513,7 +518,7 @@ class AIDecision:
         action_type = action.get("type", "")
         if action_type == "play_card":
             card = action.get("card") or {}
-            text = f"使用手牌#{action.get('card_index')}【{card.get('name', '未知')}】"
+            text = f"使用手牌#{action.get('card_index')}{card_label(card, name=card.get('name', '未知'))}"
             if card.get("name") == "酒":
                 text += "（只对本回合下一张【杀】生效；手里没有能出的【杀】时使用没有收益）"
             if action.get("requires_target"):
@@ -522,6 +527,10 @@ class AIDecision:
                 else:
                     text += f"，合法目标={action.get('valid_targets', [])}"
             return text
+        if action_type == "recast":
+            card = action.get("card") or {}
+            return (f"重铸手牌#{action.get('card_index')}{card_label(card, name=card.get('name', '铁索连环'))}"
+                    "：弃置这张铁索连环，摸一张牌（不算使用，不能被无懈可击，不指定目标）")
         if action_type == "use_skill":
             text = f"发动【{action.get('skill_name')}】/{action.get('variant', 'default')}"
             if action.get("card_indices"):
@@ -710,6 +719,9 @@ class AIDecision:
                 selected = next((a for a in playable if a.get("type") == "use_skill" and a.get("skill_name") == skill_name), None)
                 if selected:
                     break
+        if not selected:
+            # 军争重铸：没有更优先的出牌时，把铁索连环重铸成新牌（规则 AI 不会用连环做配合，持有无益）。
+            selected = next((a for a in playable if a.get("type") == "recast"), None)
         if not selected and playable:
             selected = playable[0]
         if not selected:
@@ -741,7 +753,7 @@ class AIDecision:
         if target is not None:
             parts.append(f"目标：{target.get('name', target) if isinstance(target, dict) else getattr(target, 'name', target)}")
         if card is not None:
-            parts.append(f"触发牌：{getattr(card, 'name', card)}")
+            parts.append(f"触发牌：{card_label(card) if hasattr(card, 'name') else card}")
         return "；".join(parts)
 
     def build_response_prompt(self, player, request: Dict) -> str:

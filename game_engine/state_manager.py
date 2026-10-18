@@ -487,6 +487,9 @@ def card_to_dict(card: "Card", include_id: bool = True, name: Optional[str] = No
         Path(__file__).resolve().parents[1] / "frontend" / "assets" / "cards" / f"{spec.image}.png"
     ).is_file():
         d["image"] = spec.image
+    # 属性（火/雷）是牌的公开字段；技能虚拟牌改了牌名（如红牌当杀）时视为普通牌，不继承原属性。
+    if getattr(card, "nature", None) and (name is None or name == card.name):
+        d["nature"] = card.nature
     if include_id:
         d["id"] = card.id
     return d

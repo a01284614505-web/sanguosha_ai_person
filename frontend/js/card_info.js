@@ -68,6 +68,13 @@
         '骅骝': { type: '坐骑', horse: '+1', text: HORSE_PLUS }
     };
 
+    // 属性杀（牌名仍是【杀】，属性来自牌的 nature 字段）：详情浮窗与图鉴用。
+    // 文字与引擎 card_text.NATURE_CARD_TEXT 逐字一致（tests/test_junzheng_fixes.py 守护）。
+    const NATURE_INFO = {
+        fire: { name: '火杀', type: '基本', text: '牌名仍是【杀】，只是带火焰属性，使用规则与【杀】相同。目标未打出【闪】时受到你造成的 1 点火焰伤害。装备【藤甲】的角色受到火焰伤害时，此伤害 +1，且藤甲挡不住火【杀】；处于连环状态的角色受到火焰伤害时，会把同样的伤害传导给其他连环角色。' },
+        thunder: { name: '雷杀', type: '基本', text: '牌名仍是【杀】，只是带雷电属性，使用规则与【杀】相同。目标未打出【闪】时受到你造成的 1 点雷电伤害。装备【藤甲】的角色挡不住雷【杀】（但不会 +1）；处于连环状态的角色受到雷电伤害时，会把同样的伤害传导给其他连环角色。' }
+    };
+
     // 卡牌名 -> 插画文件名（frontend/assets/cards/<key>.png），与 card_table.source_key 一致
     const CARD_ART = {
         '杀': 'sha', '闪': 'shan', '桃': 'tao', '酒': 'jiu',
@@ -85,7 +92,7 @@
 
     // 图鉴页的分组顺序
     const CARD_GROUPS = [
-        ['基本牌', ['杀', '闪', '桃', '酒']],
+        ['基本牌', ['杀', '火杀', '雷杀', '闪', '桃', '酒']],
         ['锦囊牌', ['过河拆桥', '顺手牵羊', '无中生有', '决斗', '南蛮入侵', '万箭齐发', '桃园结义', '五谷丰登', '借刀杀人', '铁索连环', '火攻', '无懈可击']],
         ['延时锦囊', ['乐不思蜀', '兵粮寸断', '闪电']],
         ['武器', ['诸葛连弩', '雌雄双股剑', '青釭剑', '古锭刀', '寒冰剑', '青龙偃月刀', '丈八蛇矛', '贯石斧', '方天画戟', '朱雀羽扇', '麒麟弓']],
@@ -94,6 +101,7 @@
     ];
 
     global.SGS_CARD_INFO = CARD_INFO;
+    global.SGS_NATURE_INFO = NATURE_INFO;
     global.SGS_CARD_ART = CARD_ART;
     global.SGS_CARD_GROUPS = CARD_GROUPS;
 })(typeof window !== 'undefined' ? window : globalThis);

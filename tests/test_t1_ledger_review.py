@@ -142,14 +142,15 @@ def test_review_delayed_trick_wuxie_layer2_records_nothing_when_user_unknown():
     assert rows(engine) == [(2, victim.id, "protect", "无懈保护")]
 
 
-def test_review_jiedao_records_weapon_hostility_at_play_time_even_when_executor_complies():
+def test_review_jiedao_records_no_weapon_hostility_even_when_executor_complies():
     engine = game()
     p0, p1, p2 = engine.game_state.players[:3]
     p1.equipment["weapon"] = card("w", "诸葛连弩", "club")
     p1.hand.append(card("sha_exec", "杀"))
     engine.card_system.responder = scripted_responder({1: {"杀"}})
     run(engine.card_system.use_card(p0, card("jd", "借刀杀人"), [p1, p2]))
-    # 调度裁定：指定某人的武器本身就是带敌意的选择（方案 6.2），出牌即记，不看执行者是否出杀。
+    # 2026-10-18 用户裁定：借刀可能是借队友的刀去打敌人，取武器不带敌意，不记"借刀夺武器"。
     assert p1.equipment.get("weapon") is not None          # 武器没有被夺走
-    weapon = [e for e in engine.ledger.entries if e.label == "借刀夺武器"]
-    assert [(e.source_id, e.target_id, e.kind, e.weight) for e in weapon] == [(0, 1, "hostile", 0.5)]
+    assert [e for e in engine.ledger.entries if e.label == "借刀夺武器"] == []
+    assert not any(e.target_id == 1 for e in engine.ledger.entries)   # 被借刀者没有任何入账
+    assert [(e.source_id, e.target_id, e.kind) for e in engine.ledger.entries] == [(0, 2, "hostile")]

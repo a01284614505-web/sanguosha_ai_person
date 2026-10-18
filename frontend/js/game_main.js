@@ -387,6 +387,12 @@
         return (G.turn.actions || []).find(a => a.type === 'play_card' && a.card_index === index) || null;
     }
 
+    /** 军争重铸：这张手牌（铁索连环）在出牌阶段的 recast 操作，没有就是不能重铸。 */
+    function recastActionFor(index) {
+        if (!isMyPlay()) return null;
+        return (G.turn.actions || []).find(a => a.type === 'recast' && a.card_index === index) || null;
+    }
+
     /** 当前技能的全部候选操作（同一技能可能有多种发动方式/多种用牌组合）。 */
     function skillCandidates() {
         if (!isMyPlay() || !G.sel || G.sel.kind !== 'skill') return [];
@@ -473,7 +479,7 @@
                 } else {
                     // 普通出牌
                     if (G.sel && G.sel.kind === 'card' && G.sel.index === i) cls.push('selected');
-                    else if (playActionFor(i)) cls.push('can');
+                    else if (playActionFor(i) || recastActionFor(i)) cls.push('can');
                     else cls.push('dim');
                 }
             }
@@ -527,7 +533,7 @@
             renderAll();
             return;
         }
-        const action = playActionFor(i);
+        const action = playActionFor(i) || recastActionFor(i);
         if (!action) {
             const c = G.hand[i] || {};
             toast(c.name === '闪' || c.name === '无懈可击' ? '【' + c.name + '】只能在需要时打出' : '【' + (c.name || '这张牌') + '】现在不能使用', { bad: true });
@@ -597,6 +603,11 @@
             cancel.disabled = !G.sel;
             ok.disabled = !selectionReady();
             prompt.innerHTML = playPrompt();
+            // 选中的牌可以重铸（铁索连环）：操作条上多一个“重铸”按钮
+            if (G.sel && G.sel.kind === 'card' && recastActionFor(G.sel.index)) {
+                opts.innerHTML = '<button type="button" class="opt-chip" data-recast="1" title="置入弃牌堆，然后摸一张牌（不算使用）">重铸</button>';
+                opts.querySelector('[data-recast]').addEventListener('click', () => doRecast(G.sel.index));
+            }
             // 同一组牌有多种发动方式（如国色：当乐不思蜀 / 弃牌移除乐不思蜀）时，列出来让玩家选
             if (G.sel && G.sel.kind === 'skill' && !G.sel.action) {
                 const matches = skillMatches();
@@ -623,6 +634,7 @@
             const card = G.hand[G.sel.index] || {};
             const name = '【' + esc(card.name) + '】';
             const a = G.sel.action;
+            if (a.type === 'recast') return name + '：现在没有可用的目标，可以点<em>重铸</em>（置入弃牌堆，摸一张牌）';
             if (a.requires_target && !selectionReady()) {
                 if (a.target_count === 2) {
                     return G.sel.targets.length === 0
@@ -632,7 +644,7 @@
                 const max = targetMax();
                 return name + '：选择' + (max > 1 ? '至多 ' + max + ' 名' : '一名') + '<em>目标角色</em>';
             }
-            return '点击<em>确定</em>使用' + name + (G.sel.targets.length ? '，目标：' + G.sel.targets.map(id => esc((playerById(id) || {}).name || id)).join('、') : '');
+            return '点击<em>确定</em>使用' + name + (recastActionFor(G.sel.index) ? '，或点<em>重铸</em>摸一张牌' : '') + (G.sel.targets.length ? '，目标：' + G.sel.targets.map(id => esc((playerById(id) || {}).name || id)).join('、') : '');
         }
         const name = '【' + esc(G.sel.name) + '】';
         if (!G.sel.action) {
@@ -758,10 +770,14 @@
         }
         if (!selectionReady()) return;
         const sel = G.sel;
+        if (sel.kind === 'card' && sel.action.type === 'recast') {
+            doRecast(sel.index);
+            return;
+        }
         if (sel.kind === 'card') {
             const card = G.hand[sel.index] || {};
             gameClient.playerAction({ type: 'play_card', card_index: sel.index }, sel.targets.slice());
-            ChatPanel.addLog('你使用【' + card.name + '】' + targetsText(sel.targets), 'me');
+            ChatPanel.addLog('你使用' + SGS.bracketName(card) + targetsText(sel.targets), 'me');
         } else {
             // 技能：原样提交引擎给的候选对象（引擎按 skill_name / variant / card_indices 复核）
             const action = Object.assign({}, sel.action);
@@ -769,6 +785,16 @@
             gameClient.playerAction(action, targets);
             ChatPanel.addLog('你发动【' + sel.name + '】' + targetsText(targets), 'me');
         }
+        G.sel = null;
+        G.turn = null; // 等引擎结算后重新下发 your_turn
+        renderAll();
+    }
+
+    /** 重铸：把选中的铁索连环置入弃牌堆并摸一张牌（引擎复核，不算使用）。 */
+    function doRecast(index) {
+        const card = G.hand[index] || {};
+        gameClient.playerAction({ type: 'recast', card_index: index }, []);
+        ChatPanel.addLog('你重铸' + SGS.bracketName(card) + '（置入弃牌堆，摸一张牌）', 'me');
         G.sel = null;
         G.turn = null; // 等引擎结算后重新下发 your_turn
         renderAll();
@@ -1448,7 +1474,7 @@
     gameClient.onEventNotification = function (data) {
         switch (data.event_kind) {
             case 'card_to_discard':
-                ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '使用【' + (data.card_name || '') + '】'));
+                ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '使用' + SGS.bracketName(data.card || { name: data.card_name })));
                 enqueue(animateCard, data);
                 return;
             case 'judge':
