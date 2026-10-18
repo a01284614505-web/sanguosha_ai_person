@@ -364,6 +364,7 @@ class MainEngine:
                     "chained": bool(getattr(p, "chained", False)),
                     "treasure_count": len(p.treasure_cards),
                     "alive": p.alive,
+                    "death_round": p.flags.get("death_round"),
                     "hero_name": self._hero_name(p),
                     "hero": {
                         "id": (p.hero or {}).get("id", ""),
@@ -823,6 +824,7 @@ class MainEngine:
 
     def on_player_death(self, player: Player):
         """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
+        player.flags.setdefault("death_round", int(getattr(self.game_state, "round_number", 0) or 0))
         if player.identity == "lord":
             survivors = [p for p in self.game_state.players if p.alive]
             self.spy_duel_lord = (self._spy_duel_lord_ready and len(survivors) == 1

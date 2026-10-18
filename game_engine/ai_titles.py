@@ -8,6 +8,7 @@ from pathlib import Path
 TITLE_PATH = Path(__file__).resolve().parents[1] / "data" / "ai_titles.json"
 TIER_RANK = {"普通": 1, "高级": 2, "稀有": 3}
 DEFAULT_AI_NAMES = ("诸葛村夫", "曹操的粉丝", "小乔我老婆", "酒馆常客")
+NO_TITLE = "__none__"
 
 
 def title_catalog():
@@ -34,7 +35,7 @@ def highest_title(stats):
 def title_view(stats, equipped=None):
     catalog = {row["id"]: row for row in title_catalog()}
     earned = earned_titles(stats)
-    selected = catalog.get(equipped) if equipped in earned else highest_title(stats)
+    selected = None if equipped == NO_TITLE else catalog.get(equipped) if equipped in earned else highest_title(stats)
     return {"earned": [catalog[key] for key in earned if key in catalog],
             "equipped": selected}
 
@@ -71,9 +72,12 @@ def update_player_stats(stats, player, payload, won, *, previous_streak=0, reset
         stats["win_streak"] = 0
     if (payload.get("mvp") or {}).get("player_id") == player.get("id"):
         stats["mvp"] = int(stats.get("mvp", 0)) + 1
+    try:
+        death_round = int(player.get("death_round"))
+    except (TypeError, ValueError):
+        death_round = 0
     if (payload.get("winner") in ("lord", "rebel", "spy", "draw")
-            and player.get("alive") is False
-            and int((payload.get("state") or {}).get("round") or 0) <= 1):
+            and player.get("alive") is False and death_round == 1):
         stats["first_death"] = int(stats.get("first_death", 0)) + 1
     return stats
 

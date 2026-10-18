@@ -206,8 +206,7 @@
                 const a = this.aiConfigs.find(item => item.aiId === aiId) || this.aiConfigs[i];
                 const provider = this.providers.find(p => p.value === a.provider);
                 const hasKey = !!(a.apiKey && a.apiKey.trim());
-                const assignedElsewhere = new Set(this.assignments.filter((value, seat) => seat !== i));
-                return '<div class="frame guest"><select class="ai-player-select" data-seat="' + i + '" aria-label="选择' + SEAT_NAMES[i] + '号位 AI 选手">' + this.aiRoster.map(player => '<option value="' + esc(player.id) + '"' + (player.id === aiId ? ' selected' : '') + (assignedElsewhere.has(player.id) ? ' disabled' : '') + '>' + esc(player.name) + '</option>').join('') + '</select><button type="button" class="guest-config" data-ai="' + i + '" aria-label="配置' + esc(a.name) + '">' +
+                return '<div class="frame guest"><select class="ai-player-select" data-seat="' + i + '" aria-label="选择' + SEAT_NAMES[i] + '号位 AI 选手">' + this.aiRoster.map(player => '<option value="' + esc(player.id) + '"' + (player.id === aiId ? ' selected' : '') + '>' + esc(player.name) + '</option>').join('') + '</select><button type="button" class="guest-config" data-ai="' + i + '" aria-label="配置' + esc(a.name) + '">' +
                     '<span class="seat-no">' + SEAT_NAMES[i] + '</span>' +
                     '<span><strong>' + esc(a.name) + '</strong>' +
                     '<small>' + esc(provider ? provider.name : a.provider) + ' · ' + esc(a.model || '默认模型') + '</small>' +
@@ -215,7 +214,10 @@
                     '<span class="edit">配置</span></button></div>';
             }).join('');
             row.querySelectorAll('.ai-player-select').forEach(select => select.addEventListener('change', () => {
-                this.assignments[Number(select.dataset.seat)] = select.value;
+                const seat = Number(select.dataset.seat);
+                const displacedSeat = this.assignments.findIndex((value, index) => value === select.value && index !== seat);
+                if (displacedSeat >= 0) this.assignments[displacedSeat] = this.assignments[seat];
+                this.assignments[seat] = select.value;
                 this.persistAIConfigs();
                 this.renderGuests();
             }));

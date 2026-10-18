@@ -1,5 +1,5 @@
 from game_engine.game_history import GameHistoryStore
-from game_engine.ai_titles import update_player_stats
+from game_engine.ai_titles import NO_TITLE, title_view, update_player_stats
 from game_engine.cognitive_notes import CognitiveNotes
 from game_engine.main_engine import MainEngine
 from game_server import GameServer
@@ -64,6 +64,12 @@ def test_ai_title_equipping_requires_earned_title(tmp_path):
         assert "已获得" in str(exc)
     else:
         raise AssertionError("uneared title should be rejected")
+
+
+def test_no_title_is_distinct_from_auto_highest():
+    stats = {"win_streak": 2}
+    assert title_view(stats)["equipped"]["id"] == "streak_2"
+    assert title_view(stats, NO_TITLE)["equipped"] is None
 
 
 def test_ai_rosters_are_scoped_to_browser_profile(tmp_path):
@@ -133,9 +139,9 @@ def test_spy_single_duel_title_requires_engine_evidence():
 
 
 def test_spy_duel_evidence_is_captured_at_lord_death():
-    lord = SimpleNamespace(identity="lord", alive=False)
+    lord = SimpleNamespace(identity="lord", alive=False, flags={})
     spy = SimpleNamespace(identity="spy", alive=True)
-    engine = SimpleNamespace(game_state=SimpleNamespace(players=[lord, spy]), spy_duel_lord=False,
+    engine = SimpleNamespace(game_state=SimpleNamespace(players=[lord, spy], round_number=1), spy_duel_lord=False,
                              _spy_duel_lord_ready=False,
                              notes=SimpleNamespace(on_death=lambda player: None),
                              chat_director=SimpleNamespace(on_death=lambda player: None))
@@ -144,6 +150,7 @@ def test_spy_duel_evidence_is_captured_at_lord_death():
     lord.alive = False
     MainEngine.on_player_death(engine, lord)
     assert engine.spy_duel_lord is True
+    assert lord.flags["death_round"] == 1
     engine.game_state.players.append(SimpleNamespace(identity="rebel", alive=True))
     lord.alive = True
     MainEngine._observe_spy_duel_lord_state(engine)
@@ -158,6 +165,14 @@ def test_deep_cover_requires_positive_engine_coverage_evidence():
     assert update_player_stats({}, winner, {"winner": "rebel"}, True).get("deep_cover_wins", 0) == 0
     assert update_player_stats({}, winner, {"winner": "rebel", "_title_hidden_players": []}, True).get("deep_cover_wins", 0) == 0
     assert update_player_stats({}, winner, {"winner": "rebel", "_title_hidden_players": [1]}, True)["deep_cover_wins"] == 1
+
+
+def test_first_death_uses_actual_death_round_not_final_round():
+    player = {"id": 1, "identity": "rebel", "alive": False, "death_round": 1}
+    late_result = {"winner": "lord", "state": {"round": 5}}
+    assert update_player_stats({}, player, late_result, False)["first_death"] == 1
+    player["death_round"] = 2
+    assert update_player_stats({}, player, late_result, False).get("first_death", 0) == 0
 
 
 def test_aborted_streak_follows_existing_history_grace_policy(tmp_path):

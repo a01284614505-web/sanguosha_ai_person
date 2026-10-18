@@ -19,7 +19,8 @@
         message.hidden = false;
         message.textContent = text;
     }
-    const titleOptions = (titles, selected) => '<option value="">自动佩戴最高称号</option>' +
+    const titleOptions = (titles, selected) => '<option value=""' + (!selected ? ' selected' : '') + '>自动佩戴最高称号</option>' +
+        '<option value="__none__"' + (selected === '__none__' ? ' selected' : '') + '>不佩戴称号</option>' +
         (titles || []).map(t => '<option value="' + esc(t.id) + '"' + (t.id === selected ? ' selected' : '') + '>' +
             esc(t.name) + ' · ' + esc(t.tier) + '</option>').join('');
     const postJSON = (url, body) => SGS.fetchJSON(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -34,7 +35,7 @@
                     esc(String((player.stats || {}).wins || 0)) + ' 胜 / ' + esc(String((player.stats || {}).total_games || 0)) + ' 局</small></div>' +
                     (titles.equipped ? '<span class="title-badge title-' + esc(titles.equipped.tier) + '">' + esc(titles.equipped.name) + '</span>' : '') + '</div>' +
                     '<label class="field"><span>选手名称</span><input data-ai-name="' + esc(player.id) + '" maxlength="16" value="' + esc(player.name) + '"></label>' +
-                    '<label class="field"><span>佩戴称号</span><select data-ai-title="' + esc(player.id) + '">' + titleOptions(titles.earned, equippedId) + '</select></label>' +
+                    '<label class="field"><span>佩戴称号</span><select data-ai-title="' + esc(player.id) + '">' + titleOptions(titles.earned, player.equipped_title === '__none__' ? '__none__' : equippedId) + '</select></label>' +
                     '<button class="btn small" type="button" data-save-ai="' + esc(player.id) + '">保存档案</button>' +
                     '<p class="muted">已获得：' + (titles.earned || []).map(t => esc(t.name)).join('、') + (titles.earned && titles.earned.length ? '' : '暂无') + '</p>' +
                     '<div class="ai-archive-history">' + (games.length ? games.map(g => '<span>' + esc(g.won ? '胜' : g.winner === 'draw' ? '平' : '负') + ' · ' + esc(identity(g.identity)) + ' · ' + esc(g.hero_name || '未知武将') + '</span>').join('') : '<span>尚无战绩</span>') + '</div></article>';
@@ -67,7 +68,7 @@
         const titleView = profile.titles || { earned: [], equipped: null };
         humanTitleControl.hidden = false;
         humanTitleControl.innerHTML = '<label class="field"><span>我的佩戴称号</span><select id="humanTitleSelect">' +
-            titleOptions(titleView.earned, (titleView.equipped || {}).id || '') + '</select></label>' +
+            titleOptions(titleView.earned, profile.equipped_title === '__none__' ? '__none__' : (titleView.equipped || {}).id || '') + '</select></label>' +
             '<button class="btn small" id="saveHumanTitle" type="button">保存</button><span class="muted">已获得：' +
             (titleView.earned || []).map(t => esc(t.name)).join('、') + (titleView.earned && titleView.earned.length ? '' : '暂无') + '</span>';
         document.getElementById('saveHumanTitle').addEventListener('click', async () => {

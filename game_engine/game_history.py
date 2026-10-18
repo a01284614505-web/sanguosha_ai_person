@@ -11,7 +11,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .ai_titles import DEFAULT_AI_NAMES, title_view, update_player_stats
+from .ai_titles import DEFAULT_AI_NAMES, NO_TITLE, title_view, update_player_stats
 
 
 SCHEMA_VERSION = 1
@@ -157,10 +157,10 @@ class GameHistoryStore:
                     raise ValueError("AI 名称不能为空")
                 row["name"] = clean
             earned_ids = {item["id"] for item in title_view(row.get("stats"), row.get("equipped_title"))["earned"]}
-            if equipped_title not in (None, "") and equipped_title not in earned_ids:
+            if equipped_title not in (None, "", NO_TITLE) and equipped_title not in earned_ids:
                 raise ValueError("只能佩戴已获得的称号")
             if equipped_title is not None:
-                row["equipped_title"] = equipped_title or None
+                row["equipped_title"] = NO_TITLE if equipped_title == NO_TITLE else equipped_title or None
             self._save(data)
             return {**row, "titles": title_view(row.get("stats"), row.get("equipped_title"))}
 
@@ -170,9 +170,9 @@ class GameHistoryStore:
             data = self._load()
             profile = _profile_entry(data, profile_id)
             earned_ids = {item["id"] for item in title_view(profile.get("title_stats"))["earned"]}
-            if equipped_title not in (None, "") and equipped_title not in earned_ids:
+            if equipped_title not in (None, "", NO_TITLE) and equipped_title not in earned_ids:
                 raise ValueError("只能佩戴已获得的称号")
-            profile["equipped_title"] = equipped_title or None
+            profile["equipped_title"] = NO_TITLE if equipped_title == NO_TITLE else equipped_title or None
             self._save(data)
             result = dict(profile)
             result["titles"] = title_view(profile.get("title_stats"), profile.get("equipped_title"))
