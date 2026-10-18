@@ -196,21 +196,24 @@ def test_current_note_version_is_injected_into_each_play_decision():
     assert "新版乙" in user_texts(calls[2])[-1] and "旧版甲" not in user_texts(calls[2])[-1]
 
 
-# ───────────────────────── 方案 7.3 字面：笔记不进会话消息（作者已列为待确认 1） ─────────────────────────
+# ───────────────────────── 方案 7.3：调度裁定（2026-10-18）旧版笔记可留在会话旧 L2 里 ─────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=(
-    "方案 7.3 写'不进会话消息'；实现里 L2 整段（含【仅你可见·你的判断】区块）经 push_user 永久追加进会话，"
-    "旧版笔记会留在窗口里（交接 20261018_1011 第 6 节 裁定 2 / 待确认 1，待调度裁定）"))
-def test_superseded_note_text_is_not_kept_in_session_user_messages():
+def test_latest_l2_has_current_note_and_notes_store_is_independent_of_compression():
     reply_a = json.dumps({"action_index": 0, "notes": {"3": note("rebel", "中", "旧版甲")}})
     reply_b = json.dumps({"action_index": 0, "notes": {"3": note("spy", "高", "新版乙")}})
-    engine = make_engine(reply_a, reply_b, reply_b)
+    engine = make_engine(reply_a, reply_b)
+    ai = engine.ai_decision
+    ai.session_max_l2 = 3
+    ai.session_max_chars = 10 ** 9
     p1 = players(engine)[1]
     play_phase(engine, p1)
-    for _ in range(3):
-        run(engine.ai_decision.make_decision(p1, [{"type": "end_phase"}]))
-    third_call_users = user_texts(engine.ai_decision.gateway.calls[2])
-    assert all("旧版甲" not in text for text in third_call_users)
+    for _ in range(8):
+        run(ai.make_decision(p1, [{"type": "end_phase"}]))
+    assert ai.get_session(p1)["compressions"] >= 1
+    for call in ai.gateway.calls:
+        assert "【仅你可见·你的判断】" in user_texts(call)[-1]          # 每次最新一条 L2 都带笔记区块
+    assert "新版乙" in user_texts(ai.gateway.calls[-1])[-1]
+    assert engine.notes.view(1)[2]["why"] == "新版乙"                   # 独立存储，压缩不影响
 
 
 # ───────────────────────── 第 12 节：只展示模型主动返回的公开理由 ─────────────────────────

@@ -33,13 +33,10 @@ _MARK_TRANS = str.maketrans({"【": "〔", "】": "〕", "\n": " ", "\r": " "})
 
 
 def clean_why(value: Any) -> Optional[str]:
-    """理由必须是字符串且清洗后 ≤20 字；清洗：去首尾空白、系统标记括号换成〔〕。不合法返回 None。"""
+    """理由必须是字符串；清洗：去首尾空白、系统标记括号换成〔〕，超过 20 字截断保留（调度裁定 2026-10-18）。非字符串返回 None。"""
     if not isinstance(value, str):
         return None
-    text = value.translate(_MARK_TRANS).strip()
-    if len(text) > WHY_MAX:
-        return None
-    return text
+    return value.translate(_MARK_TRANS).strip()[:WHY_MAX]
 
 
 def validate_entry(raw: Any) -> Optional[Dict[str, str]]:

@@ -960,6 +960,9 @@ class CardSystem:
             on_death = getattr(self.engine, "on_player_death", None)
             if callable(on_death):
                 on_death(player)
+                push = getattr(self.engine, "push_notes_after_death", None)
+                if callable(push):
+                    await push()
             killer_id = pop_kill_credit(self.game_state, player)
             killer = next((p for p in self.game_state.players if p.id == killer_id), None)
             if killer is not None:

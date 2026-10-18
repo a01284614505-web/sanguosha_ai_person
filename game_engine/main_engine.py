@@ -806,6 +806,12 @@ class MainEngine:
         """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
         self.notes.on_death(player)
 
+    async def push_notes_after_death(self):
+        """阵亡后（作弊局）立刻推送一次笔记，让"冻结"标记即时可见；非作弊局什么都不发。"""
+        payload = self.cheat_notes_payload()
+        if payload is not None:
+            await self.emit(ENGINE_EVENT.COGNITIVE_NOTES, **payload)
+
     def cheat_notes_payload(self):
         """作弊局的笔记下发内容；非作弊局恒为 None —— 服务器根本不构造 cognitive_notes 消息（D14）。"""
         if not self.cheat_mode:

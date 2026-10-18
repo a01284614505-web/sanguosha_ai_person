@@ -84,10 +84,18 @@ def test_validate_entry_accepts_well_formed_note():
     {"conf": "高", "why": "x"},                             # 缺 guess
     note("traitor"), note("Rebel"), note(guess=3),          # guess 非法
     note(conf="极高"), note(conf="high"), note(conf=None),   # conf 非法
-    note(why="一" * (WHY_MAX + 1)), note(why=123), note(why=None),
+    note(why=123), note(why=None),
 ])
 def test_validate_entry_rejects_malformed_notes(bad):
     assert validate_entry(bad) is None
+
+
+def test_overlong_why_is_truncated_to_20_not_dropped():
+    entry = validate_entry(note(why="一二三四五六七八九十" * 3))
+    assert entry is not None and entry["why"] == "一二三四五六七八九十" * 2 and len(entry["why"]) == WHY_MAX
+    engine = make_engine()
+    engine.notes.update(1, {"3": note("rebel", "高", "字" * 50)})
+    assert engine.notes.view(1)[2]["why"] == "字" * WHY_MAX and engine.notes.view(1)[2]["guess"] == "rebel"
 
 
 def test_why_strips_system_marks_and_newlines():
@@ -678,3 +686,25 @@ def test_notes_module_is_independent_of_ai_decision_session_state():
     engine = make_engine()
     assert isinstance(engine.notes, CognitiveNotes)
     assert not hasattr(AIDecision, "_notes") and not hasattr(engine.ai_decision, "_notes")
+
+
+def test_cheat_game_pushes_notes_immediately_when_an_ai_dies_with_frozen_flag(tmp_path):
+    async def scenario(cheat):
+        server = GameServer(history_path=tmp_path / f"h{cheat}.json")
+        engine = make_engine(cheat=cheat)
+        ws = Socket()
+        attach(server, engine, "g1", ws)
+        engine.notes.update(1, {"3": note("rebel", "高", "杀主公")})
+        victim = players(engine)[1]
+        victim.hp = 0
+        engine.card_system.responder = None
+        await engine.card_system.enter_dying(victim)
+        return ws
+
+    ws = run(scenario(True))
+    sent = [m for m in ws.messages if m["type"] == OUTBOUND.COGNITIVE_NOTES]
+    assert sent, "作弊局 AI 阵亡应立刻推送笔记"
+    row = next(r for r in sent[-1]["players"] if r["player_id"] == 1)
+    assert row["frozen"] is True and any(n["seat"] == 3 and n["why"] == "杀主公" for n in row["notes"])
+    plain = run(scenario(False))
+    assert OUTBOUND.COGNITIVE_NOTES not in plain.types() and "杀主公" not in json.dumps(plain.messages, ensure_ascii=False)
