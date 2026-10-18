@@ -108,6 +108,10 @@
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
                     <label class="gs-row"><span>音量</span><input id="gsVolume" type="range" min="0" max="1" step="0.05"></label>
                 </div>
+                <div class="gs-section" id="gsChatSection" hidden>
+                    <h4>席间聊天（本局）</h4>
+                    <label class="gs-row"><span>热闹程度</span><select id="gsChatLevel"><option value="quiet">安静</option><option value="normal">正常</option><option value="lively">热闹</option></select></label>
+                </div>
                 <div class="gs-section">
                     <h4>对局日志</h4>
                     <label class="gs-row"><span>无痕模式</span><span><input id="gsLogIncognito" type="checkbox">对局结束后不保存日志（开局时的设置生效）</span></label>
@@ -201,6 +205,10 @@
         document.getElementById('gsCustomWorldbook').checked = !!s.custom_worldbook_enabled;
         document.getElementById('gsLogIncognito').checked = !!s.log_incognito;
         document.getElementById('gsLogThinking').checked = s.log_include_thinking !== false;
+        // 热闹程度只在对局页出现；显示的是服务器确认过的当前档位（window.currentChatLevel 由对局页随状态更新）。
+        const inGame = !!document.getElementById('battle');
+        document.getElementById('gsChatSection').hidden = !inGame;
+        if (inGame) document.getElementById('gsChatLevel').value = window.currentChatLevel || 'normal';
         loadStats();
     }
 
@@ -221,6 +229,13 @@
             log_incognito: document.getElementById('gsLogIncognito').checked,
             log_include_thinking: document.getElementById('gsLogThinking').checked
         });
+        const levelSection = document.getElementById('gsChatSection');
+        if (levelSection && !levelSection.hidden) {
+            const level = document.getElementById('gsChatLevel').value;
+            if (level !== (window.currentChatLevel || 'normal')) {
+                window.dispatchEvent(new CustomEvent('chat-level-request', { detail: { level: level } }));
+            }
+        }
         window.closeGlobalSettings();
         if (window.SGS) SGS.toast('设置已保存');
     }

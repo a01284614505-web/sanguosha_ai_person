@@ -149,10 +149,10 @@ def test_successful_decision_call_is_counted_with_its_kind():
 
 def test_chat_call_is_counted_as_chat():
     engine, ai = engine_with_relay_seat()
-    engine.chat_engine.gateway = UsageGateway(
+    engine.chat_director.gateway = UsageGateway(
         usages=[{"prompt_tokens": 55, "cached_tokens": 0, "completion_tokens": 6}])
 
-    msg = run(engine.chat_engine.trigger_event_chat("turn_start", ai, {}))
+    msg = run(engine.chat_director.run_chat_turn(ai, "测试由头"))
 
     assert msg == "来战！"
     b = bucket(engine, ai, "chat")
@@ -161,19 +161,18 @@ def test_chat_call_is_counted_as_chat():
 
 def test_chat_failure_is_counted_and_does_not_break_the_call():
     engine, ai = engine_with_relay_seat()
-    engine.chat_engine.gateway = UsageGateway(error=http_error(429))
-    engine.chat_engine.chat_cooldown = 0
+    engine.chat_director.gateway = UsageGateway(error=http_error(429))
 
-    assert run(engine.chat_engine.trigger_event_chat("turn_start", ai, {})) is None
+    assert run(engine.chat_director.run_chat_turn(ai, "测试由头")) is None
     b = bucket(engine, ai, "chat")
     assert b["calls"] == 1 and b["failures"] == 1
 
 
 def test_chat_without_usage_is_counted_as_unknown():
     engine, ai = engine_with_relay_seat()
-    engine.chat_engine.gateway = UsageGateway(usages=[None])
+    engine.chat_director.gateway = UsageGateway(usages=[None])
 
-    assert run(engine.chat_engine.trigger_event_chat("turn_start", ai, {})) == "来战！"
+    assert run(engine.chat_director.run_chat_turn(ai, "测试由头")) == "来战！"
     b = bucket(engine, ai, "chat")
     assert b["calls"] == 1 and b["unknown_usage_calls"] == 1
 
@@ -182,9 +181,9 @@ def test_chat_without_usage_is_counted_as_unknown():
 
 def test_game_log_carries_token_usage_per_ai_without_the_key():
     engine, ai = engine_with_relay_seat()
-    engine.chat_engine.gateway = UsageGateway(
+    engine.chat_director.gateway = UsageGateway(
         usages=[{"prompt_tokens": 10, "cached_tokens": 0, "completion_tokens": 2}])
-    run(engine.chat_engine.trigger_event_chat("turn_start", ai, {}))
+    run(engine.chat_director.run_chat_turn(ai, "测试由头"))
     engine.record_usage(ai.id, "decision", {"prompt_tokens": 99, "cached_tokens": 0, "completion_tokens": 9}, False)
 
     record = build_game_log(engine, {"winner": "lord", "message": "测试", "state": {}, "stats": {}},

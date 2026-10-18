@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 KINDS = ("hostile", "friendly", "protect", "counter", "transfer", "group")
 
@@ -55,6 +55,8 @@ class BehaviorLedger:
     def __init__(self):
         self.entries: List[LedgerEntry] = []
         self._seq = 0
+        # 订阅者：每记一条就同步通知一次（聊天调度器据此发现「救主公」）；回调异常不影响记账。
+        self.listeners: List[Callable[[LedgerEntry], None]] = []
 
     # ---------- 写入 ----------
 
@@ -71,6 +73,11 @@ class BehaviorLedger:
         self._seq += 1
         entry = LedgerEntry(self._seq, int(round_no or 0), source_id, target_id, kind, str(label), float(weight))
         self.entries.append(entry)
+        for listener in list(self.listeners):
+            try:
+                listener(entry)
+            except Exception:  # noqa: BLE001 - 订阅者永远不能拖垮记账
+                pass
         return entry
 
     def record_group(self, round_no, source_id, label) -> Optional[LedgerEntry]:

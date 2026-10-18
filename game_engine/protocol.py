@@ -10,7 +10,7 @@ PROTOCOL_VERSION = "1.0"
 
 
 class INBOUND:
-    """前端 → 服务器（WebSocket 入站消息类型，10 种）。"""
+    """前端 → 服务器（WebSocket 入站消息类型，11 种）。"""
 
     CREATE_GAME = "create_game"
     PLAYER_ACTION = "player_action"
@@ -23,6 +23,8 @@ class INBOUND:
     SERVER_INFO = "server_info"
     # 断线重连：{"game_id", "profile_id"}，把新连接重新接到仍在进行的对局上。
     RESUME_GAME = "resume_game"
+    # 对局中修改设置：{"settings": {"chat_level": "quiet" | "normal" | "lively"}}；本批只放行 chat_level。
+    UPDATE_SETTINGS = "update_settings"
 
 
 class OUTBOUND:

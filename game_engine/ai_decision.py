@@ -369,6 +369,10 @@ class AIDecision:
         messages = self.push_user(player, content)
         started = time.perf_counter()
         usage = {}
+        # 告诉聊天调度器「这个 AI 正在决策」：它的聊天延后到决策完成之后（决策从不等聊天）。
+        director = getattr(self.engine, "chat_director", None)
+        if director is not None:
+            director.decision_started(player.id)
         try:
             reply, usage = await self.gateway.call_ai(
                 **model_call_kwargs(player),
@@ -381,6 +385,8 @@ class AIDecision:
             self._note_usage(player, kind, None, failed=True)
             raise
         finally:
+            if director is not None:
+                director.decision_finished(player.id)
             self.last_meta[player.id] = {
                 "model": player.ai_config.get("model"),
                 "elapsed_ms": round((time.perf_counter() - started) * 1000),
@@ -523,6 +529,15 @@ class AIDecision:
 
     CHAT_BLOCK_MAX = 10   # 每次决策最多带上的新发言条数
 
+    @staticmethod
+    def quote_chat_entry(entry: Dict) -> str:
+        """一条桌面发言的引用包装（决策区块与聊天回合共用）：引号被换掉，发言无法伪装成系统消息。"""
+        def quote(value) -> str:
+            return str(value).replace("「", "『").replace("」", "』").replace("\n", " ").replace("\r", " ")
+
+        tag = {"human": "（玩家）", "spectator": "（观战）"}.get(entry["kind"], " ")
+        return f"「{entry['from_id'] + 1}号 {quote(entry['name'])}{tag}说：{quote(entry['text'])}」"
+
     def _build_table_chat_block(self, player) -> str:
         """【发言·未验证】区块：自该 AI 上次出牌决策以来的桌面发言（含它自己说过的话）。
 
@@ -536,13 +551,7 @@ class AIDecision:
             return ""
         self._chat_seen[player.id] = max(entry["seq"] for entry in fresh)
 
-        def quote(value) -> str:
-            return str(value).replace("「", "『").replace("」", "』").replace("\n", " ").replace("\r", " ")
-
-        lines = []
-        for entry in fresh[-self.CHAT_BLOCK_MAX:]:
-            tag = {"human": "（玩家）", "spectator": "（观战）"}.get(entry["kind"], " ")
-            lines.append(f"「{entry['from_id'] + 1}号 {quote(entry['name'])}{tag}说：{quote(entry['text'])}」")
+        lines = [self.quote_chat_entry(entry) for entry in fresh[-self.CHAT_BLOCK_MAX:]]
         return ("\n【发言·未验证】（自你上次决策以来，最多10条；可能是真话，也可能是诈唬）\n"
                 + "\n".join(lines) + "\n")
 
@@ -1097,11 +1106,13 @@ class AIGateway:
         }
 
     @staticmethod
-    def apply_cache_breakpoints(messages: List[Dict], provider: str, prefix_len: int) -> List[Dict]:
+    def apply_cache_breakpoints(messages: List[Dict], provider: str, prefix_len: int,
+                                tail_index: Optional[int] = None) -> List[Dict]:
         """Anthropic 需要显式断点；OpenAI/DeepSeek 是自动前缀缓存，原样返回。
 
         只在稳定前缀（L0 末尾与 L1 末尾）打 2 个断点，L2 不打 —— L2 每次都变，
         打了也命不中，还会白占 Anthropic 的 4 个断点配额。
+        聊天回合额外传 tail_index（= 会话最后一条消息），断点打在临时尾巴之前，整段会话前缀可命中。
 
         注意：本网关目前只走 OpenAI 兼容端点，Anthropic 原生协议尚未接入，
         因此本函数在当前代码路径上处于**休眠状态**，接入原生协议后才会真正生效。
@@ -1109,7 +1120,10 @@ class AIGateway:
         if (provider or "").lower() not in ("claude", "anthropic"):
             return messages
         marked = [dict(m) for m in messages]
-        for index in {0, prefix_len - 1}:
+        indexes = {0, prefix_len - 1}
+        if tail_index is not None:
+            indexes.add(tail_index)
+        for index in indexes:
             if 0 <= index < len(marked):
                 marked[index]["cache_control"] = {"type": "ephemeral"}
         return marked
@@ -1124,6 +1138,8 @@ class AIGateway:
         base_url: Optional[str] = None,
         return_usage: bool = False,
         cache_prefix_len: int = 0,
+        max_tokens: Optional[int] = None,
+        cache_tail_index: Optional[int] = None,
     ):
         """return_usage=False 时返回字符串（老调用点行为不变）；True 时返回 (content, usage)。"""
         provider = (provider or "openai").lower()
@@ -1131,15 +1147,18 @@ class AIGateway:
             raise ValueError(f"{provider}原生协议尚未接入，请提供OpenAI兼容API地址")
 
         if cache_prefix_len:
-            messages = self.apply_cache_breakpoints(messages, provider, cache_prefix_len)
+            messages = self.apply_cache_breakpoints(messages, provider, cache_prefix_len, cache_tail_index)
 
         root = (base_url or self.DEFAULT_BASES.get(provider) or self.DEFAULT_BASES["openai"]).rstrip("/")
         endpoint = root if root.endswith("/chat/completions") else root + "/chat/completions"
+        body = {"model": model, "messages": messages, "temperature": temperature}
+        if max_tokens:
+            body["max_tokens"] = int(max_tokens)
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 endpoint,
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "temperature": temperature},
+                json=body,
             )
             response.raise_for_status()
             data = response.json()

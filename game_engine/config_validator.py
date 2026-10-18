@@ -3,6 +3,7 @@
 import copy
 import os
 from pathlib import Path
+from .chat_director import DEFAULT_CHAT_LEVEL, normalize_level
 from .deck_manager import DECKS, DeckManager
 from .hero_registry import HeroRegistry
 DEFAULT_API_KEY = os.getenv("SANGUOSHA_DEFAULT_API_KEY", "")
@@ -82,6 +83,8 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
     # 开局锁定的布尔选项：只接受 true，其它值一律视为关闭。
     cfg["cheat_mode"] = cfg.get("cheat_mode") is True
     cfg["hide_dead_identity"] = cfg.get("hide_dead_identity") is True
+    # 热闹程度：缺省为正常档；给了就必须是合法档位（非法值直接拒绝，不静默回落）。
+    cfg["chat_level"] = normalize_level(cfg.get("chat_level") or DEFAULT_CHAT_LEVEL)
     cfg.setdefault("max_turns", 300)
     cfg.setdefault("human_action_timeout", 120)
     cfg.setdefault("phase_delay", 0.05)

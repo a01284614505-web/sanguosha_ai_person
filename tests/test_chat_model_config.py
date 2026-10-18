@@ -54,9 +54,9 @@ def http_error(status):
 def test_chat_uses_the_same_provider_model_key_and_url_as_decisions():
     engine, ai = engine_with_relay_seat()
     gateway = RecordingGateway()
-    engine.chat_engine.gateway = gateway
+    engine.chat_director.gateway = gateway
 
-    msg = run(engine.chat_engine.trigger_event_chat("turn_start", ai, {}))
+    msg = run(engine.chat_director.run_chat_turn(ai, "测试由头"))
 
     assert msg == "来战！"
     sent = gateway.calls[0]
@@ -74,12 +74,11 @@ def test_base_url_alias_is_honoured_like_api_url():
 def test_auth_failure_mutes_that_seat_for_the_game_without_traceback(caplog):
     engine, ai = engine_with_relay_seat()
     gateway = RecordingGateway(error=http_error(401))
-    engine.chat_engine.gateway = gateway
-    engine.chat_engine.chat_cooldown = 0
+    engine.chat_director.gateway = gateway
 
-    with caplog.at_level(logging.WARNING, logger="game_engine.chat_engine"):
-        assert run(engine.chat_engine.trigger_event_chat("turn_start", ai, {})) is None
-        assert run(engine.chat_engine.trigger_event_chat("turn_start", ai, {})) is None
+    with caplog.at_level(logging.WARNING, logger="game_engine.chat_director"):
+        assert run(engine.chat_director.run_chat_turn(ai, "测试由头")) is None
+        assert run(engine.chat_director.run_chat_turn(ai, "测试由头")) is None
 
     assert len(gateway.calls) == 1, "401 之后同一座位本局不再发请求"
     warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
@@ -91,46 +90,45 @@ def test_auth_failure_mutes_that_seat_for_the_game_without_traceback(caplog):
 def test_transient_failure_does_not_mute():
     engine, ai = engine_with_relay_seat()
     gateway = RecordingGateway(error=http_error(429))
-    engine.chat_engine.gateway = gateway
-    engine.chat_engine.chat_cooldown = 0
+    engine.chat_director.gateway = gateway
 
-    run(engine.chat_engine.trigger_event_chat("turn_start", ai, {}))
-    run(engine.chat_engine.trigger_event_chat("turn_start", ai, {}))
+    run(engine.chat_director.run_chat_turn(ai, "测试由头"))
+    run(engine.chat_director.run_chat_turn(ai, "测试由头"))
 
     assert len(gateway.calls) == 2
 
 
-def test_turn_start_chat_runs_in_background_and_does_not_block_the_turn(monkeypatch):
+def test_human_triggered_chat_runs_in_background_and_does_not_block_the_turn():
+    # 原「回合开场白后台运行」的迁移：开场白（T0-2）已删除，改为真人发言触发的聊天同样在后台、不拖回合。
     engine, ai = engine_with_relay_seat()
-    engine.chat_engine.gateway = RecordingGateway(delay=5.0)
-    monkeypatch.setattr("game_engine.main_engine.random.random", lambda: 0.0)
+    engine.chat_director.gateway = RecordingGateway(delay=5.0)
     phases_started = {}
 
     async def fake_phases(player):
-        # 开场白已经发起，但回合不等它
-        phases_started["pending_chats"] = len(engine._chat_tasks)
+        phases_started["pending_chats"] = len(engine.chat_director.pending_tasks)
 
     engine._run_phases = fake_phases
 
     async def scenario():
         loop = asyncio.get_running_loop()
+        await engine.submit_chat(engine.human_player().id, "大家好")
         started = loop.time()
         await engine._ai_turn(ai)
         elapsed = loop.time() - started
-        pending = len(engine._chat_tasks)
+        pending = len(engine.chat_director.pending_tasks)
         engine._cancel_chat_tasks()
         return elapsed, pending
 
     elapsed, pending = run(scenario())
 
-    assert phases_started["pending_chats"] == 1, "开场白在回合阶段之前发起"
+    assert phases_started["pending_chats"] == 1, "聊天在回合阶段之前已发起"
     assert elapsed < 1.0
     assert pending == 1
 
 
 def test_background_chat_is_emitted_and_dropped_after_game_over():
     engine, ai = engine_with_relay_seat()
-    engine.chat_engine.gateway = RecordingGateway(reply="看招", delay=0.01)
+    engine.chat_director.gateway = RecordingGateway(reply="看招", delay=0.01)
     seen = []
 
     async def on_chat(**data):
@@ -139,12 +137,14 @@ def test_background_chat_is_emitted_and_dropped_after_game_over():
     engine.on("chat", on_chat)
 
     async def scenario():
-        await engine._spawn_chat("turn_start", ai, {})
-        engine.chat_engine.chat_cooldown = 0
+        await engine.submit_chat(engine.human_player().id, "来战")
+        await asyncio.sleep(0.2)
         engine.game_state.game_over = True
         engine.game_state.winner = "lord"
-        await engine._spawn_chat("turn_start", ai, {})
+        await engine.submit_chat(engine.human_player().id, "再来")
+        await asyncio.sleep(0.2)
 
     run(scenario())
 
-    assert seen == ["看招"]
+    assert "看招" in seen
+    assert seen.count("看招") == 1, "对局结束后不再有新的 AI 聊天"

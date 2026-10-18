@@ -21,7 +21,7 @@ from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET, card_label
 from .rules_engine import RulesEngine
 from .ai_decision import AIDecision
 from .identity_system import IdentitySystem
-from .chat_engine import ChatEngine
+from .chat_director import ChatDirector, normalize_level
 from .token_usage import USAGE_KINDS, apply_usage, empty_bucket
 from .config_validator import normalize_ai, normalize_config
 from .deck_manager import DeckManager
@@ -118,7 +118,9 @@ class MainEngine:
         self.rules = RulesEngine(self.game_state, self.skill_manager)
         self.ai_decision = AIDecision(self)
         self.identity_system = IdentitySystem()
-        self.chat_engine = ChatEngine(self.ai_decision.gateway, usage_sink=self.record_usage)
+        # 聊天调度器（Stage T · T3a）：订阅引擎事件与账本，后台生成 AI 聊天；主循环从不 await 它。
+        self.chat_director = ChatDirector(
+            self, normalize_level(game_config.get("chat_level") or "normal"))
 
         self.handlers: Dict[str, Callable] = {}
         self._player_event = asyncio.Event()
@@ -156,8 +158,6 @@ class MainEngine:
         self._watchdog_task: Any = None
         # 临时展示池（五谷丰登亮出的牌）：公开信息，随状态快照下发；结算结束置 None。
         self.shown_pool: Any = None
-        # 后台运行的聊天任务；对局结束时统一取消。
-        self._chat_tasks: Set[asyncio.Task] = set()
         self._game_end_emitted = False
         self._started_at: Any = None
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
@@ -409,6 +409,7 @@ class MainEngine:
             "discard_count": len(gs.discard_pile),
             "game_over": gs.game_over,
             "cheat_mode": self.cheat_mode,
+            "chat_level": self.chat_director.level,
             "hide_dead_identity": self.hide_dead_identity,
             "winner": gs.winner,
             "trustee": self.trustee_status(),
@@ -471,6 +472,7 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
         self._watchdog_task = asyncio.create_task(self._idle_watchdog())
+        self.chat_director.start()
         try:
             while not self.is_game_over():
                 self._roll_notes_round()
@@ -529,8 +531,6 @@ class MainEngine:
     async def _ai_turn(self, player: Player):
         logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
-        if self.chat_enabled and random.random() < 0.3:
-            self._spawn_chat("turn_start", player, {"round": self.game_state.round_number})
         await self._run_phases(player)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
@@ -540,18 +540,6 @@ class MainEngine:
             raise ValueError(f"unknown usage kind: {kind}")
         seat = self.usage_stats.setdefault(player_id, {})
         apply_usage(seat.setdefault(kind, empty_bucket()), usage, failed)
-
-    def _spawn_chat(self, event_type: str, player: Player, context: Dict):
-        """台词在后台生成，主循环不等它：模型慢或失败都不会拖住对局。"""
-        task = asyncio.create_task(self._run_chat(event_type, player, context))
-        self._chat_tasks.add(task)
-        task.add_done_callback(self._chat_tasks.discard)
-        return task
-
-    async def _run_chat(self, event_type: str, player: Player, context: Dict):
-        msg = await self.chat_engine.trigger_event_chat(event_type, player, context)
-        if msg and not self.is_game_over() and not self.game_aborted:
-            await self._record_ai_chat(player, msg, free=False)
 
     # ---------- 桌面发言（Stage T0） ----------
 
@@ -583,7 +571,10 @@ class MainEngine:
         player = next((p for p in self.game_state.players if p.id == player_id), None)
         if player is None:
             return None
-        return await self._record_table_chat(player.id, player.name, "human", text, free=False)
+        entry = await self._record_table_chat(player.id, player.name, "human", text, free=False)
+        if entry is not None:
+            self.chat_director.on_human_chat(entry)       # 同步登记，回应在后台生成
+        return entry
 
     async def _emit_response_chat(self, player: Player):
         """取走响应决策顺带的台词并发出；只有 AI 座位会说话（真人托管时模型台词不冒充真人）。"""
@@ -609,9 +600,24 @@ class MainEngine:
         return entry
 
     def _cancel_chat_tasks(self):
-        for task in list(self._chat_tasks):
-            task.cancel()
-        self._chat_tasks.clear()
+        self.chat_director.shutdown()
+
+    @property
+    def chat_level(self) -> str:
+        return self.chat_director.level
+
+    def update_settings(self, settings: Any) -> Dict[str, Any]:
+        """对局中修改设置（update_settings 入站）：本批只放行 chat_level，其余一律拒绝。"""
+        if not isinstance(settings, dict) or not settings:
+            raise ValueError("缺少要修改的设置项")
+        blocked = sorted(str(key) for key in settings if key != "chat_level")
+        if blocked:
+            raise ValueError("对局中不可修改的设置: " + ", ".join(blocked))
+        return {"chat_level": self.chat_director.set_level(settings["chat_level"])}
+
+    def on_player_dying(self, player: Player):
+        """CardSystem 在有人进入濒死时同步通知（不 await）：聊天调度器据此处理「主公濒死」。"""
+        self.chat_director.on_dying(player)
 
     async def _human_turn(self, player: Player):
         logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
@@ -805,6 +811,7 @@ class MainEngine:
     def on_player_death(self, player: Player):
         """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
         self.notes.on_death(player)
+        self.chat_director.on_death(player)
 
     async def push_notes_after_death(self):
         """阵亡后（作弊局）立刻推送一次笔记，让"冻结"标记即时可见；非作弊局什么都不发。"""
@@ -1923,6 +1930,8 @@ class MainEngine:
         self.game_state.end_message = (
             f"真人玩家离席超过{minutes:.0f}分钟，本局自动结束。服务器仍在运行，刷新页面即可重开。"
         )
+        # 立刻取消在途聊天（幂等，与 run() 的 finally 不冲突）。
+        self.chat_director.shutdown()
         await self.log_event(self.game_state.end_message, important=True, abort_reason="idle_timeout")
 
         # 唤醒所有挂起的响应请求，否则等待中的协程会永久挂住。
@@ -2245,6 +2254,8 @@ class MainEngine:
         self.game_state.game_over = True
         self.game_state.winner = "aborted"
         self.game_state.end_message = reason
+        # 立刻取消在途聊天（shutdown 幂等，run() 的 finally 里再调一次无副作用）。
+        self.chat_director.shutdown()
         # 与离席看门狗一致：挂起的交互请求不得在收摊后继续落地效果。
         self._abort_reason = self._abort_reason or "player_end_game"
         for request_id, future in list(self._pending_requests.items()):

@@ -16,7 +16,7 @@
             this.providers = [];
             this.aiConfigs = [];
             this.current = 0;
-            this.prefs = Object.assign({ playerName: '', chatEnabled: true, rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
+            this.prefs = Object.assign({ playerName: '', chatEnabled: true, chatLevel: 'normal', rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
             this.dialog = document.getElementById('aiDialog');
             this.form = document.getElementById('aiForm');
             this.init();
@@ -30,6 +30,9 @@
             const chat = document.getElementById('chatEnabled');
             chat.checked = this.prefs.chatEnabled !== false;
             chat.addEventListener('change', () => this.savePrefs());
+            const level = document.getElementById('chatLevel');
+            level.value = ['quiet', 'normal', 'lively'].includes(this.prefs.chatLevel) ? this.prefs.chatLevel : 'normal';
+            level.addEventListener('change', () => this.savePrefs());
             ['cheatMode', 'hideDeadIdentity'].forEach(id => {
                 const box = document.getElementById(id);
                 box.checked = !!this.prefs[id];
@@ -79,6 +82,7 @@
         savePrefs() {
             this.prefs.playerName = document.getElementById('playerName').value.trim();
             this.prefs.chatEnabled = document.getElementById('chatEnabled').checked;
+            this.prefs.chatLevel = document.getElementById('chatLevel').value;
             this.prefs.cheatMode = document.getElementById('cheatMode').checked;
             this.prefs.hideDeadIdentity = document.getElementById('hideDeadIdentity').checked;
             this.prefs.rememberKeys = document.getElementById('rememberKeys').checked;
@@ -290,6 +294,7 @@
                     model: (ais[0] && ais[0].model) || (first ? first.default_model : 'deepseek-chat')
                 },
                 global_settings: window.getGlobalSettings ? getGlobalSettings() : {},
+                chat_level: document.getElementById('chatLevel').value,
                 cheat_mode: document.getElementById('cheatMode').checked,
                 hide_dead_identity: document.getElementById('hideDeadIdentity').checked,
                 custom_worldbook: store.get('worldbook', []),
