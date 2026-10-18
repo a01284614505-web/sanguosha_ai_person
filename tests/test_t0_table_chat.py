@@ -128,8 +128,8 @@ def test_opening_line_is_recorded_as_not_free():
     ai = keyed(engine.game_state.players[1])
 
     class Gateway:
-        async def call_api(self, **kwargs):
-            return "来战！"
+        async def call_ai(self, **kwargs):
+            return "来战！", {}
 
     engine.chat_engine.gateway = Gateway()
     run(engine._run_chat("turn_start", ai, {}))

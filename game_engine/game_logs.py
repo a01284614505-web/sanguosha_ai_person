@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .game_history import validate_profile_id
+from .token_usage import USAGE_KINDS, empty_bucket
 
 LOG_SCHEMA = 1
 GAME_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -44,6 +45,25 @@ def _player_summary(p: Dict, stats: Dict) -> Dict:
         "model": ai.get("model") if p.get("is_ai") else None,
         "stats": p.get("stats") or (stats or {}).get(str(pid)) or (stats or {}).get(pid) or {},
     }
+
+
+def _token_usage_summary(engine) -> List[Dict]:
+    """每个 AI 座位一行，四类调用各一组计数；只含座位名与服务商/模型名，不含任何 Key 或地址。"""
+    usage = getattr(engine, "usage_stats", None) or {}
+    rows = []
+    for p in getattr(getattr(engine, "game_state", None), "players", None) or []:
+        if not p.is_ai:
+            continue
+        ai = p.ai_config or {}
+        seat = usage.get(p.id) or {}
+        rows.append({
+            "id": p.id,
+            "name": p.name,
+            "provider": ai.get("provider"),
+            "model": ai.get("model"),
+            "kinds": {kind: dict(empty_bucket(), **(seat.get(kind) or {})) for kind in USAGE_KINDS},
+        })
+    return rows
 
 
 def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
@@ -88,6 +108,7 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "timeline": timeline,
         "chat": list(getattr(engine, "chat_log", []))[-1000:],
         "decisions": decisions[-2000:],
+        "token_usage": _token_usage_summary(engine),
     }
 
 

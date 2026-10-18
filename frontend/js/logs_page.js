@@ -190,6 +190,20 @@
         entries.sort((a, b) => a.seq - b.seq).forEach(e => (rounds[e.r] = rounds[e.r] || []).push(e.html));
         const roundHTML = Object.keys(rounds).map(Number).sort((a, b) => a - b).map(r =>
             '<details class="tl-round"' + (r <= 1 ? ' open' : '') + '><summary>' + (r ? '第 ' + r + ' 轮' : '开局') + '<small> · ' + rounds[r].length + ' 条</small></summary>' + rounds[r].join('') + '</details>').join('');
+        // Token 消耗：行=AI，列=决策/响应/选择/聊天；没有任何调用数据时整张表不显示。
+        const tuKinds = [['decision', '决策'], ['response', '响应'], ['choice', '选择'], ['chat', '聊天']];
+        const tuRows = (log.token_usage || []).filter(r => tuKinds.some(([k]) => ((r.kinds || {})[k] || {}).calls > 0));
+        const tokenTable = tuRows.length ? '<h3 class="section-title">Token 消耗</h3>' +
+            '<div class="table-wrap"><table class="stats-table log-tokens"><thead><tr><th>AI</th>' +
+            tuKinds.map(([, label]) => '<th>' + label + '</th>').join('') + '</tr></thead><tbody>' +
+            tuRows.map(r => '<tr><td><b>' + esc(r.name || '') + '</b><small>' + esc(r.model || '') + '</small></td>' +
+                tuKinds.map(([k]) => {
+                    const c = (r.kinds || {})[k] || {};
+                    if (!c.calls) return '<td class="faint">—</td>';
+                    const extra = (c.failures ? ' · 失败 ' + c.failures : '') + (c.unknown_usage_calls ? ' · 缺用量 ' + c.unknown_usage_calls : '');
+                    return '<td>' + esc(String(c.calls)) + ' 次<small>入 ' + esc(String(c.prompt_tokens || 0)) + ' / 出 ' + esc(String(c.completion_tokens || 0)) + esc(extra) + '</small></td>';
+                }).join('') + '</tr>').join('') +
+            '</tbody></table></div>' : '';
         const opts = log.options || {};
         $('detailBody').innerHTML =
             '<h2 class="section-title">' + esc(log.message || '对局结束') + '</h2>' +
@@ -197,6 +211,7 @@
             (opts.cheat_mode ? ' · 作弊局' : '') + (opts.hide_dead_identity ? ' · 阵亡暗置' : '') +
             (opts.include_thinking ? '' : ' · 未记录思考过程') + '</p>' +
             '<div class="table-wrap"><table class="stats-table log-players"><thead><tr><th>角色</th><th>身份</th><th>模型</th><th>伤害/击杀</th></tr></thead><tbody>' + players + '</tbody></table></div>' +
+            tokenTable +
             '<h3 class="section-title">时间线</h3>' + (roundHTML || '<p class="muted">没有记录。</p>');
         window.scrollTo(0, 0);
     }

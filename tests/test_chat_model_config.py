@@ -35,13 +35,14 @@ class RecordingGateway:
         self.calls = []
         self.reply, self.error, self.delay = reply, error, delay
 
-    async def call_api(self, **kwargs):
+    async def call_ai(self, **kwargs):
+        # 聊天走 call_ai(return_usage=True)，与真网关契约一致：返回 (文本, usage)。
         self.calls.append(kwargs)
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.error is not None:
             raise self.error
-        return self.reply
+        return self.reply, {"prompt_tokens": 1, "cached_tokens": 0, "completion_tokens": 1}
 
 
 def http_error(status):

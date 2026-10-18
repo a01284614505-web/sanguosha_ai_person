@@ -372,6 +372,9 @@ class AIDecision:
                 return_usage=True,
                 cache_prefix_len=self.get_session(player)["prefix_len"],
             )
+        except Exception:
+            self._note_usage(player, kind, None, failed=True)
+            raise
         finally:
             self.last_meta[player.id] = {
                 "model": player.ai_config.get("model"),
@@ -381,8 +384,15 @@ class AIDecision:
                 "worldbook_hits": self._public_worldbook_hits(player),
             }
         self.push_assistant(player, reply)
+        self._note_usage(player, kind, usage, failed=False)
         self._log_cache_stats(player, kind, usage)
         return reply
+
+    def _note_usage(self, player, kind: str, usage, failed: bool):
+        """把一次调用的 token 交给引擎按座位累计（引擎不可用时静默跳过）。"""
+        record = getattr(self.engine, "record_usage", None)
+        if callable(record):
+            record(player.id, kind, usage, failed)
 
     def _public_worldbook_hits(self, player):
         """Only name public source layers; private custom rules stay in the model session."""
