@@ -217,6 +217,22 @@ class SkillManager:
         await self.on_card_discarded(player, card, reason)
         return True
 
+    def ledger_kind(self, skill_name) -> str:
+        """技能在行为账本里的类型（取自 RuntimeSkill 元数据，默认 none）。"""
+        kinds = getattr(self, "_ledger_kinds", None)
+        if kinds is None:
+            kinds = self._ledger_kinds = {s.name: s.ledger_kind for s in get_all_skills()}
+        return kinds.get(skill_name, "none")
+
+    def ledger_record(self, skill_name, source, target, *, label=None, weight=None):
+        """技能结算确定目标时记账；类型取自技能元数据。没有账本或类型为 none 时什么也不做。"""
+        ledger = getattr(self.engine, "ledger", None)
+        kind = self.ledger_kind(skill_name)
+        if ledger is None or kind == "none" or source is None or target is None:
+            return None
+        return ledger.record(self.engine.game_state.round_number, source.id, target.id,
+                             kind, label or skill_name, weight)
+
     async def transfer_card(self, source, target, card, reason="skill"):
         if self.engine is None or self.engine.game_aborted or card not in source.hand:
             return False

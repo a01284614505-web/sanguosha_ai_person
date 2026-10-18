@@ -278,6 +278,7 @@ class WeiSkillHandler(FactionSkillHandler):
                             reason="反馈", actor_id=target.id, visibility="owner",
                         )
                         if move is not None:
+                            self.manager.ledger_record("反馈", target, source)
                             await self.manager.on_card_gained(target, [stolen], "反馈")
                             await self.manager.announce(target, "反馈", f"{target.name}发动【反馈】获得{source.name}一张牌")
 
@@ -291,6 +292,7 @@ class WeiSkillHandler(FactionSkillHandler):
                 if self._finished():
                     return
                 if use:
+                    self.manager.ledger_record("刚烈", target, source)
                     result = await self.manager.judge(target, "刚烈")
                     if self._finished():
                         return
@@ -344,6 +346,7 @@ class WeiSkillHandler(FactionSkillHandler):
                     )
                     if event is None:
                         continue
+                    self.manager.ledger_record("遗计", target, receiver)
                     await self.manager.on_cards_lost(target, [give], "遗计")
                     await self.manager.on_card_gained(receiver, [give], "遗计")
                     moved += 1
