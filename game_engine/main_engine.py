@@ -29,6 +29,7 @@ from .game_stats import GameStats, record_stat
 from .effect_context import EffectContext
 from .behavior_ledger import BehaviorLedger
 from .cognitive_notes import CognitiveNotes
+from .seats import seat_of
 
 
 logger = logging.getLogger(__name__)
@@ -347,6 +348,7 @@ class MainEngine:
             players.append(
                 {
                     "id": p.id,
+                    "seat": seat_of(gs, p.id),
                     "name": p.name,
                     "hp": p.hp,
                     "max_hp": p.max_hp,
@@ -558,10 +560,10 @@ class MainEngine:
         round_number = self.game_state.round_number
         ts = self.time_source()
         entry = {"seq": seq, "round": round_number, "from_id": player_id, "name": name,
-                 "kind": kind, "text": clean, "free": bool(free), "ts": ts}
+                 "seat": seat_of(self.game_state, player_id), "kind": kind, "text": clean, "free": bool(free), "ts": ts}
         self.table_chat.append(entry)
         self.chat_log.append({"seq": seq, "round": round_number, "from": name, "kind": kind,
-                              "message": clean, "from_id": player_id, "free": bool(free), "ts": ts})
+                              "message": clean, "from_id": player_id, "seat": seat_of(self.game_state, player_id), "free": bool(free), "ts": ts})
         await self.emit(ENGINE_EVENT.CHAT, from_=name, message=clean, from_id=player_id,
                         kind=kind, free=bool(free), ts=ts)
         return entry
@@ -853,7 +855,7 @@ class MainEngine:
         reveal = own_decision or (self.cheat_mode and player.is_ai)
         reason = private_reason if reveal else ""
         if isinstance(choice, dict) and hasattr(self.ai_decision, "format_action"):
-            full_choice = self.ai_decision.format_action(choice)
+            full_choice = self.ai_decision.format_action(choice, self.game_state)
         else:
             full_choice = choice.get("type", "") if isinstance(choice, dict) else ("放弃" if choice is None else str(choice)[:100])
         # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。

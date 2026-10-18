@@ -222,7 +222,7 @@
         const cheatPeek = G.state && G.state.cheat_mode && p.is_ai && !isMe
             ? '<button class="cheat-peek" type="button" data-peek-seat="' + p.id + '" title="看这名 AI 的思考" aria-label="看 ' + esc(p.name) + ' 的思考">›</button>' : '';
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc(p.name) + '</span>' + idSeal + '</div>' + cheatPeek +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>' + idSeal + '</div>' + cheatPeek +
             '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
             (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
@@ -1225,7 +1225,7 @@
         const list = (G.thoughts[id] || []).slice(-12).reverse().map(t => Object.assign({}, t, { kind: KIND[t.kind] || t.kind, choice: tidy(t.choice) }));
         dlg.dataset.seat = String(id);
         dlg.querySelector('#thoughtsNotes').innerHTML = notesHtml(id);
-        dlg.querySelector('#thoughtsTitle').textContent = p.name + ' 的思考';
+        dlg.querySelector('#thoughtsTitle').textContent = (p.seat ? p.seat + '号 ' : '') + p.name + ' 的思考';
         dlg.querySelector('#thoughtsBody').innerHTML = list.length
             ? list.map(t => '<div class="thought"><small>第 ' + esc(String(t.round || '-')) + ' 轮 · ' + esc(t.kind || '') +
                 (t.model ? ' · ' + esc(t.model) : '') + '</small><p>' + esc(t.reason) + '</p>' +

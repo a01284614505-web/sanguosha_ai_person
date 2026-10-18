@@ -1,6 +1,6 @@
 """Stage T · T2 认知笔记：每个模型 AI 对其他座位身份的结构化判断（方案第 7 节）。
 
-数据格式（内部以座位 id = player.id 为键；对模型与前端显示的"座位号" = id + 1）::
+数据格式（内部以座位 id = player.id 为键；对模型与前端显示的座位号统一经 seats 映射）::
 
     {target_id: {"guess": "rebel", "conf": "高", "why": "两次杀主公"}}
 
@@ -18,6 +18,8 @@
 """
 
 from __future__ import annotations
+
+from .seats import seat_of, player_of
 
 import re
 from typing import Any, Dict, List, Optional
@@ -103,8 +105,8 @@ class CognitiveNotes:
         for key, value in raw.items():
             if not isinstance(key, str) or not _SEAT_KEY_RE.match(key):
                 continue
-            target_id = int(key) - 1
-            target = by_id.get(target_id)
+            target = player_of(self.engine.game_state, int(key))
+            target_id = target.id if target is not None else None
             if target is None or target_id == owner_id or getattr(target, "identity_revealed", False):
                 result["rejected"].append(target_id)
                 continue
@@ -144,7 +146,7 @@ class CognitiveNotes:
         for tid, entry in self.view(owner_id).items():
             tag = "（已公开，引擎填写，不可改）" if entry.get("locked") else \
                 f"（把握{entry['conf']}）" + (f"{entry['why']}" if entry["why"] else "")
-            lines.append(f"- {tid + 1}号：{GUESS_LABEL[entry['guess']]}{tag}")
+            lines.append(f"- {seat_of(self.engine.game_state, tid)}号：{GUESS_LABEL[entry['guess']]}{tag}")
         header = "【仅你可见·你的判断】（只有你能看到；引擎只校验格式，不保证对错）"
         if not any(not entry.get("locked") for entry in self.view(owner_id).values()):
             lines.append("（你还没有对任何座位做出自己的判断）")
@@ -182,7 +184,8 @@ class CognitiveNotes:
             self.snapshots.append({
                 "round": round_number,
                 "player_id": owner_id,
-                "notes": {str(tid): dict(entry) for tid, entry in self.view(owner_id).items()},
+                "seat": seat_of(self.engine.game_state, owner_id),
+                "notes": {str(seat_of(self.engine.game_state, tid)): dict(entry) for tid, entry in self.view(owner_id).items()},
             })
 
     # ---------- 下发给作弊局前端 ----------
@@ -195,12 +198,12 @@ class CognitiveNotes:
             owner = self._player(owner_id)
             rows.append({
                 "player_id": owner_id,
-                "seat": owner_id + 1,
+                "seat": seat_of(self.engine.game_state, owner_id),
                 "name": getattr(owner, "name", ""),
                 "frozen": owner_id in self._frozen,
                 "reason": str(reasons.get(owner_id, ""))[:200],
                 "notes": [
-                    {"target_id": tid, "seat": tid + 1, **{k: entry[k] for k in ("guess", "conf", "why")},
+                    {"target_id": tid, "seat": seat_of(self.engine.game_state, tid), **{k: entry[k] for k in ("guess", "conf", "why")},
                      "locked": bool(entry.get("locked"))}
                     for tid, entry in self.view(owner_id).items()
                 ],

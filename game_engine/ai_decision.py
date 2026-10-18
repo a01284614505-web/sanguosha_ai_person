@@ -37,6 +37,10 @@ def model_call_kwargs(player) -> Dict[str, Any]:
     }
 
 
+from .seats import seat_of, player_of, player_label
+from .prompt_trace import capture
+
+
 class WorldbookManager:
     """按需加载武将、卡牌和阶段世界书。"""
 
@@ -135,10 +139,10 @@ class WorldbookManager:
             sections.append(hero_text)
         if game_state is not None:
             seats = "、".join(
-                f"{i}号位 {p.name}({(p.hero or {}).get('name', '未知武将')})"
-                for i, p in enumerate(game_state.players)
+                f"{player_label(game_state, p.id)}/{(p.hero or {}).get('name', '未知武将')}"
+                for p in sorted(game_state.players, key=lambda p: seat_of(game_state, p.id))
             )
-            sections.append(f"开局座次：{seats}")
+            sections.append(f"你是{seat_of(game_state, player.id)}号。主公为1号，座位号整局固定；target_ids 填座位号。\n开局座次：{seats}")
             # 武将技能是公开信息；只知道对手技能名而不知效果，就无法判断该不该打他、怎么防他。
             others = []
             for p in game_state.players:
@@ -149,7 +153,7 @@ class WorldbookManager:
                     f"【{sk.get('name')}】{sk.get('description') or sk.get('worldbook') or ''}"
                     for sk in hero.get("skills", []) if isinstance(sk, dict)
                 ) or "无"
-                others.append(f"- {p.name}/{hero.get('name', '未知武将')}：{skills}")
+                others.append(f"- {player_label(game_state, p.id)}/{hero.get('name', '未知武将')}：{skills}")
             if others:
                 sections.append("其他角色的武将技能（公开信息）：\n" + "\n".join(others))
         return "\n\n".join(sections)
@@ -186,7 +190,7 @@ class WorldbookManager:
                     for s in hero.get('skills', []) if isinstance(s, dict)
                 ) or "无"
                 others.append(
-                    f"{p.name}/{hero.get('name', '未知武将')}：{p.hp}/{p.max_hp}体力，{len(p.hand)}手牌，{identity}，"
+                    f"{player_label(game_state, p.id)}/{hero.get('name', '未知武将')}：{p.hp}/{p.max_hp}体力，{len(p.hand)}手牌，{identity}，"
                     f"公开技能={skills}{self._public_zones(p)}"
                 )
         if others:
@@ -367,6 +371,7 @@ class AIDecision:
     async def _call_with_session(self, player, kind: str, content: str) -> str:
         """统一的带会话窗口调用：追加L2 → 调API → 追加assistant → 记账。"""
         messages = self.push_user(player, content)
+        capture(self.engine, player, kind, messages)
         started = time.perf_counter()
         usage = {}
         # 告诉聊天调度器「这个 AI 正在决策」：它的聊天延后到决策完成之后（决策从不等聊天）。
@@ -468,7 +473,7 @@ class AIDecision:
         if custom:
             situation += "\n\n" + custom
 
-        action_lines = [f"{i}. {self.format_action(action)}" for i, action in enumerate(available_actions)]
+        action_lines = [f"{i}. {self.format_action(action, self.engine.game_state)}" for i, action in enumerate(available_actions)]
         # 区块顺序固定：行为账本（引擎事实）→ 发言（未验证）→（T2 起）本人判断。
         ledger_block = self._build_ledger_block()
         chat_block = self._build_table_chat_block(player)
@@ -530,13 +535,13 @@ class AIDecision:
     CHAT_BLOCK_MAX = 10   # 每次决策最多带上的新发言条数
 
     @staticmethod
-    def quote_chat_entry(entry: Dict) -> str:
+    def quote_chat_entry(entry: Dict, game_state=None) -> str:
         """一条桌面发言的引用包装（决策区块与聊天回合共用）：引号被换掉，发言无法伪装成系统消息。"""
         def quote(value) -> str:
             return str(value).replace("「", "『").replace("」", "』").replace("\n", " ").replace("\r", " ")
 
         tag = {"human": "（玩家）", "spectator": "（观战）"}.get(entry["kind"], " ")
-        return f"「{entry['from_id'] + 1}号 {quote(entry['name'])}{tag}说：{quote(entry['text'])}」"
+        return f"「{seat_of(game_state, entry['from_id'])}号 {quote(entry['name'])}{tag}说：{quote(entry['text'])}」"
 
     def _build_table_chat_block(self, player) -> str:
         """【发言·未验证】区块：自该 AI 上次出牌决策以来的桌面发言（含它自己说过的话）。
@@ -551,12 +556,14 @@ class AIDecision:
             return ""
         self._chat_seen[player.id] = max(entry["seq"] for entry in fresh)
 
-        lines = [self.quote_chat_entry(entry) for entry in fresh[-self.CHAT_BLOCK_MAX:]]
+        lines = [self.quote_chat_entry(entry, self.engine.game_state) for entry in fresh[-self.CHAT_BLOCK_MAX:]]
         return ("\n【发言·未验证】（自你上次决策以来，最多10条；可能是真话，也可能是诈唬）\n"
                 + "\n".join(lines) + "\n")
 
     @staticmethod
-    def format_action(action: Dict) -> str:
+    def format_action(action: Dict, game_state=None) -> str:
+        def targets(ids):
+            return "[" + ", ".join(player_label(game_state, pid) for pid in ids) + "]"
         action_type = action.get("type", "")
         if action_type == "play_card":
             card = action.get("card") or {}
@@ -564,10 +571,12 @@ class AIDecision:
             if card.get("name") == "酒":
                 text += "（只对本回合下一张【杀】生效；手里没有能出的【杀】时使用没有收益）"
             if action.get("requires_target"):
-                if action.get("target_count") == 2:
-                    text += f"，合法目标对={action.get('valid_target_pairs', [])}"
+                if action.get("valid_target_groups"):
+                    text += "，合法目标组=" + "; ".join(targets(group) for group in action["valid_target_groups"])
+                elif action.get("target_count") == 2:
+                    text += f"，合法目标对={'; '.join(targets(pair) for pair in action.get('valid_target_pairs', []))}"
                 else:
-                    text += f"，合法目标={action.get('valid_targets', [])}"
+                    text += f"，合法目标={targets(action.get('valid_targets', []))}"
             return text
         if action_type == "recast":
             card = action.get("card") or {}
@@ -580,7 +589,7 @@ class AIDecision:
             if action.get("description"):
                 text += f"，效果={action.get('description')}"
             if action.get("requires_target"):
-                text += f"，合法目标={action.get('valid_targets', [])}"
+                text += f"，合法目标={targets(action.get('valid_targets', []))}"
             return text
         if action_type == "end_phase":
             return "结束出牌阶段"
@@ -610,7 +619,23 @@ class AIDecision:
                 raise ValueError("action_index不在合法操作范围内")
 
             action = dict(available_actions[index])
-            target_ids = self._normalize_targets(action, payload.get("target_ids", []), player)
+            requested = payload.get("target_ids", [])
+            if action.get("requires_target"):
+                if not isinstance(requested, list) or not requested:
+                    raise ValueError("target_ids 必须填写合法座位号")
+                targets = [player_of(self.engine.game_state, seat) for seat in requested]
+                if any(p is None for p in targets):
+                    raise ValueError("不存在的座位号")
+                requested = [p.id for p in targets]
+                valid = action.get("valid_targets", [])
+                pairs = action.get("valid_target_pairs", [])
+                groups = action.get("valid_target_groups", [])
+                if (groups and requested not in groups or
+                        not groups and action.get("target_count") == 2 and requested not in pairs or
+                        not groups and action.get("target_count") != 2 and
+                        (len(requested) != 1 or requested[0] not in valid)):
+                    raise ValueError("目标座位不在本操作候选中")
+            target_ids = self._normalize_targets(action, requested, player)
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:200]
             self._apply_notes(player, payload)
@@ -786,17 +811,21 @@ class AIDecision:
     )
 
     @staticmethod
-    def _describe_context(context: Dict) -> str:
+    def _describe_context(context: Dict, game_state=None) -> str:
         parts = []
-        source = (context or {}).get("source")
-        target = (context or {}).get("target")
-        card = (context or {}).get("card")
-        if source is not None:
-            parts.append(f"来源：{source.get('name', source) if isinstance(source, dict) else getattr(source, 'name', source)}")
-        if target is not None:
-            parts.append(f"目标：{target.get('name', target) if isinstance(target, dict) else getattr(target, 'name', target)}")
-        if card is not None:
-            parts.append(f"触发牌：{card_label(card) if hasattr(card, 'name') else card}")
+        def label(value):
+            pid = value.get("id") if isinstance(value, dict) else getattr(value, "id", value)
+            return player_label(game_state, pid)
+        for key, title in (("card_source", "锦囊原始来源"), ("source", "当前来源"),
+                           ("target", "目标"), ("dying", "濒死者")):
+            if context.get(key) is not None:
+                parts.append(title + "：" + label(context[key]))
+        if context.get("targets"):
+            parts.append("目标：" + "、".join(label(p) for p in context["targets"]))
+        for key in ("card_name", "layer", "reason", "intent", "skill_name", "amount", "nature", "pool_slots"):
+            value = context.get(key)
+            if value is not None and isinstance(value, (str, int, float, bool, list)):
+                parts.append(f"{key}：{value}")
         return "；".join(parts)
 
     def build_response_prompt(self, player, request: Dict) -> str:
@@ -808,8 +837,11 @@ class AIDecision:
             situation = "内置世界书已在全局设置中关闭。"
 
         options = request.get("options") or []
-        option_lines = [f"{i}. {option_label(option)}" for i, option in enumerate(options)]
-        context_text = self._describe_context(request.get("context") or {})
+        option_lines = [f"{i}. {option_label(option)}" +
+                        ("（提供者：" + player_label(self.engine.game_state, option.get("owner_id", getattr(option.get("owner"), "id", None))) + "）"
+                         if option.get("owner_id", getattr(option.get("owner"), "id", None)) is not None else "")
+                        for i, option in enumerate(options)]
+        context_text = self._describe_context(request.get("context") or {}, self.engine.game_state)
         return f"""{self.RESPONSE_SYSTEM_PROMPT}
 
 {situation}
@@ -1036,7 +1068,8 @@ class AIDecision:
             self.last_reasoning[player.id] = ""
             self.last_meta[player.id] = {}
             return sorted(self.rng.sample(range(len(options)), count))
-        visible = [{"index": i, "label": str(option.get("label", i))}
+        visible = [{"index": i, "label": player_label(self.engine.game_state, option["player_id"])
+                    if option.get("player_id") is not None else str(option.get("label", i))}
                    for i, option in enumerate(options)]
         prompt = (
             "请选择三国杀引擎给出的合法候选索引。不要推测隐藏手牌，不要新增候选。\n"
@@ -1044,7 +1077,7 @@ class AIDecision:
             f"提示：{request.get('prompt', '')}\n"
             f"最少/最多选择：{request.get('min_n', 1)}/{request.get('max_n', 1)}；"
             f"可取消：{bool(request.get('cancelable', True))}\n"
-            f"公开上下文：{json.dumps(request.get('context') or {}, ensure_ascii=False)}\n"
+            f"公开上下文：{self._describe_context(request.get('context') or {}, self.engine.game_state)}\n"
             f"候选：{json.dumps(visible, ensure_ascii=False)}\n"
             '只返回 JSON：{"option_indices":[0]}。允许取消时返回空数组。'
         )

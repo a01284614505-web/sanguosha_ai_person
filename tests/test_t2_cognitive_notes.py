@@ -239,8 +239,8 @@ def test_round_snapshots_one_per_owner_per_round_and_dead_owner_only_in_death_ro
     assert got == [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1)]
     r1 = next(s for s in engine.notes.snapshots if s["round"] == 1 and s["player_id"] == 1)
     r3 = next(s for s in engine.notes.snapshots if s["round"] == 3 and s["player_id"] == 1)
-    assert r1["notes"]["2"]["guess"] == "rebel" and r3["notes"]["2"]["guess"] == "spy"
-    assert r1["notes"]["0"]["locked"] is True
+    assert r1["notes"]["3"]["guess"] == "rebel" and r3["notes"]["3"]["guess"] == "spy"
+    assert r1["notes"]["1"]["locked"] is True
 
 
 def test_run_loop_snapshots_when_round_advances_and_at_the_end():
@@ -514,7 +514,7 @@ def attach(server, engine, gid, ws):
         engine.on(event, server._forward(gid, event))
 
 
-NOTES_REPLY = json.dumps({"action_index": 0, "reasoning": "公开理由甲",
+NOTES_REPLY = json.dumps({"action_index": 0, "target_ids": [1], "reasoning": "公开理由甲",
                           "notes": {"3": note("rebel", "高", "杀主公")}})
 
 
@@ -656,7 +656,7 @@ def test_game_log_contains_notes_snapshots_even_in_non_cheat_game_and_no_key():
     assert log["options"]["cheat_mode"] is False
     snaps = log["cognitive_notes"]
     mine = next(s for s in snaps if s["player_id"] == 1)
-    assert mine["notes"]["2"]["guess"] == "rebel" and mine["notes"]["0"]["locked"] is True
+    assert mine["notes"]["3"]["guess"] == "rebel" and mine["notes"]["1"]["locked"] is True
     assert KEY not in json.dumps(log, ensure_ascii=False)
     json.dumps(log)       # 可序列化
 

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from .seats import seat_of
 from dataclasses import asdict, dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -119,7 +120,7 @@ class BehaviorLedger:
             p = by_id.get(pid)
             tag = "(主公)" if p is not None and getattr(p, "identity_revealed", False) \
                 and getattr(p, "identity", None) == "lord" else ""
-            return f"{pid + 1}号{tag}"
+            return f"{seat_of(game_state, pid)}号{tag}"
 
         pairs: Dict[Tuple[int, int], Dict[Tuple[str, str], List[float]]] = {}
         order: List[Tuple[int, int]] = []

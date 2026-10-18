@@ -237,8 +237,8 @@ def test_lord_dying_and_rescue_lord_trigger_events_in_normal_level():
     first, again = run(scenario())
     assert first >= 1 and again == first
     tails = [call["messages"][-1]["content"] for call in gateway.calls]
-    assert any("主公（4号）濒死" in t for t in tails)
-    assert any("2号救了主公" in t for t in tails)
+    assert any("主公（1号）濒死" in t for t in tails)
+    assert any("4号救了主公" in t for t in tails)
 
 
 def test_death_reason_names_identity_only_when_it_is_public():
@@ -287,7 +287,7 @@ def test_idle_fires_per_level_threshold_and_uses_a_reason_without_spending_token
         before = run(scenario())
         assert before == 0, level
         assert len(gateway.calls) == 1, level
-        assert "主公（4号）只剩1血" in gateway.calls[0]["messages"][-1]["content"]
+        assert "主公（1号）只剩1血" in gateway.calls[0]["messages"][-1]["content"]
         assert ai_lines(engine)[0]["free"] is False
 
 

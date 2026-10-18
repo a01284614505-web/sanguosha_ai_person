@@ -138,7 +138,7 @@
             const kind = ['human', 'spectator'].includes(data.kind) ? data.kind : 'ai';
             row.className = 'msg kind-' + kind + (isMe ? ' me' : '');
             row.innerHTML = '<div class="avatar">' + SGS.heroImgHTML(hero.id, hero.name || name) + '</div>' +
-                '<div><div class="who"><b>' + esc(name) + '</b>' + esc(p && p.hero_name ? p.hero_name : '') + '</div>' +
+                '<div><div class="who"><b>' + esc(((p && p.seat) || data.seat ? ((p && p.seat) || data.seat) + '号 ' : '') + name) + '</b>' + esc(p && p.hero_name ? p.hero_name : '') + '</div>' +
                 '<div class="text">' + esc(data.message) + '</div></div>';
             this.append(this.chatList, row);
             if (p) this.opts.showBubble(p.id, data.message);

@@ -18,6 +18,7 @@ from game_engine.game_history import GameHistoryStore, validate_profile_id
 from game_engine.model_catalog import ModelListError, list_models
 from game_engine.game_logs import GameLogStore, build_game_log, validate_game_id
 from game_engine.identity_system import IdentitySystem
+from game_engine.seats import seat_of
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
@@ -372,8 +373,7 @@ class GameServer:
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
             if event == OUTBOUND.CHAT and isinstance(data.get("from_id"), int):
-                # 座位号 = 内部 id + 1（界面显示用）；引擎不关心显示规则，在这里补算。
-                data["seat"] = data["from_id"] + 1
+                data["seat"] = seat_of(engine.game_state, data["from_id"]) if engine else None
             if event == OUTBOUND.CHAT and data.get("kind") == "human":
                 # 旧前端靠 is_self 认出“这是我自己说的话”，保持兼容。
                 data["is_self"] = True

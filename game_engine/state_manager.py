@@ -149,6 +149,14 @@ class GameState:
         # 统计口径辅助：玩家 id → 最近一次伤害来源 id（击杀归属用，None 表示无来源）
         self.last_damage_source: Dict[int, Optional[int]] = {}
         
+    def seat_of(self, player_id):
+        from .seats import seat_of
+        return seat_of(self, player_id)
+
+    def player_of(self, seat):
+        from .seats import player_of
+        return player_of(self, seat)
+
     def init_game(self, config: Dict):
         """初始化游戏"""
         self.game_config = config

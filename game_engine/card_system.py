@@ -746,7 +746,7 @@ class CardSystem:
                     card_filter=lambda c: c.name == '无懈可击',
                     requested_name='无懈可击',
                     # 被抵消的锦囊名、当前是第几层无懈都是公开信息，AI 据此判断该不该拦。
-                    context={"source": current_source, "targets": targets or [], "card": card,
+                    context={"source": current_source, "card_source": source, "targets": targets or [], "card": card,
                              "card_name": card.name, "layer": layer},
                     kind="wuxie",
                 )

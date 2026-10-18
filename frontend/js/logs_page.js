@@ -169,7 +169,7 @@
         $('downloadBtn').href = '/api/logs/' + encodeURIComponent(id) + '?profile_id=' + encodeURIComponent(profileId) + '&download=1';
         history.replaceState(null, '', 'logs.html?game=' + encodeURIComponent(id));
         const players = (log.players || []).map(p =>
-            '<tr class="' + (p.alive ? '' : 'dead') + '"><td><b>' + esc(p.name || '') + '</b><small>' + esc(p.hero || '') + '</small></td>' +
+            '<tr class="' + (p.alive ? '' : 'dead') + '"><td><b>' + esc((p.seat ? p.seat + '号 ' : '') + (p.name || '')) + '</b><small>' + esc(p.hero || '') + '</small></td>' +
             '<td>' + SGS.identitySeal(p.identity) + '</td>' +
             '<td>' + esc(p.is_ai ? ((p.model || '规则 AI') + '') : '你') + '</td>' +
             '<td>' + esc(String((p.stats || {}).damage_dealt || 0)) + ' / ' + esc(String((p.stats || {}).kills || 0)) + '</td></tr>').join('');
@@ -179,7 +179,7 @@
         const entries = [];
         const push = (r, html, seq) => entries.push({ r: r || 0, html: html, seq: Number.isFinite(seq) ? seq : entries.length * 1e-6 });
         (log.timeline || []).forEach(t => push(t.round, '<div class="tl-line">' + esc(t.text) + '</div>', t.seq));
-        (log.chat || []).forEach(c => push(c.round, '<div class="tl-line tl-chat">💬 <b>' + esc(c.from || '') + '</b>：' + esc(c.message || '') + '</div>', c.seq));
+        (log.chat || []).forEach(c => push(c.round, '<div class="tl-line tl-chat">💬 <b>' + esc((c.seat ? c.seat + '号 ' : '') + (c.from || '')) + '</b>：' + esc(c.message || '') + '</div>', c.seq));
         (log.decisions || []).forEach(d => {
             // 选项下标（如 [0]）对人没有意义，去掉；“合法目标=[…]”这类引擎内部信息也去掉。
             d = Object.assign({}, d, { choice: /^\[[\d, ]*\]$/.test(String(d.choice || '')) ? '' : String(d.choice || '').replace(/，合法目标(对)?=\[[^\]]*\]/g, '') });
@@ -205,13 +205,17 @@
                 }).join('') + '</tr>').join('') +
             '</tbody></table></div>' : '';
         const opts = log.options || {};
+        const prompts = (log.prompt_traces || []).map(t =>
+            '<details class="prompt-trace"><summary>' + esc(String(t.seat)) + '号 · 第' + esc(String(t.round)) +
+            '轮 · ' + esc(t.kind) + ' · 完整 prompt</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">' +
+            esc(JSON.stringify(t.messages, null, 2)) + '</pre></details>').join('');
         $('detailBody').innerHTML =
             '<h2 class="section-title">' + esc(log.message || '对局结束') + '</h2>' +
             '<p class="muted">' + esc(fmtTime(log.ended_at)) + ' · ' + esc(String(log.rounds || 0)) + ' 轮 · ' + esc(fmtDuration(log.duration)) +
             (opts.cheat_mode ? ' · 作弊局' : '') + (opts.hide_dead_identity ? ' · 阵亡暗置' : '') +
             (opts.include_thinking ? '' : ' · 未记录思考过程') + '</p>' +
             '<div class="table-wrap"><table class="stats-table log-players"><thead><tr><th>角色</th><th>身份</th><th>模型</th><th>伤害/击杀</th></tr></thead><tbody>' + players + '</tbody></table></div>' +
-            tokenTable +
+            tokenTable + prompts +
             '<h3 class="section-title">时间线</h3>' + (roundHTML || '<p class="muted">没有记录。</p>');
         window.scrollTo(0, 0);
     }

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .game_history import validate_profile_id
+from .prompt_trace import redact
 from .token_usage import USAGE_KINDS, empty_bucket
 
 LOG_SCHEMA = 1
@@ -36,6 +37,7 @@ def _player_summary(p: Dict, stats: Dict) -> Dict:
     pid = p.get("id")
     return {
         "id": pid,
+        "seat": p.get("seat"),
         "name": p.get("name"),
         "hero": p.get("hero_name") or (p.get("hero") or {}).get("name"),
         "identity": p.get("identity"),
@@ -87,7 +89,8 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
     else:
         # 不含思考过程：只保留“谁在第几轮做了什么”，去掉理由。
         decisions = [{k: v for k, v in d.items() if k != "reason"} for d in getattr(engine, "decision_log", [])]
-    return {
+    return redact({
+        "prompt_traces": [trace for traces in getattr(getattr(engine, "ai_decision", None), "prompt_traces", {}).values() for trace in traces] if include_thinking else [],
         "schema": LOG_SCHEMA,
         "game_id": engine.game_id,
         "profile_id": config.get("profile_id"),
@@ -114,7 +117,7 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "ledger": ledger.snapshot() if ledger is not None else [],
         # 认知笔记快照（Stage T · T2）：每个模型 AI 每轮一份，非作弊局也写（对局结束后才落盘，不影响游戏体验）。
         "cognitive_notes": [dict(item) for item in getattr(getattr(engine, "notes", None), "snapshots", [])],
-    }
+    }, engine)
 
 
 class GameLogStore:

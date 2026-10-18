@@ -74,7 +74,7 @@
                 const isMe = p.id === r.player_id || (r.player_id == null && !p.is_ai);
                 return '<tr class="' + (isMe ? 'me ' : '') + (p.alive ? '' : 'dead') + '">' +
                     '<td><div class="who"><div class="mini-portrait">' + SGS.heroImgHTML(hero.id, hero.name || p.hero_name) + '</div>' +
-                    '<div><b>' + esc(p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b><small>' + esc(p.hero_name || '') + (p.alive ? '' : ' · 阵亡') + '</small></div></div></td>' +
+                    '<div><b>' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b><small>' + esc(p.hero_name || '') + (p.alive ? '' : ' · 阵亡') + '</small></div></div></td>' +
                     '<td>' + SGS.identitySeal(p.identity) + '</td>' +
                     cols.map(c => '<td data-label="' + c[1] + '">' + (s[c[0]] || 0) + '</td>').join('') + '</tr>';
             }).join('') + '</tbody></table>';

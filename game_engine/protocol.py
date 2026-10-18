@@ -6,6 +6,8 @@ Python 侧唯一权威定义；`scripts/gen_protocol_js.py` 据此生成
 断言。任何新消息类型、新 Provider 只改本文件。
 """
 
+# players[].seat / chat.seat 为主公起固定的公开座位号（1..N）；id / target_ids 仍为内部 ID。
+# 只有模型 JSON 的 target_ids 使用座位号，AIDecision 在解析边界转换。
 PROTOCOL_VERSION = "1.0"
 
 
