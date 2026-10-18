@@ -136,9 +136,15 @@
             if (empty) empty.remove();
             const row = document.createElement('div');
             const kind = ['human', 'spectator'].includes(data.kind) ? data.kind : 'ai';
+            // P5 provides the public 1-based seat on the player and chat event;
+            // never derive it from the internal player id (which can be zero).
+            const seat = p && Number.isInteger(p.seat) && p.seat > 0
+                ? p.seat
+                : (Number.isInteger(data.seat) && data.seat > 0 ? data.seat : null);
+            const seatLabel = seat === null ? '' : seat + '号 ';
             row.className = 'msg kind-' + kind + (isMe ? ' me' : '');
             row.innerHTML = '<div class="avatar">' + SGS.heroImgHTML(hero.id, hero.name || name) + '</div>' +
-                '<div><div class="who"><b>' + esc(((p && p.seat) || data.seat ? ((p && p.seat) || data.seat) + '号 ' : '') + name) + '</b>' + esc(p && p.hero_name ? p.hero_name : '') + '</div>' +
+                '<div><div class="who"><b>' + esc(seatLabel + name) + (kind === 'spectator' ? '（观战）' : '') + '</b>' + esc(p && p.hero_name ? p.hero_name : '') + '</div>' +
                 '<div class="text">' + esc(data.message) + '</div></div>';
             this.append(this.chatList, row);
             if (p) this.opts.showBubble(p.id, data.message);

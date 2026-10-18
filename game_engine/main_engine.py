@@ -167,6 +167,7 @@ class MainEngine:
         self._started_at: Any = None
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
         chat_cfg = game_config.get("chat")
+        self.ai_spectate = game_config.get("ai_spectate", True) is True
         self.chat_enabled = not (isinstance(chat_cfg, dict) and chat_cfg.get("enabled") is False)
         # 开局锁定的两个选项：对局中途不可改（服务器不提供修改入口）。
         # 作弊模式：真人可看到 AI 的公开理由（不含手牌与隐藏身份）；本局不计连胜与身份卡。
@@ -423,6 +424,7 @@ class MainEngine:
             "game_over": gs.game_over,
             "cheat_mode": self.cheat_mode,
             "chat_level": self.chat_director.level,
+            "ai_spectate": self.ai_spectate,
             "hide_dead_identity": self.hide_dead_identity,
             "winner": gs.winner,
             "trustee": self.trustee_status(),
@@ -591,8 +593,8 @@ class MainEngine:
         return entry
 
     async def _record_ai_chat(self, player: Player, text: Any):
-        """聊天调度器的 AI 发言入口：受「单 AI 每回合 5 句」上限约束。"""
-        if not self.chat_enabled:
+        """AI 发言入口：保留事实复核；阵亡观战每轮至多一句。"""
+        if not self.chat_enabled or (not player.alive and not self.ai_spectate):
             return None
         clean = self.clean_chat_text(text)
         conflict = contradiction(clean, self.game_state, getattr(self, "ledger", None))
@@ -606,12 +608,14 @@ class MainEngine:
             if self.cheat_mode:
                 await self.emit(ENGINE_EVENT.CHAT_REJECTED, **record)
             return None
+        cap = self.AI_CHAT_PER_ROUND if player.alive else 1
         key = (player.id, self.game_state.round_number)
-        if self._chat_counts.get(key, 0) >= self.AI_CHAT_PER_ROUND:
+        if self._chat_counts.get(key, 0) >= cap:
             logger.info("  💬 %s 本回合发言已达 %d 句上限，丢弃：%s", player.name,
                         self.AI_CHAT_PER_ROUND, str(text)[:20])
             return None
-        entry = await self._record_table_chat(player.id, player.name, "ai", text)
+        entry = await self._record_table_chat(player.id, player.name,
+                                              "ai" if player.alive else "spectator", clean)
         if entry is not None:
             self._chat_counts[key] = self._chat_counts.get(key, 0) + 1
         return entry

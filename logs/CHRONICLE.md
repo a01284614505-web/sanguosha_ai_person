@@ -1438,3 +1438,5 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。
+
+- 2026-10-18：Stage T · T3b 点名、3 秒合并、有限接话链与 AI 观战施工，见 [交接](handover/20261018_1058_StageT_T3b点名接话观战.md)；743 passed / 50 subtests，VERIFY_OK，30 局正常；独立分支待验收。
