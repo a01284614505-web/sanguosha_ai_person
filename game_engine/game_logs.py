@@ -110,6 +110,7 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "players": [_player_summary(p, stats) for p in state.get("players") or []],
         "mvp": game_end.get("mvp"),
         "timeline": timeline,
+        "notes_diagnostics": list(getattr(getattr(engine, "ai_decision", None), "notes_diagnostics", [])),
         "blocked_chat": list(getattr(engine, "blocked_chat", [])),
         "chat": list(getattr(engine, "chat_log", []))[-1000:],
         "decisions": decisions[-2000:],

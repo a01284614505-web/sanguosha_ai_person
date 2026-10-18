@@ -108,6 +108,18 @@ class BehaviorLedger:
                 score -= e.weight
         return score
 
+    def evidence_table(self, game_state) -> str:
+        """只聚合公开流水，不根据身份真值推断阵营；与压缩摘要不同，这里逐人完整列出。"""
+        from collections import Counter
+        lines = []
+        for p in sorted(game_state.players, key=lambda p: seat_of(game_state, p.id)):
+            counts = Counter((e.target_id, e.label) for e in self.entries
+                             if e.source_id == p.id and e.target_id is not None)
+            facts = [f"对{seat_of(game_state, tid)}号 {label}×{count}"
+                     for (tid, label), count in counts.items()]
+            lines.append(f"{seat_of(game_state, p.id)}号：" + ("；".join(facts) or "暂无定向公开行为"))
+        return "\n【引擎确认·每人行为】（只有行为证据，不代表身份结论）\n" + "\n".join(lines) + "\n"
+
     # ---------- 汇总（6.4） ----------
 
     def summarize(self, game_state, max_chars: Optional[int] = None) -> str:

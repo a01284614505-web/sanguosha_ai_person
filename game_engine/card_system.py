@@ -769,18 +769,22 @@ class CardSystem:
                 if response_card in source_cards:
                     raise AssertionError("无懈响应消费后仍留在原牌区")
                 responded = True
-                # 无懈链逐层记受益者：奇数层抵消锦囊，保护原目标；偶数层抵消上一层无懈，等于帮锦囊使用者。
-                # 无目标的锦囊（无中生有等）没有「被保护者」，不记。
-                # 判定阶段的延时锦囊 source 是被判定者，偶数层的受益者要由调用方给出 trick_user
-                # （查不到使用者就传 None：不记，不猜）。
-                if layer % 2 == 1:
+                # 群体收益按被影响者记极性：奇数层阻止收益，偶数层恢复收益。
+                spec = CARD_TABLE.get(card.name)
+                benefit = bool(spec and spec.group_benefit)
+                if benefit:
+                    beneficiaries = targets or []
+                elif layer % 2 == 1:
                     beneficiaries = targets or []
                 elif trick_user is self._USER_UNSET:
                     beneficiaries = [source]
                 else:
                     beneficiaries = [trick_user] if trick_user is not None else []
                 for beneficiary in beneficiaries:
-                    self._ledger_record(owner, beneficiary, "protect", "无懈保护")
+                    if benefit and layer % 2 == 1:
+                        self._ledger_record(owner, beneficiary, "hostile", "无懈阻益", 0.5)
+                    else:
+                        self._ledger_record(owner, beneficiary, "protect", "无懈保护")
                 current_source = responder
                 canceled = not canceled
                 break

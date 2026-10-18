@@ -307,7 +307,7 @@ def test_json_example_includes_notes_and_asks_only_for_changes():
     engine = make_engine()
     msg = decision_message(engine, players(engine)[1])
     assert '"notes": {"3": {"guess": "rebel", "conf": "高", "why": "两次杀主公"}}' in msg
-    assert "只写有变化的座位" in msg and "20字" in msg
+    assert "notes 必填" in msg and "每轮重新看证据" in msg and "20字" in msg
 
 
 def test_block_shows_previous_version_and_says_when_empty():
@@ -350,7 +350,7 @@ def test_response_and_choice_prompts_never_carry_notes():
     engine.notes.update(1, {"3": note()})
     response = engine.ai_decision.build_response_prompt(
         p1, {"kind": "respond", "prompt": "请出闪", "options": [{"card": Card("s", "闪", "heart", 2, "basic")}]})
-    assert "【仅你可见·你的判断】" not in response and "notes" not in response
+    assert "【仅你可见·你的判断】" in response and "两次杀主公" in response
     sent = []
     engine.ai_decision.gateway = ScriptedGateway('{"option_index": 0, "option_indices": [0]}')
     original = engine.ai_decision._call_with_session
@@ -365,7 +365,7 @@ def test_response_and_choice_prompts_never_carry_notes():
         "min_n": 1, "max_n": 1}))
     run(engine.ai_decision.make_response_decision(
         p1, {"kind": "respond", "prompt": "请出闪", "options": [{"card": Card("s2", "闪", "heart", 3, "basic")}]}))
-    assert sent and all("【仅你可见·你的判断】" not in message for _, message in sent)
+    assert sent and all("【仅你可见·你的判断】" in message for _, message in sent)
 
 
 def test_trustee_view_of_the_human_gets_no_notes_block_and_old_json_example():

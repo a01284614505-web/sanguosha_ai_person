@@ -223,6 +223,7 @@ class AIDecision:
         self.last_meta: Dict[int, Dict] = {}
         # 每个 AI 上次决策时已读到的桌面发言序号，保证同一句话只注入一次。
         self._chat_seen: Dict[int, int] = {}
+        self.notes_diagnostics: List[Dict] = []
         # 本地随机选择用的随机源；测试可换成固定种子的 random.Random。
         self.rng = random
         config = getattr(game_engine, "game_config", {}) or {}
@@ -479,7 +480,11 @@ class AIDecision:
         if notes_block:
             json_example = ('{"action_index": 0, "target_ids": [1], "reasoning": "简短理由", '
                             '"notes": {"3": {"guess": "rebel", "conf": "高", "why": "两次杀主公"}}}')
-            notes_rule = ('\nnotes 可省略，只写有变化的座位；键是座位号（3号写"3"）；guess 取 lord/loyalist/rebel/spy/unknown，'
+            unknown_seats = [str(seat_of(self.engine.game_state, p.id)) for p in self.engine.game_state.players
+                             if p.id != player.id and not p.identity_revealed]
+            notes_rule = ('\nnotes 必填：每次输出对每个身份未公开的座位的完整判断，每轮重新看证据、重写理由。'
+                          + '本次需要判断的座位号：' + '、'.join(unknown_seats) + '；'
+                          '猜不出写 unknown 并说明理由；键是座位号（3号写"3"）；guess 取 lord/loyalist/rebel/spy/unknown，'
                           'conf 取 高/中/低，why 不超过20字；已公开身份的座位不能改。')
         else:
             json_example = '{"action_index": 0, "target_ids": [1], "reasoning": "简短理由"}'
@@ -487,7 +492,7 @@ class AIDecision:
         return f"""{situation}
 
 当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
-{ledger_block}{chat_block}{notes_block}
+{ledger_block}{self._build_evidence_block()}{chat_block}{notes_block}
 合法操作列表（索引从0开始）：
 {chr(10).join(action_lines)}
 
@@ -495,8 +500,8 @@ class AIDecision:
 {json_example}
 目标必须来自所选操作的合法目标列表。不能新增操作、卡牌或目标。{notes_rule}"""
 
-    def _build_notes_block(self, player) -> str:
-        """【仅你可见·你的判断】区块：只给模型 AI 自己（真人托管不注入），只进出牌决策。
+    def _build_notes_block(self, player, *, consume_review=True) -> str:
+        """【仅你可见·你的判断】区块：只给模型 AI 自己（真人托管不注入），出牌/响应/选择共享。
 
         笔记存在 engine.notes 独立结构里，不在会话消息里；会话被压缩后每次决策仍会从这里完整注入。
         """
@@ -505,7 +510,7 @@ class AIDecision:
             return ""
         notes.ensure(player.id)
         block = notes.prompt_block(player.id)
-        if notes.consume_review(player.id):
+        if consume_review and notes.consume_review(player.id):
             block += "局势有变（有人阵亡或身份揭示），请复核你的判断。\n"
         return block
 
@@ -513,11 +518,30 @@ class AIDecision:
         """把模型返回的 notes 交给 engine.notes 校验落库；任何异常只丢 notes，不影响操作本身。"""
         try:
             notes = getattr(self.engine, "notes", None)
-            if notes is None or not getattr(player, "is_ai", False) or "notes" not in payload:
+            if notes is None or not getattr(player, "is_ai", False):
                 return
-            notes.update(player.id, payload.get("notes"))
+            raw = payload.get("notes")
+            result = notes.update(player.id, raw)
+            missing = "notes" not in payload or not isinstance(raw, dict)
+            rejected = len(raw) - len(result["accepted"]) if isinstance(raw, dict) else 0
+            required = {p.id for p in self.engine.game_state.players
+                        if p.id != player.id and not p.identity_revealed}
+            uncovered = required - set(result["accepted"])
+            diagnostic = {"round": self.engine.game_state.round_number, "player_id": player.id,
+                          "missing": missing, "rejected": rejected,
+                          "missing_seats": [seat_of(self.engine.game_state, pid) for pid in sorted(uncovered)]}
+            self.notes_diagnostics.append(diagnostic)
+            if missing or rejected or uncovered:
+                logger.warning("认知笔记：%s 本次笔记%s；被丢弃 %d 条；未覆盖座位 %s", player.name,
+                               "缺失" if missing else "已写入", rejected, diagnostic["missing_seats"])
         except Exception as exc:  # noqa: BLE001 - notes 永远不能拖垮出牌
             logger.warning("  ⚠️ 认知笔记解析失败，只丢弃笔记: %s", type(exc).__name__)
+
+    def _build_evidence_block(self) -> str:
+        ledger = getattr(self.engine, "ledger", None)
+        if ledger is None:
+            return ""
+        return ledger.evidence_table(self.engine.game_state)
 
     def _build_ledger_block(self) -> str:
         """【引擎确认·行为账本】区块：全桌公开行为的聚合摘要，只进出牌决策，不进响应 / 选择。
@@ -845,6 +869,7 @@ class AIDecision:
 
 当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
 
+{self._build_notes_block(player, consume_review=False)}
 响应请求：{request.get('prompt', '')}
 需要打出：{request.get('requested_name') or '（无指定）'}
 {('触发情境：' + context_text) if context_text else ''}
@@ -1067,6 +1092,7 @@ class AIDecision:
         prompt = (
             "请选择三国杀引擎给出的合法候选索引。不要推测隐藏手牌，不要新增候选。\n"
             f"请求类型：{request.get('kind', 'choose_option')}\n"
+            f"{self._build_notes_block(player, consume_review=False)}\n"
             f"提示：{request.get('prompt', '')}\n"
             f"最少/最多选择：{request.get('min_n', 1)}/{request.get('max_n', 1)}；"
             f"可取消：{bool(request.get('cancelable', True))}\n"
