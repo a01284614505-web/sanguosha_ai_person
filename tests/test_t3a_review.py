@@ -66,8 +66,6 @@ def test_run_ending_by_request_end_game_leaves_no_director_task_behind():
     assert leftovers["watcher"] is None
 
 
-@pytest.mark.xfail(strict=True, reason="缺陷：request_end_game 不取消在途聊天，只能等 run() 收尾时才取消；"
-                   "若回合中的 AI 决策还在等网关，聊天会一直在途、继续耗 token")
 def test_request_end_game_cancels_inflight_chat_immediately():
     engine, clock, gateway = make_engine("lively", keyed=(1, 2, 3), gateway=FakeGateway(delay=5.0))
 
@@ -80,6 +78,25 @@ def test_request_end_game_cancels_inflight_chat_immediately():
         return list(engine.chat_director.pending_tasks)
 
     assert run(scenario()) == []
+
+
+def test_idle_watchdog_abort_cancels_inflight_chat_immediately():
+    engine, clock, gateway = make_engine("lively", keyed=(1, 2, 3), gateway=FakeGateway(delay=5.0))
+    engine.idle_abort_seconds = 60
+
+    async def scenario():
+        await engine.submit_chat(0, "你们呢")
+        await settle()
+        assert engine.chat_director.pending_tasks, "前提：聊天在途"
+        engine._human_idle_since = clock()          # 真人开始离席计时
+        clock.t += 120                              # 离席超过 idle_abort_seconds
+        assert await engine._check_idle_timeout() is True
+        await settle()
+        return list(engine.chat_director.pending_tasks), engine.game_state.winner
+
+    pending, winner = run(scenario())
+    assert winner == "aborted"
+    assert pending == []
 
 
 # ---------- 2. 聊天与决策并发：会话消息顺序不被破坏 ----------

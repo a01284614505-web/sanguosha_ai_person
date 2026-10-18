@@ -1930,6 +1930,8 @@ class MainEngine:
         self.game_state.end_message = (
             f"真人玩家离席超过{minutes:.0f}分钟，本局自动结束。服务器仍在运行，刷新页面即可重开。"
         )
+        # 立刻取消在途聊天（幂等，与 run() 的 finally 不冲突）。
+        self.chat_director.shutdown()
         await self.log_event(self.game_state.end_message, important=True, abort_reason="idle_timeout")
 
         # 唤醒所有挂起的响应请求，否则等待中的协程会永久挂住。
@@ -2252,6 +2254,8 @@ class MainEngine:
         self.game_state.game_over = True
         self.game_state.winner = "aborted"
         self.game_state.end_message = reason
+        # 立刻取消在途聊天（shutdown 幂等，run() 的 finally 里再调一次无副作用）。
+        self.chat_director.shutdown()
         # 与离席看门狗一致：挂起的交互请求不得在收摊后继续落地效果。
         self._abort_reason = self._abort_reason or "player_end_game"
         for request_id, future in list(self._pending_requests.items()):
