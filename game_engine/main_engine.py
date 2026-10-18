@@ -30,6 +30,8 @@ from .effect_context import EffectContext
 from .behavior_ledger import BehaviorLedger
 from .cognitive_notes import CognitiveNotes
 from .seats import seat_of
+from .chat_facts import contradiction
+from .prompt_trace import redact
 
 
 logger = logging.getLogger(__name__)
@@ -174,6 +176,8 @@ class MainEngine:
         # 桌面发言（Stage T0）：table_chat 只留最近 50 条，进入出牌决策的 L2；
         # chat_log 是同一批发言的完整记录（局后日志用），两者由 _record_table_chat 同时写入。
         self.chat_log: List[Dict] = []
+        self.blocked_chat: List[Dict] = []
+        self.chat_corrections: Dict[int, str] = {}
         self.table_chat: deque = deque(maxlen=self.TABLE_CHAT_KEEP)
         # 单个 AI 每回合最多发言数（含免费台词）：(player_id, round) → 已发句数。
         self._chat_counts: Dict[Tuple[int, int], int] = {}
@@ -551,7 +555,7 @@ class MainEngine:
         value = str(text or "").strip()[:cls.CHAT_TEXT_MAX]
         return cls._CHAT_MARK_RE.sub(lambda m: "〔" + m.group(1) + ("〕" if m.group(2) else ""), value)
 
-    async def _record_table_chat(self, player_id: int, name: str, kind: str, text: Any, *, free: bool = False):
+    async def _record_table_chat(self, player_id: int, name: str, kind: str, text: Any):
         """一条桌面发言的唯一入库点：写 table_chat 与 chat_log，再广播给界面。"""
         clean = self.clean_chat_text(text)
         if not clean:
@@ -560,12 +564,12 @@ class MainEngine:
         round_number = self.game_state.round_number
         ts = self.time_source()
         entry = {"seq": seq, "round": round_number, "from_id": player_id, "name": name,
-                 "seat": seat_of(self.game_state, player_id), "kind": kind, "text": clean, "free": bool(free), "ts": ts}
+                 "seat": seat_of(self.game_state, player_id), "kind": kind, "text": clean, "ts": ts}
         self.table_chat.append(entry)
         self.chat_log.append({"seq": seq, "round": round_number, "from": name, "kind": kind,
-                              "message": clean, "from_id": player_id, "seat": seat_of(self.game_state, player_id), "free": bool(free), "ts": ts})
+                              "message": clean, "from_id": player_id, "seat": seat_of(self.game_state, player_id), "ts": ts})
         await self.emit(ENGINE_EVENT.CHAT, from_=name, message=clean, from_id=player_id,
-                        kind=kind, free=bool(free), ts=ts)
+                        kind=kind, ts=ts)
         return entry
 
     async def submit_chat(self, player_id: int, text: Any):
@@ -573,30 +577,33 @@ class MainEngine:
         player = next((p for p in self.game_state.players if p.id == player_id), None)
         if player is None:
             return None
-        entry = await self._record_table_chat(player.id, player.name, "human", text, free=False)
+        entry = await self._record_table_chat(player.id, player.name, "human", text)
         if entry is not None:
             self.chat_director.on_human_chat(entry)       # 同步登记，回应在后台生成
         return entry
 
-    async def _emit_response_chat(self, player: Player):
-        """取走响应决策顺带的台词并发出；只有 AI 座位会说话（真人托管时模型台词不冒充真人）。"""
-        pending = getattr(self.ai_decision, "last_chat", None)
-        if not isinstance(pending, dict):
-            return
-        text = pending.pop(player.id, "")
-        if text and player.is_ai and not self.game_aborted and not self.is_game_over():
-            await self._record_ai_chat(player, text, free=True)
-
-    async def _record_ai_chat(self, player: Player, text: Any, *, free: bool):
-        """AI 发言入口（免费台词与开场白共用）：受「单 AI 每回合 5 句」上限约束。"""
+    async def _record_ai_chat(self, player: Player, text: Any):
+        """聊天调度器的 AI 发言入口：受「单 AI 每回合 5 句」上限约束。"""
         if not self.chat_enabled:
+            return None
+        clean = self.clean_chat_text(text)
+        conflict = contradiction(clean, self.game_state, getattr(self, "ledger", None))
+        if conflict:
+            record = redact({"seq": self.next_log_seq(), "round": self.game_state.round_number,
+                             "player_id": player.id, "seat": seat_of(self.game_state, player.id),
+                             "name": player.name, "text": clean, **conflict}, self)
+            self.blocked_chat.append(record)
+            self.chat_corrections[player.id] = "你上一句因与引擎记录矛盾未发出：" + record["text"] + "；" + record["detail"]
+            logger.warning("发言被拦截：%s：%s；%s", record["name"], record["text"], record["detail"])
+            if self.cheat_mode:
+                await self.emit(ENGINE_EVENT.CHAT_REJECTED, **record)
             return None
         key = (player.id, self.game_state.round_number)
         if self._chat_counts.get(key, 0) >= self.AI_CHAT_PER_ROUND:
             logger.info("  💬 %s 本回合发言已达 %d 句上限，丢弃：%s", player.name,
                         self.AI_CHAT_PER_ROUND, str(text)[:20])
             return None
-        entry = await self._record_table_chat(player.id, player.name, "ai", text, free=free)
+        entry = await self._record_table_chat(player.id, player.name, "ai", text)
         if entry is not None:
             self._chat_counts[key] = self._chat_counts.get(key, 0) + 1
         return entry
@@ -770,8 +777,6 @@ class MainEngine:
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
 
-            if decision.get("chat") and self.chat_enabled:
-                await self._record_ai_chat(player, decision["chat"], free=True)
             if action.get("type") == "end_phase":
                 await self._emit_decision_trace(player, "play", len(actions), action,
                                                 "accepted")
@@ -1691,7 +1696,6 @@ class MainEngine:
                 result = await handler(decision_player, decision_request)
                 if trustee:
                     self._update_trustee_failure(player)
-                await self._emit_response_chat(player)
                 return result
             except Exception as exc:
                 logger.info("  ⚠️ 响应AI失败，切换规则AI: %s", type(exc).__name__)

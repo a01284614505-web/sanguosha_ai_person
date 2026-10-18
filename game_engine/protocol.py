@@ -8,6 +8,7 @@ Python 侧唯一权威定义；`scripts/gen_protocol_js.py` 据此生成
 
 # players[].seat / chat.seat 为主公起固定的公开座位号（1..N）；id / target_ids 仍为内部 ID。
 # 只有模型 JSON 的 target_ids 使用座位号，AIDecision 在解析边界转换。
+# CHAT 不再携带 free；CHAT_REJECTED 仅作弊局发送，不能当作桌面发言渲染。
 PROTOCOL_VERSION = "1.0"
 
 
@@ -30,7 +31,7 @@ class INBOUND:
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，21 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，22 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -56,6 +57,8 @@ class OUTBOUND:
     RESUME_FAILED = "resume_failed"
     # 认知笔记（Stage T · T2）：仅作弊局由服务器构造并下发；非作弊局根本不存在这条消息。
     COGNITIVE_NOTES = "cognitive_notes"
+    # 仅作弊局下发公开事实冲突，不进入桌面聊天。
+    CHAT_REJECTED = "chat_rejected"
 
 
 class ENGINE_EVENT:
@@ -74,6 +77,8 @@ class ENGINE_EVENT:
     TRUSTEE_STATUS = "trustee_status"
     DECISION_TRACE = "decision_trace"
     COGNITIVE_NOTES = "cognitive_notes"
+    # 仅作弊局下发公开事实冲突，不进入桌面聊天。
+    CHAT_REJECTED = "chat_rejected"
     # 特化事件：卡牌动画，经专用 handler 转发（await_ui ACK 机制），不在 ENGINE_EVENTS 循环注册。
     CARD_ANIMATION = "card_animation"
 
@@ -101,6 +106,7 @@ ENGINE_EVENTS = (
     ENGINE_EVENT.TRUSTEE_STATUS,
     ENGINE_EVENT.DECISION_TRACE,
     ENGINE_EVENT.COGNITIVE_NOTES,
+    ENGINE_EVENT.CHAT_REJECTED,
 )
 
 # Provider 清单（8 家）。default_url 均为 OpenAI 兼容端点；

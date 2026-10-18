@@ -116,7 +116,7 @@ def test_human_speech_always_gets_a_reply_from_one_or_two_ais():
         run(scenario())
         lines = ai_lines(engine)
         assert 1 <= len(lines) <= 2, f"seed={seed}"
-        assert all(not e["free"] and e["text"] == "且看我的" for e in lines)
+        assert all("free" not in e and e["text"] == "且看我的" for e in lines)
         assert len(gateway.calls) == len(lines)
 
 
@@ -288,7 +288,7 @@ def test_idle_fires_per_level_threshold_and_uses_a_reason_without_spending_token
         assert before == 0, level
         assert len(gateway.calls) == 1, level
         assert "主公（1号）只剩1血" in gateway.calls[0]["messages"][-1]["content"]
-        assert ai_lines(engine)[0]["free"] is False
+        assert "free" not in ai_lines(engine)[0]
 
 
 def test_quiet_level_never_goes_cold_chat():
@@ -623,7 +623,7 @@ def test_chat_turn_request_shape_small_output_cache_tail_and_decision_identical_
     assert sent["cache_tail_index"] == len(sent["messages"]) - 2, "断点在临时尾巴之前的最后一条会话消息"
     for key, value in model_call_kwargs(ai).items():
         assert sent[key] == value
-    for needle in ("40字", "沉默", "隐瞒", "诈唬", "误导", '{"say"'):
+    for needle in ("40字", "沉默", "说谎", "诈唬", "跳假身份", '"say"'):
         assert needle in sent["messages"][-1]["content"]
 
 

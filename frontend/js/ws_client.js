@@ -144,6 +144,9 @@ class GameClient {
             case 'decision_trace':
                 if (this.onDecisionTrace) this.onDecisionTrace(data);
                 break;
+            case Protocol.OUTBOUND.CHAT_REJECTED:
+                if (this.onChatRejected) this.onChatRejected(data);
+                break;
             case Protocol.OUTBOUND.COGNITIVE_NOTES:
                 if (this.onCognitiveNotes) this.onCognitiveNotes(data);
                 break;
@@ -237,3 +240,5 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = GameClient;
 }
+
+GameClient.prototype.onChatRejected = null;

@@ -95,7 +95,7 @@ class ChatToggleTest(unittest.TestCase):
             return {"action": {"type": "end_phase"}, "chat": "看招！"}
         engine.ai_decision.make_decision = fake_decision
         engine.get_available_actions = lambda player: [{"type": "play_card"}, {"type": "end_phase"}]
-        asyncio.run(engine._auto_play_phase(ai))
+        asyncio.run(engine._record_ai_chat(ai, "看招！"))
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["from_"], ai.name)
         self.assertEqual(sent[0]["from_id"], ai.id)

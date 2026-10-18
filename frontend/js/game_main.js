@@ -1226,11 +1226,14 @@
         dlg.dataset.seat = String(id);
         dlg.querySelector('#thoughtsNotes').innerHTML = notesHtml(id);
         dlg.querySelector('#thoughtsTitle').textContent = (p.seat ? p.seat + '号 ' : '') + p.name + ' 的思考';
+        const rejected = (G.blockedChat || []).filter(t => t.player_id === id).map(t =>
+            '<p class="muted">发言被拦截：' + esc(t.text) + ' · ' + esc(t.detail) + '</p>').join('');
         dlg.querySelector('#thoughtsBody').innerHTML = list.length
             ? list.map(t => '<div class="thought"><small>第 ' + esc(String(t.round || '-')) + ' 轮 · ' + esc(t.kind || '') +
                 (t.model ? ' · ' + esc(t.model) : '') + '</small><p>' + esc(t.reason) + '</p>' +
                 (t.choice ? '<small class="faint">→ ' + esc(t.choice) + '</small>' : '') + '</div>').join('')
             : '<p class="muted">这名 AI 还没有给出理由。没填 API Key 的规则 AI 不会有理由。</p>';
+        dlg.querySelector('#thoughtsBody').insertAdjacentHTML('beforeend', rejected);
         dlg.showModal();
     }
 
@@ -1522,6 +1525,10 @@
         if (status && status.enabled) clearIdleWatch();
         else if (G.turn || G.req) beginIdleWatch();
         renderTrusteeStatus();
+    };
+
+    gameClient.onChatRejected = function (data) {
+        if (G.state && G.state.cheat_mode) (G.blockedChat || (G.blockedChat = [])).push(data);
     };
 
     gameClient.onCognitiveNotes = function (data) {

@@ -298,7 +298,7 @@ class GameServer:
             return
         # 没有对局时（例如大厅里误发）只给发送者一条系统回显。
         await self.send(ws, {"type": OUTBOUND.CHAT, "from": "玩家", "message": message,
-                             "is_self": True, "kind": "system", "free": False})
+                             "is_self": True, "kind": "system"})
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
         if waiter and not waiter.done():
@@ -367,7 +367,7 @@ class GameServer:
                 except (OSError, ValueError, RuntimeError) as exc:
                     logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
                     data["history_error"] = "战绩保存失败，请检查服务器日志"
-            if event == ENGINE_EVENT.COGNITIVE_NOTES and (engine is None or not engine.cheat_mode):
+            if event in (ENGINE_EVENT.COGNITIVE_NOTES, ENGINE_EVENT.CHAT_REJECTED) and (engine is None or not engine.cheat_mode):
                 # 认知笔记只在作弊局下发：第二道闸门，即使引擎误发也不转给前端。
                 return
             if event == OUTBOUND.CHAT and "from_" in data:

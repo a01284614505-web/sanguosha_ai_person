@@ -221,8 +221,6 @@ class AIDecision:
         self.last_failure: Dict[int, Optional[str]] = {}
         self.last_reasoning: Dict[int, str] = {}
         self.last_meta: Dict[int, Dict] = {}
-        # 响应决策顺带的台词：由引擎在拿到选择后取走（与 last_reasoning 同一套旁路）。
-        self.last_chat: Dict[int, str] = {}
         # 每个 AI 上次决策时已读到的桌面发言序号，保证同一句话只注入一次。
         self._chat_seen: Dict[int, int] = {}
         # 本地随机选择用的随机源；测试可换成固定种子的 random.Random。
@@ -479,12 +477,12 @@ class AIDecision:
         chat_block = self._build_table_chat_block(player)
         notes_block = self._build_notes_block(player)
         if notes_block:
-            json_example = ('{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由", '
+            json_example = ('{"action_index": 0, "target_ids": [1], "reasoning": "简短理由", '
                             '"notes": {"3": {"guess": "rebel", "conf": "高", "why": "两次杀主公"}}}')
             notes_rule = ('\nnotes 可省略，只写有变化的座位；键是座位号（3号写"3"）；guess 取 lord/loyalist/rebel/spy/unknown，'
                           'conf 取 高/中/低，why 不超过20字；已公开身份的座位不能改。')
         else:
-            json_example = '{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由"}'
+            json_example = '{"action_index": 0, "target_ids": [1], "reasoning": "简短理由"}'
             notes_rule = ""
         return f"""{situation}
 
@@ -642,7 +640,6 @@ class AIDecision:
             return {
                 "action": action,
                 "target_ids": target_ids,
-                "chat": str(payload.get("chat_message", ""))[:40],
                 "reasoning": str(payload.get("reasoning", ""))[:200],
             }
         except Exception as exc:
@@ -856,12 +853,11 @@ class AIDecision:
 {chr(10).join(option_lines)}
 
 只返回JSON：
-{{"option_index": 0, "reasoning": "简短理由", "chat_message": "可选短句"}}
+{{"option_index": 0, "reasoning": "简短理由"}}
 索引必须来自上面的候选列表，不能新增任何选项。"""
 
     async def make_response_decision(self, player, request: Dict) -> Optional[int]:
         """回合外响应的AI真决策。返回候选索引；None 表示不响应。"""
-        self.last_chat[player.id] = ""
         api_key = player.ai_config.get("api_key", "")
         if not api_key or api_key == "test_key":
             self.last_failure[player.id] = None
@@ -898,9 +894,6 @@ class AIDecision:
                 logger.info(f"  💭 {player.name} 响应理由: {reasoning}")
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = reasoning
-            # 台词只是附带品：非字符串直接丢弃，过长截断，都不影响上面已经确定的选项。
-            chat = payload.get("chat_message")
-            self.last_chat[player.id] = chat.strip()[:40] if isinstance(chat, str) else ""
             return index
         except Exception as exc:
             self.last_failure[player.id] = type(exc).__name__
