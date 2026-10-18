@@ -902,6 +902,9 @@ class CardSystem:
         if self.engine is not None and self.engine.game_aborted:
             return
         logger.info(f"  ⚠️ {player.name} 进入濒死状态！HP:{player.hp}")
+        on_dying = getattr(self.engine, "on_player_dying", None)
+        if callable(on_dying):
+            on_dying(player)
         while player.hp <= 0:
             if self.engine is not None and self.engine.game_aborted:
                 return

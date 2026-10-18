@@ -185,6 +185,12 @@ class GameClient {
         this.send({ type: Protocol.INBOUND.CHAT, message: msg });
     }
 
+    /** 对局中修改设置（本批只有热闹程度）：服务器确认后随 game_state 回到界面。 */
+    updateSettings(settings) {
+        if (!this.connected || !this.gameId) return;
+        this.send({ type: Protocol.INBOUND.UPDATE_SETTINGS, settings: settings });
+    }
+
     setTrustee(enabled, source, playerId, config) {
         if (!this.connected || !this.gameId) return;
         this.send({ type: Protocol.INBOUND.SET_TRUSTEE, enabled: !!enabled,

@@ -31,17 +31,17 @@ class ProtocolSyncTest(unittest.TestCase):
             "protocol.js 与 protocol.py 不同步：请运行 python scripts/gen_protocol_js.py",
         )
 
-    def test_inbound_types_are_ten(self):
+    def test_inbound_types_are_eleven(self):
         self.assertEqual(
-            len(protocol.ALL_INBOUND), 10,
-            f"入站消息类型应为 10 种，当前 {len(protocol.ALL_INBOUND)} 种: {protocol.ALL_INBOUND}",
+            len(protocol.ALL_INBOUND), 11,
+            f"入站消息类型应为 11 种，当前 {len(protocol.ALL_INBOUND)} 种: {protocol.ALL_INBOUND}",
         )
         self.assertEqual(
             set(protocol.ALL_INBOUND),
             {
                 "create_game", "player_action", "chat", "card_animation_done",
                 "end_game", "update_ai_config", "set_trustee", "ping", "server_info",
-                "resume_game",
+                "resume_game", "update_settings",
             },
         )
 

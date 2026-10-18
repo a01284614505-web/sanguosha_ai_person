@@ -139,6 +139,7 @@ class GameServer:
             INBOUND.END_GAME: lambda: self.do_end_game(ws, data),
             INBOUND.UPDATE_AI_CONFIG: lambda: self.do_update_ai_config(ws, data),
             INBOUND.SET_TRUSTEE: lambda: self.do_set_trustee(ws, data),
+            INBOUND.UPDATE_SETTINGS: lambda: self.do_update_settings(ws, data),
             INBOUND.PING: lambda: self.send(ws, {"type": OUTBOUND.PONG}),
             INBOUND.SERVER_INFO: lambda: self.send(
                 ws, {"type": OUTBOUND.SERVER_INFO, **MainEngine.server_info()}
@@ -324,6 +325,19 @@ class GameServer:
             await self.send(ws, {"type": OUTBOUND.AI_CONFIG_UPDATED, "config": updated})
         except Exception as exc:
             await self.send_error(ws, f"AI配置更新失败: {exc}")
+    async def do_update_settings(self, ws, data):
+        engine = self.engine_for(ws)
+        if engine is None:
+            await self.send_error(ws, "当前连接没有游戏")
+            return
+        try:
+            engine.update_settings(data.get("settings"))
+        except ValueError as exc:
+            await self.send_error(ws, str(exc))
+            return
+        # 新档位随状态快照回到界面（界面显示的是服务器确认后的值）。
+        await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
+
     async def do_set_trustee(self, ws, data):
         engine = self.engine_for(ws)
         if engine is None:

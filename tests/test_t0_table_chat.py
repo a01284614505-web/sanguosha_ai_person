@@ -123,7 +123,7 @@ def test_ai_free_chat_is_recorded_as_ai_and_free():
     assert engine.table_chat[-1]["name"] == ai.name and engine.table_chat[-1]["free"] is True
 
 
-def test_opening_line_is_recorded_as_not_free():
+def test_director_chat_is_recorded_as_not_free():
     engine = make_engine()
     ai = keyed(engine.game_state.players[1])
 
@@ -131,8 +131,11 @@ def test_opening_line_is_recorded_as_not_free():
         async def call_ai(self, **kwargs):
             return "来战！", {}
 
-    engine.chat_engine.gateway = Gateway()
-    run(engine._run_chat("turn_start", ai, {}))
+    from game_engine.chat_director import ChatTask
+
+    engine.chat_director.gateway = Gateway()
+    run(engine.chat_director.execute(
+        ChatTask(ai.id, "event", "测试由头", engine.time_source(), engine.game_state.round_number, 20)))
 
     assert engine.table_chat[-1]["text"] == "来战！"
     assert engine.table_chat[-1]["kind"] == "ai" and engine.table_chat[-1]["free"] is False

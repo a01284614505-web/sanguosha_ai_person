@@ -1417,6 +1417,7 @@
         const prevMap = G.prev;
         G.state = s;
         G.players = s.players || [];
+        if (s.chat_level) window.currentChatLevel = s.chat_level;
         syncShownPool(s);
         const human = G.players.find(p => !p.is_ai) || G.players.find(p => p.id === 0);
         if (human) G.meId = human.id;
@@ -1958,6 +1959,7 @@
         document.querySelectorAll('dialog.sgs-dialog').forEach(d => d.addEventListener('click', (e) => { if (e.target === d && d.id !== 'endModal') d.close(); }));
         document.getElementById('endModal').addEventListener('cancel', (e) => e.preventDefault());
         window.addEventListener('resize', layoutHand);
+        window.addEventListener('chat-level-request', (event) => gameClient.updateSettings({ chat_level: event.detail.level }));
         window.addEventListener('global-settings-changed', () => { G.seatSig = {}; renderAll(); });
         window.addEventListener('global-settings-changed', (event) => {
             const panel = document.getElementById('decisionTracePanel');

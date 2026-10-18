@@ -10,6 +10,8 @@
  *   game     对局：开局、回合倒计时与技能选取/取消、座位点击、托管、战报页签与决策轨迹
  *   chat     席间聊天：切席间页签、发一句话、断言只出现一次且为真人样式
  *   cheat    作弊局认知笔记：非作弊局没有 "›"；勾选作弊模式开局后 AI 座位出现 "›"，点开有笔记区块（规则 AI 显示"无笔记"）
+ *   level    热闹程度（T3a）：大厅可选三档（默认正常）；选"热闹"开局后对局页状态为 lively；对局设置弹窗里改成"安静"，
+ *            发 update_settings 后界面（再次打开弹窗）显示新档位，对局状态同步为 quiet
  * 往后加新组：在 GROUPS 里加一项 {name, run}，用 pass()/skip() 记录，需要对局时调用 ensureGame()。
  *
  * 运行（先起服务器，8888 HTTP / 8889 WS；务必用隔离的战绩与日志路径）：
@@ -93,6 +95,7 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     // 作弊模式勾选会被大厅记在本地偏好里，所以每次开局都显式设置，不依赖上一局；
     // 放在点「开始」之前，避开大厅初始化期间按偏好重置复选框。
     await page.locator('#cheatMode').setChecked(!!opts.cheat);
+    await page.locator('#chatLevel').selectOption(opts.level || 'normal');
     await page.locator('#startGameBtn').click();
     await page.waitForURL('**/select_hero.html');
     await page.locator('.hero-card[data-id="liubei"]').click();
@@ -288,6 +291,34 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     pass('rule AI shows no notes table', await page.locator('#thoughtsNotes .notes-table').count() === 0);
     await page.locator('#thoughtsModal [data-close]').click();
     pass('peek dialog closes', await page.locator('#thoughtsModal[open]').count() === 0);
+  }});
+
+  GROUPS.push({name: 'level', run: async () => {
+    await gotoLobby();
+    const options = await page.locator('#chatLevel option').evaluateAll(list => list.map(o => o.value));
+    pass('lobby offers three chat levels', options.join() === 'quiet,normal,lively', options.join());
+    await page.evaluate(() => { try { localStorage.removeItem('lobbyPrefs'); } catch (_) {} });
+    await page.reload({waitUntil: 'domcontentloaded'});
+    await page.waitForSelector('#chatLevel');
+    pass('lobby chat level defaults to 正常', await page.locator('#chatLevel').inputValue() === 'normal');
+    await page.locator('#chatLevel').selectOption('lively');
+    await startGame({level: 'lively'});
+    await page.waitForFunction(() => window.GameUI.state && window.GameUI.state.chat_level, null, {timeout: 10000});
+    pass('game starts at the level chosen in the lobby (lively)', await page.evaluate(() => window.GameUI.state.chat_level === 'lively'));
+    await page.locator('#sbtn').click();
+    await page.waitForSelector('#globalSettingsOverlay.show');
+    pass('in-game settings show the chat level row', await page.locator('#gsChatSection').isVisible());
+    pass('settings row shows the server-confirmed level', await page.locator('#gsChatLevel').inputValue() === 'lively');
+    await page.locator('#gsChatLevel').selectOption('quiet');
+    await page.locator('#gsSave').click();
+    await page.waitForFunction(() => window.GameUI.state && window.GameUI.state.chat_level === 'quiet', null, {timeout: 10000});
+    pass('update_settings reaches the server and the new level comes back in game state', true);
+    await page.locator('#sbtn').click();
+    await page.waitForSelector('#globalSettingsOverlay.show');
+    pass('reopened settings display the new level (安静)', await page.locator('#gsChatLevel').inputValue() === 'quiet');
+    await page.keyboard.press('Escape');
+    const bad = await page.locator('.toast.bad').allInnerTexts();
+    pass('no error toast after changing level', bad.length === 0, JSON.stringify(bad));
   }});
 
   // ---- 执行 -----------------------------------------------------------------------------
