@@ -190,6 +190,12 @@
     font-size: 12px; color: #fff4dc; text-shadow: 0 1px 2px #000;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.ai-title-badge { position: relative; max-width: 4.4em; overflow: hidden; padding: 1px 3px; border: 1px solid rgba(224, 188, 111, .75); border-radius: 5px; color: #f5d58e; background: rgba(40, 26, 12, .82); font-size: 8px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 0 5px rgba(223, 185, 99, .25); }
+.ai-title-badge.title-高级, .ai-title-badge.title-稀有 { box-shadow: 0 0 8px rgba(223, 185, 99, .4); }
+.ai-title-badge.title-稀有 { text-shadow: 0 0 5px rgba(255, 230, 166, .8); }
+.ai-title-badge.title-高级::after, .ai-title-badge.title-稀有::after { content: ''; position: absolute; top: -40%; bottom: -40%; left: -70%; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 244, 199, .6), transparent); transform: skewX(-20deg); animation: game-title-sheen 5s ease-in-out infinite; }
+@keyframes game-title-sheen { 0%, 72% { left: -70%; } 100% { left: 140%; } }
+@media (prefers-reduced-motion: reduce) { .ai-title-badge::after { animation: none; } }
 /* 左侧竖排武将名（书法） */
 .s-hero {
     position: absolute; left: 3px; top: 28px;

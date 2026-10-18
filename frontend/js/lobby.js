@@ -15,6 +15,9 @@
         constructor() {
             this.providers = [];
             this.aiConfigs = [];
+            this.aiRoster = DEFAULT_NAMES.map((name, i) => ({ id: 'ai_' + (i + 1), name, titles: { earned: [], equipped: null } }));
+            this.assignments = this.aiRoster.map(p => p.id);
+            this.pendingProfileSaves = [];
             this.current = 0;
             this.prefs = Object.assign({ playerName: '', chatEnabled: true, chatLevel: 'normal', rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
             this.dialog = document.getElementById('aiDialog');
@@ -98,9 +101,13 @@
                 this.restoreAIConfigs();
                 this.renderGuests();
             };
-            SGS.fetchJSON('/api/providers')
-                .then(d => apply(d && d.providers, true))
-                .catch(() => apply(null, false));
+            const profileId = this.getProfileId();
+            Promise.allSettled([SGS.fetchJSON('/api/providers'), SGS.fetchJSON('/api/ai-players?profile_id=' + encodeURIComponent(profileId))]).then(results => {
+                const providers = results[0].status === 'fulfilled' ? results[0].value : null;
+                const roster = results[1].status === 'fulfilled' ? results[1].value : null;
+                if (roster && roster.success && Array.isArray(roster.players) && roster.players.length === 4) this.aiRoster = roster.players;
+                apply(providers && providers.providers, !!providers);
+            });
         }
 
         // 开始按钮下方的小绿点：能读到 /api/providers 就算服务已就绪。
@@ -152,42 +159,73 @@
         restoreAIConfigs() {
             const saved = store.get('lobbyAIs', []);
             const sessionKeys = store.sget('lobbyKeys', []);
-            this.aiConfigs = [0, 1, 2, 3].map(i => {
+            const profileSaved = store.get('lobbyAIProfiles', {});
+            const migrateLegacy = !store.get('lobbyAIMigrated', false) && Array.isArray(saved);
+            this.assignments = store.get('lobbyAISeats', this.aiRoster.map(p => p.id));
+            if (!Array.isArray(this.assignments) || this.assignments.length !== 4 || this.assignments.some(id => !this.aiRoster.some(p => p.id === id))) {
+                this.assignments = this.aiRoster.map(p => p.id);
+            }
+            this.aiConfigs = this.aiRoster.map((profile, i) => {
                 const base = this.defaultAI(i);
-                const old = Array.isArray(saved) && saved[i] ? saved[i] : {};
+                const old = (profileSaved && profileSaved[profile.id]) || (Array.isArray(saved) && saved[i]) || {};
                 const merged = Object.assign(base, old);
-                if (!merged.apiKey && sessionKeys[i]) merged.apiKey = sessionKeys[i];
+                if (!merged.apiKey && (sessionKeys[profile.id] || (Array.isArray(sessionKeys) && sessionKeys[i]))) merged.apiKey = sessionKeys[profile.id] || sessionKeys[i];
                 if (!this.providers.some(p => p.value === merged.provider)) merged.provider = base.provider;
+                if (migrateLegacy && !(profileSaved && profileSaved[profile.id]) && old.name) {
+                    profile.name = String(old.name).slice(0, 16);
+                    SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) }).catch(() => {});
+                }
+                merged.name = profile.name || base.name;
+                merged.aiId = profile.id;
+                merged.title = (profile.titles && profile.titles.equipped) || null;
                 return merged;
             });
+            if (migrateLegacy) store.set('lobbyAIMigrated', true);
         }
 
         // 保存四席配置。Key 默认只放 sessionStorage（关掉标签页即清除）；勾选“记住 Key”才写进 localStorage。
         persistAIConfigs() {
             const remember = !!this.prefs.rememberKeys;
-            store.set('lobbyAIs', this.aiConfigs.map(a => Object.assign({}, a, { apiKey: remember ? a.apiKey : '' })));
-            store.sset('lobbyKeys', this.aiConfigs.map(a => a.apiKey || ''));
+            const profiles = {};
+            const keys = {};
+            this.aiConfigs.forEach(a => {
+                profiles[a.aiId] = Object.assign({}, a, { apiKey: remember ? a.apiKey : '' });
+                keys[a.aiId] = a.apiKey || '';
+            });
+            store.set('lobbyAIProfiles', profiles);
+            store.sset('lobbyKeys', keys);
+            store.set('lobbyAISeats', this.assignments);
+            // 兼容选将页和旧配置恢复逻辑。
+            store.set('lobbyAIs', this.assignments.map(id => Object.assign({}, this.aiConfigs.find(a => a.aiId === id), { apiKey: '' })));
         }
 
         // 渲染“座上宾”四张卡片：显示称呼、提供方/模型，以及是“模型对弈”还是“规则 AI”。
         renderGuests() {
             const row = document.getElementById('guestRow');
-            row.innerHTML = this.aiConfigs.map((a, i) => {
+            row.innerHTML = this.assignments.map((aiId, i) => {
+                const a = this.aiConfigs.find(item => item.aiId === aiId) || this.aiConfigs[i];
                 const provider = this.providers.find(p => p.value === a.provider);
                 const hasKey = !!(a.apiKey && a.apiKey.trim());
-                return '<button type="button" class="frame guest" data-ai="' + i + '" aria-label="配置' + esc(a.name) + '">' +
+                const assignedElsewhere = new Set(this.assignments.filter((value, seat) => seat !== i));
+                return '<div class="frame guest"><select class="ai-player-select" data-seat="' + i + '" aria-label="选择' + SEAT_NAMES[i] + '号位 AI 选手">' + this.aiRoster.map(player => '<option value="' + esc(player.id) + '"' + (player.id === aiId ? ' selected' : '') + (assignedElsewhere.has(player.id) ? ' disabled' : '') + '>' + esc(player.name) + '</option>').join('') + '</select><button type="button" class="guest-config" data-ai="' + i + '" aria-label="配置' + esc(a.name) + '">' +
                     '<span class="seat-no">' + SEAT_NAMES[i] + '</span>' +
                     '<span><strong>' + esc(a.name) + '</strong>' +
                     '<small>' + esc(provider ? provider.name : a.provider) + ' · ' + esc(a.model || '默认模型') + '</small>' +
-                    '<span class="brain' + (hasKey ? ' model' : '') + '"><i></i>' + (hasKey ? '模型对弈' : '规则 AI') + '</span></span>' +
-                    '<span class="edit">配置</span></button>';
+                    '<span class="brain' + (hasKey ? ' model' : '') + '"><i></i>' + (hasKey ? '模型对弈' : '规则 AI') + '</span>' + (a.title ? '<span class="title-badge title-' + esc(a.title.tier || '普通') + '">' + esc(a.title.name) + '</span>' : '') + '</span>' +
+                    '<span class="edit">配置</span></button></div>';
             }).join('');
-            row.querySelectorAll('.guest').forEach(btn => btn.addEventListener('click', () => this.openDialog(Number(btn.dataset.ai))));
+            row.querySelectorAll('.ai-player-select').forEach(select => select.addEventListener('change', () => {
+                this.assignments[Number(select.dataset.seat)] = select.value;
+                this.persistAIConfigs();
+                this.renderGuests();
+            }));
+            row.querySelectorAll('.guest-config').forEach(btn => btn.addEventListener('click', () => this.openDialog(Number(btn.dataset.ai))));
         }
 
         // 打开某一席的配置弹窗。
         openDialog(index) {
-            this.current = index;
+            this.currentSeat = index;
+            this.current = Math.max(0, this.aiConfigs.findIndex(a => a.aiId === this.assignments[index]));
             this.renderTabs();
             this.fillForm();
             if (!this.dialog.open) this.dialog.showModal();
@@ -234,8 +272,18 @@
                 apiKey: f.apiKey.value.trim(),
                 model: f.model.value.trim(),
                 temperature: Number.isFinite(t) ? Math.max(0, Math.min(2, t)) : 0.8,
-                thinking: f.thinking.checked
+                thinking: f.thinking.checked,
+                aiId: this.aiConfigs[this.current].aiId,
+                title: this.aiConfigs[this.current].title
             };
+            const profile = this.aiRoster.find(p => p.id === this.aiConfigs[this.current].aiId);
+            if (profile && profile.name !== this.aiConfigs[this.current].name) {
+                profile.name = this.aiConfigs[this.current].name;
+                const pendingSave = SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) })
+                    .then(() => true)
+                    .catch(() => { toast('名称已保存在本机，服务端档案暂不可用', { bad: true }); return false; });
+                this.pendingProfileSaves.push(pendingSave);
+            }
             this.savePrefs();
             this.persistAIConfigs();
             this.renderGuests();
@@ -266,20 +314,31 @@
 
         // 整理成服务器 normalize_config 认识的格式（apiUrl / apiKey 会在引擎侧规范化）。
         collectAIConfigs() {
-            return this.aiConfigs.map(a => ({
+            return this.assignments.map(aiId => {
+                const a = this.aiConfigs.find(item => item.aiId === aiId) || {};
+                return {
                 name: a.name,
+                ai_id: aiId,
+                title: a.title || null,
                 provider: a.provider,
                 apiUrl: a.apiUrl,
                 apiKey: a.apiKey,
                 model: a.model,
                 temperature: a.temperature,
                 thinking: !!a.thinking
-            }));
+            };
+            });
         }
 
         // 组装开局配置并进入选将页。带 Key 的完整配置只写 sessionStorage；localStorage 里的副本去掉 Key。
-        startGame() {
+        async startGame() {
             this.savePrefs();
+            if (this.dialog.open) this.saveCurrent();
+            const pending = this.pendingProfileSaves.splice(0);
+            if (pending.length && (await Promise.all(pending)).some(ok => !ok)) {
+                toast('AI 名称未能保存到档案，请检查连接后重试', { bad: true });
+                return;
+            }
             const ais = this.collectAIConfigs();
             const deckId = document.getElementById('deckSelect').value;
             const first = this.providers.find(p => p.value === (ais[0] && ais[0].provider));

@@ -25,6 +25,9 @@
             ? SGS.WINNER[r.winner] + '获胜'
             : (r.message || '本局已结束');
         if (r.cheat) document.getElementById('resultSubtitle').textContent += '（作弊局，不计连胜与身份卡）';
+        const awardNames = (r.ai_title_awards || []).map(item => item.title && item.title.name).filter(Boolean);
+        awardNames.push(...(r.human_title_awards || []).map(item => item.name).filter(Boolean));
+        if (awardNames.length) document.getElementById('resultSubtitle').textContent += ' · 新获称号：' + awardNames.join('、');
         document.getElementById('totalRounds').textContent = r.total_rounds || 0;
         document.getElementById('gameDuration').textContent = formatDuration(r.duration);
         document.getElementById('yourIdentity').textContent = identityName(r.player_identity);
@@ -72,9 +75,12 @@
                 const s = p.stats || {};
                 const hero = p.hero || {};
                 const isMe = p.id === r.player_id || (r.player_id == null && !p.is_ai);
+                const title = p.title || (p.ai_config && p.ai_config.title) || (isMe && r.profile && r.profile.titles && r.profile.titles.equipped);
                 return '<tr class="' + (isMe ? 'me ' : '') + (p.alive ? '' : 'dead') + '">' +
                     '<td><div class="who"><div class="mini-portrait">' + SGS.heroImgHTML(hero.id, hero.name || p.hero_name) + '</div>' +
-                    '<div><b>' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b><small>' + esc(p.hero_name || '') + (p.alive ? '' : ' · 阵亡') + '</small></div></div></td>' +
+                    '<div><b>' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + (isMe ? '（你）' : '') + (p.id === mvpId ? ' <span style="color:var(--cinnabar-hi)">MVP</span>' : '') + '</b>' +
+                    (title ? '<small class="ai-title-label title-' + esc(title.tier || '普通') + '">' + esc(title.name) + '</small>' : '') +
+                    '<small>' + esc(p.hero_name || '') + (p.alive ? '' : ' · 阵亡') + '</small></div></div></td>' +
                     '<td>' + SGS.identitySeal(p.identity) + '</td>' +
                     cols.map(c => '<td data-label="' + c[1] + '">' + (s[c[0]] || 0) + '</td>').join('') + '</tr>';
             }).join('') + '</tbody></table>';

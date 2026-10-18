@@ -65,6 +65,7 @@ class CognitiveNotes:
         self._frozen: Dict[int, Dict[int, Dict[str, Any]]] = {}  # 阵亡冻结时的完整视图
         self._death_round: Dict[int, int] = {}
         self._review: set = set()                                # 待提示"局势有变"的 owner
+        self._judged_round: Dict[int, Dict[int, int]] = {}       # owner_id → target_id → last valid judgment round
         self._changed = False
         self.snapshots: List[Dict[str, Any]] = []
 
@@ -117,6 +118,9 @@ class CognitiveNotes:
             if bucket.get(target_id) != entry:
                 self._changed = True
             bucket[target_id] = entry
+            self._judged_round.setdefault(owner_id, {})[target_id] = int(
+                getattr(self.engine.game_state, "round_number", 0) or 0
+            )
             result["accepted"].append(target_id)
         return result
 
@@ -181,9 +185,14 @@ class CognitiveNotes:
         for owner_id in self.owners:
             if owner_id in self._frozen and self._death_round.get(owner_id) != round_number:
                 continue
+            judged = self._judged_round.get(owner_id, {})
+            judged_seats = sorted(seat_of(self.engine.game_state, target_id)
+                                  for target_id, judged_round in judged.items()
+                                  if judged_round == round_number)
             self.snapshots.append({
                 "round": round_number,
                 "player_id": owner_id,
+                "judged_seats": judged_seats,
                 "seat": seat_of(self.engine.game_state, owner_id),
                 "plan": dict(getattr(getattr(self.engine, "ai_decision", None), "plans", {}).get(owner_id) or {}),
                 "notes": {str(seat_of(self.engine.game_state, tid)): dict(entry) for tid, entry in self.view(owner_id).items()},

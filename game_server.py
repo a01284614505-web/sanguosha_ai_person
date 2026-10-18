@@ -183,6 +183,19 @@ class GameServer:
         cfg = MainEngine.normalize_config(sanitize_client_config(raw_config), BASE_DIR)
         gid = uuid.uuid4().hex
         cfg["profile_id"] = validate_profile_id(cfg.get("profile_id") or f"guest_{gid}")
+        cfg["player"]["title"] = (self.history.profile(cfg["profile_id"]).get("titles") or {}).get("equipped")
+        roster = {row["id"]: row for row in self.history.ai_players(cfg["profile_id"])}
+        used_ai_ids = set()
+        for index, ai in enumerate(cfg["ais"], start=1):
+            ai_id = self.history._ai_id(ai.get("ai_id")) or f"ai_{index}"
+            if ai_id in used_ai_ids:
+                ai_id = next((f"ai_{candidate}" for candidate in range(1, 5)
+                              if f"ai_{candidate}" not in used_ai_ids), f"ai_{index}")
+            used_ai_ids.add(ai_id)
+            account = roster[ai_id]
+            ai["ai_id"] = ai_id
+            ai["name"] = account["name"]
+            ai["title"] = (account.get("titles") or {}).get("equipped")
         await self._end_orphaned_games(cfg["profile_id"])
         print(f"\n[创建] game_{gid} | 模式: {cfg['mode']} | 玩家: {cfg['player']['name']}")
         engine = MainEngine(cfg)
@@ -361,12 +374,14 @@ class GameServer:
             if event == ENGINE_EVENT.GAME_END and engine is not None:
                 # 战绩写入不依赖是否有人在看：断线期间结束的对局同样入账。
                 try:
+                    data["_title_hidden_players"] = self._title_hidden_players(engine)
                     data.update(self.history.record_result(
-                        engine.game_config["profile_id"], engine.game_id, data
+                        engine.game_config.get("profile_id") or f"guest_{engine.game_id}", engine.game_id, data
                     ))
                 except (OSError, ValueError, RuntimeError) as exc:
                     logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
                     data["history_error"] = "战绩保存失败，请检查服务器日志"
+                data.pop("_title_hidden_players", None)
             if event in (ENGINE_EVENT.COGNITIVE_NOTES, ENGINE_EVENT.CHAT_REJECTED) and (engine is None or not engine.cheat_mode):
                 # 认知笔记只在作弊局下发：第二道闸门，即使引擎误发也不转给前端。
                 return
@@ -396,6 +411,78 @@ class GameServer:
             if ws is not None:
                 await self.send(ws, message)
         return handler
+
+    @staticmethod
+    def _title_hidden_players(engine):
+        """Return player IDs never guessed correctly at high confidence by any AI."""
+        notes = getattr(engine, "notes", None)
+        snapshots = list(getattr(notes, "snapshots", []) or []) if notes is not None else []
+        if not snapshots:
+            return []
+        players = list(engine.game_state.players)
+        by_round = {}
+        for snapshot in snapshots:
+            try:
+                round_number = int(snapshot.get("round") or 0)
+            except (TypeError, ValueError):
+                continue
+            by_round.setdefault(round_number, []).append(snapshot)
+        eligible = []
+        owner_ids = set(getattr(notes, "owners", []) or [])
+        if not owner_ids:
+            owner_ids = {row.get("player_id") for row in snapshots if isinstance(row.get("player_id"), int)}
+        death_rounds = getattr(notes, "_death_round", {}) or {}
+        for player in players:
+            if player.identity not in ("loyalist", "rebel", "spy"):
+                continue  # 主公全局公开，不可能获得“深藏不露”。
+            reveal_round = None
+            guessed_correctly = False
+            public_seats = getattr(engine.game_state, "_public_seats", {}) or {}
+            seat = int(public_seats.get(player.id, getattr(player, "seat", player.id + 1)))
+            for round_number, rows in by_round.items():
+                for snapshot in rows:
+                    notes_by_seat = snapshot.get("notes") or {}
+                    has_public_seats = "seat" in snapshot
+                    key = str(seat) if has_public_seats else str(player.id)
+                    entry = notes_by_seat.get(key, notes_by_seat.get(int(key)))
+                    if not isinstance(entry, dict):
+                        continue
+                    if entry.get("locked"):
+                        reveal_round = round_number if reveal_round is None else min(reveal_round, round_number)
+                        continue
+                    if entry.get("conf") == "高" and entry.get("guess") == player.identity:
+                        guessed_correctly = True
+            final_round = int(getattr(engine.game_state, "round_number", 0) or 0)
+            last_private_round = min(final_round, reveal_round - 1) if reveal_round is not None else final_round
+            required_rounds = set(range(1, last_private_round + 1))
+            complete_coverage = bool(required_rounds and (owner_ids - {player.id}))
+            for round_number in required_rounds:
+                expected_owners = {owner_id for owner_id in owner_ids
+                                   if owner_id != player.id
+                                   and (owner_id not in death_rounds or int(death_rounds[owner_id]) >= round_number)}
+                round_rows = {row.get("player_id"): row for row in by_round.get(round_number, [])}
+                if not expected_owners:
+                    complete_coverage = False
+                    break
+                for owner_id in expected_owners:
+                    snapshot = round_rows.get(owner_id)
+                    if not isinstance(snapshot, dict):
+                        complete_coverage = False
+                        break
+                    notes_by_seat = snapshot.get("notes") or {}
+                    has_public_seats = "seat" in snapshot
+                    key = str(seat) if has_public_seats else str(player.id)
+                    entry = notes_by_seat.get(key, notes_by_seat.get(int(key)))
+                    judged_seats = snapshot.get("judged_seats") or []
+                    was_judged = seat in judged_seats or str(seat) in judged_seats
+                    if not isinstance(entry, dict) or entry.get("locked") or not was_judged:
+                        complete_coverage = False
+                        break
+                if not complete_coverage:
+                    break
+            if complete_coverage and not guessed_correctly:
+                eligible.append(player.id)
+        return eligible
 
     def _save_game_log(self, engine, game_end):
         """对局结束自动保存日志；开局时设了无痕模式则跳过。失败只记服务器日志，不影响结算。"""
@@ -459,14 +546,20 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
-    def _read_json_body(self):
+    def _read_json_body(self, *, max_bytes=None, require_object=False):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
+            if max_bytes is not None:
+                raise ValueError("Content-Length 无效")
             length = 0
+        if max_bytes is not None and length > max_bytes:
+            raise ValueError(f"请求体超过 {max_bytes} 字节")
         if length <= 0:
             return {}
         data = json.loads(self.rfile.read(length))
+        if require_object and not isinstance(data, dict):
+            raise ValueError("请求体必须是 JSON 对象")
         return data if isinstance(data, dict) else {}
     def do_GET(self):
         parsed = urlsplit(self.path)
@@ -483,6 +576,17 @@ class CustomHandler(SimpleHTTPRequestHandler):
             except (OSError, RuntimeError) as exc:
                 logging.getLogger(__name__).error("读取战绩失败: %s", exc)
                 self._send_json(500, {"success": False, "message": "战绩读取失败，请检查服务器日志"})
+            return
+        if request_path == "/api/ai-players":
+            try:
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                profile_id = validate_profile_id(parse_qs(urlsplit(self.path).query).get("profile_id", [None])[0])
+                self._send_json(200, {"success": True, "players": store.ai_players(profile_id)})
+            except ValueError as exc:
+                self._send_json(400, {"success": False, "message": str(exc)})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("读取 AI 档案失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "AI 档案读取失败"})
             return
         if request_path == "/api/decks":
             try:
@@ -594,6 +698,32 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self._send_json(200, {"success": True, **result})
 
     def do_POST(self):
+        request_path = urlsplit(self.path).path
+        if request_path == "/api/ai-players/update":
+            try:
+                body = self._read_json_body(max_bytes=16_000, require_object=True)
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                player = store.update_ai_player(body.get("profile_id"), body.get("ai_id"), name=body.get("name"),
+                                                equipped_title=body.get("equipped_title"))
+                self._send_json(200, {"success": True, "player": player})
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体无效"})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("保存 AI 档案失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "AI 档案保存失败"})
+            return
+        if request_path == "/api/history/title":
+            try:
+                body = self._read_json_body(max_bytes=16_000, require_object=True)
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                profile = store.update_profile_title(body.get("profile_id"), body.get("equipped_title"))
+                self._send_json(200, {"success": True, "profile": profile})
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体无效"})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("保存称号失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "称号保存失败"})
+            return
         if self.path.split("?")[0] == "/api/models":
             self._handle_list_models()
             return

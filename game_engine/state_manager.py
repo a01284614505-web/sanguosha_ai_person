@@ -90,6 +90,7 @@ class Player:
     alive: bool = True
     is_ai: bool = False
     ai_config: Dict[str, Any] = field(default_factory=dict)
+    title: Optional[Dict[str, Any]] = None
     flags: Dict[str, Any] = field(default_factory=dict)  # 技能、回合和临时效果状态
     
     # 卡牌
@@ -188,6 +189,7 @@ class GameState:
             hero=player_cfg.get('hero'),
             is_ai=player_cfg.get('is_ai', False),
             ai_config=player_cfg.get('ai_config', {}),
+            title=player_cfg.get('title'),
             hp=player_cfg.get('hero', {}).get('max_hp', 4) if player_cfg.get('hero') else 4,
             max_hp=player_cfg.get('hero', {}).get('max_hp', 4) if player_cfg.get('hero') else 4
         )

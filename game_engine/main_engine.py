@@ -162,6 +162,8 @@ class MainEngine:
         # 临时展示池（五谷丰登亮出的牌）：公开信息，随状态快照下发；结算结束置 None。
         self.shown_pool: Any = None
         self._game_end_emitted = False
+        self.spy_duel_lord = False
+        self._spy_duel_lord_ready = False
         self._started_at: Any = None
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
         chat_cfg = game_config.get("chat")
@@ -372,6 +374,7 @@ class MainEngine:
                         "worldbook": (p.hero or {}).get("worldbook", {}),
                     },
                     "is_ai": p.is_ai,
+                    "title": (p.ai_config.get("title") if p.is_ai else p.title),
                     "ai_config": {
                         # 没填 Key 的座位实际由规则 AI 代打，界面据此显示“规则 AI”而不是模型名。
                         "rule_ai": not self._has_model_key(p),
@@ -380,6 +383,8 @@ class MainEngine:
                         "api_url": p.ai_config.get("api_url", ""),
                         "temperature": p.ai_config.get("temperature", 0.8),
                         "thinking": bool(p.ai_config.get("thinking", False)),
+                        "ai_id": p.ai_config.get("ai_id"),
+                        "title": p.ai_config.get("title"),
                     } if p.is_ai else None,
                     "identity": p.identity if identity_visible else None,
                     "identity_revealed": identity_visible,
@@ -481,6 +486,7 @@ class MainEngine:
         self.chat_director.start()
         try:
             while not self.is_game_over():
+                self._observe_spy_duel_lord_state()
                 self._roll_notes_round()
                 if self.completed_turns >= self.max_turns:
                     self.game_state.game_over = True
@@ -817,8 +823,18 @@ class MainEngine:
 
     def on_player_death(self, player: Player):
         """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
+        if player.identity == "lord":
+            survivors = [p for p in self.game_state.players if p.alive]
+            self.spy_duel_lord = (self._spy_duel_lord_ready and len(survivors) == 1
+                                  and survivors[0].identity == "spy")
         self.notes.on_death(player)
         self.chat_director.on_death(player)
+
+    def _observe_spy_duel_lord_state(self):
+        """Remember a real action-boundary state with only the lord and spy alive."""
+        alive = [p for p in self.game_state.players if p.alive]
+        self._spy_duel_lord_ready = (len(alive) == 2
+                                     and {p.identity for p in alive} == {"lord", "spy"})
 
     async def push_notes_after_death(self):
         """阵亡后（作弊局）立刻推送一次笔记，让"冻结"标记即时可见；非作弊局什么都不发。"""
@@ -2257,6 +2273,7 @@ class MainEngine:
             duration=duration,
             cheat=self.cheat_mode,
             total_rounds=self.game_state.round_number,
+            spy_duel_lord=self.spy_duel_lord,
         )
         return True
     async def request_end_game(self, reason: str = "玩家主动结束游戏"):

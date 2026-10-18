@@ -221,8 +221,11 @@
         }
         const cheatPeek = G.state && G.state.cheat_mode && p.is_ai && !isMe
             ? '<button class="cheat-peek" type="button" data-peek-seat="' + p.id + '" title="看这名 AI 的思考" aria-label="看 ' + esc(p.name) + ' 的思考">›</button>' : '';
+        const title = p.title || (p.ai_config && p.ai_config.title);
+        const badge = title
+            ? '<span class="ai-title-badge title-' + esc(title.tier || '普通') + '" title="' + esc(title.name) + '">' + esc(title.name) + '</span>' : '';
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>' + idSeal + '</div>' + cheatPeek +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>' + badge + idSeal + '</div>' + cheatPeek +
             '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
             (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
@@ -1643,6 +1646,9 @@
             profile: data.profile || null,
             reward: data.reward || null,
             history_error: data.history_error || null,
+            ai_title_awards: data.ai_title_awards || [],
+            human_title_awards: data.human_title_awards || [],
+            ai_players: data.ai_players || [],
             game_id: gameClient.gameId || ((store.sget('activeGame', {}) || {}).game_id) || null,
             log_saved: data.log_saved === true,
             cheat: data.cheat === true
