@@ -250,6 +250,10 @@ class GameServer:
         for prompt in engine.pending_prompts():
             await self.send(ws, {"type": ENGINE_EVENT_MAP.get(prompt["event"], prompt["event"]),
                                  **prompt["payload"]})
+        # 作弊局重连：补发一次最新笔记（非作弊局 cheat_notes_payload() 为 None，什么都不发）。
+        notes_payload = engine.cheat_notes_payload()
+        if notes_payload is not None:
+            await self.send(ws, {"type": OUTBOUND.COGNITIVE_NOTES, **notes_payload})
 
     async def _run_engine(self, gid, engine):
         try:
@@ -348,6 +352,9 @@ class GameServer:
                 except (OSError, ValueError, RuntimeError) as exc:
                     logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
                     data["history_error"] = "战绩保存失败，请检查服务器日志"
+            if event == ENGINE_EVENT.COGNITIVE_NOTES and (engine is None or not engine.cheat_mode):
+                # 认知笔记只在作弊局下发：第二道闸门，即使引擎误发也不转给前端。
+                return
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
             if event == OUTBOUND.CHAT and isinstance(data.get("from_id"), int):

@@ -466,16 +466,49 @@ class AIDecision:
         # 区块顺序固定：行为账本（引擎事实）→ 发言（未验证）→（T2 起）本人判断。
         ledger_block = self._build_ledger_block()
         chat_block = self._build_table_chat_block(player)
+        notes_block = self._build_notes_block(player)
+        if notes_block:
+            json_example = ('{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由", '
+                            '"notes": {"3": {"guess": "rebel", "conf": "高", "why": "两次杀主公"}}}')
+            notes_rule = ('\nnotes 可省略，只写有变化的座位；键是座位号（3号写"3"）；guess 取 lord/loyalist/rebel/spy/unknown，'
+                          'conf 取 高/中/低，why 不超过20字；已公开身份的座位不能改。')
+        else:
+            json_example = '{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由"}'
+            notes_rule = ""
         return f"""{situation}
 
 当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
-{ledger_block}{chat_block}
+{ledger_block}{chat_block}{notes_block}
 合法操作列表（索引从0开始）：
 {chr(10).join(action_lines)}
 
 只返回JSON：
-{{"action_index": 0, "target_ids": [1], "chat_message": "可选短句", "reasoning": "简短理由"}}
-目标必须来自所选操作的合法目标列表。不能新增操作、卡牌或目标。"""
+{json_example}
+目标必须来自所选操作的合法目标列表。不能新增操作、卡牌或目标。{notes_rule}"""
+
+    def _build_notes_block(self, player) -> str:
+        """【仅你可见·你的判断】区块：只给模型 AI 自己（真人托管不注入），只进出牌决策。
+
+        笔记存在 engine.notes 独立结构里，不在会话消息里；会话被压缩后每次决策仍会从这里完整注入。
+        """
+        notes = getattr(self.engine, "notes", None)
+        if notes is None or not getattr(player, "is_ai", False):
+            return ""
+        notes.ensure(player.id)
+        block = notes.prompt_block(player.id)
+        if notes.consume_review(player.id):
+            block += "局势有变（有人阵亡或身份揭示），请复核你的判断。\n"
+        return block
+
+    def _apply_notes(self, player, payload: Dict):
+        """把模型返回的 notes 交给 engine.notes 校验落库；任何异常只丢 notes，不影响操作本身。"""
+        try:
+            notes = getattr(self.engine, "notes", None)
+            if notes is None or not getattr(player, "is_ai", False) or "notes" not in payload:
+                return
+            notes.update(player.id, payload.get("notes"))
+        except Exception as exc:  # noqa: BLE001 - notes 永远不能拖垮出牌
+            logger.warning("  ⚠️ 认知笔记解析失败，只丢弃笔记: %s", type(exc).__name__)
 
     def _build_ledger_block(self) -> str:
         """【引擎确认·行为账本】区块：全桌公开行为的聚合摘要，只进出牌决策，不进响应 / 选择。
@@ -571,6 +604,7 @@ class AIDecision:
             target_ids = self._normalize_targets(action, payload.get("target_ids", []), player)
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:200]
+            self._apply_notes(player, payload)
             return {
                 "action": action,
                 "target_ids": target_ids,

@@ -112,6 +112,8 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "token_usage": _token_usage_summary(engine),
         # 行为账本流水（Stage T · T1）：均为公开事实，不含手牌区牌名与任何隐藏信息。
         "ledger": ledger.snapshot() if ledger is not None else [],
+        # 认知笔记快照（Stage T · T2）：每个模型 AI 每轮一份，非作弊局也写（对局结束后才落盘，不影响游戏体验）。
+        "cognitive_notes": [dict(item) for item in getattr(getattr(engine, "notes", None), "snapshots", [])],
     }
 
 

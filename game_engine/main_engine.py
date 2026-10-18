@@ -28,6 +28,7 @@ from .deck_manager import DeckManager
 from .game_stats import GameStats, record_stat
 from .effect_context import EffectContext
 from .behavior_ledger import BehaviorLedger
+from .cognitive_notes import CognitiveNotes
 
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ class MainEngine:
 
         # 行为账本（Stage T · T1）：只记公开行为，牌 / 技能结算确定目标处写入，AI 决策与局后日志读取。
         self.ledger = BehaviorLedger()
+        # 认知笔记（Stage T · T2）：每个模型 AI 一份，独立于会话窗口；cheat_mode 局才会下发给前端。
+        self.notes = CognitiveNotes(self)
+        self._notes_round = None
         self.skill_manager = SkillManager(self)
         self.trigger_manager = self.skill_manager  # 兼容卡牌系统旧参数名
         self.phase_controller = PhaseController(self.game_state, self.skill_manager, engine=self)
@@ -460,11 +464,16 @@ class MainEngine:
         for p in self.game_state.players:
             logger.info(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
 
+        for p in self.game_state.players:
+            if p.is_ai and self._has_model_key(p):
+                self.notes.ensure(p.id)
+        self._notes_round = self.game_state.round_number
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
         self._watchdog_task = asyncio.create_task(self._idle_watchdog())
         try:
             while not self.is_game_over():
+                self._roll_notes_round()
                 if self.completed_turns >= self.max_turns:
                     self.game_state.game_over = True
                     self.game_state.winner = "draw"
@@ -510,6 +519,7 @@ class MainEngine:
                 self._watchdog_task = None
             self._cancel_chat_tasks()
 
+        self._roll_notes_round(final=True)
         await self._emit_game_end_once()
         logger.info(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
         return self.game_state.winner
@@ -748,6 +758,7 @@ class MainEngine:
                 ENGINE_EVENT.AI_ACTION, player_name=player.name, action="thinking_end",
                 reasoning=""
             )
+            await self._emit_cognitive_notes_if_changed()
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
 
@@ -776,6 +787,36 @@ class MainEngine:
                 logger.info("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
                 break
             await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    # ---------- 认知笔记（Stage T · T2） ----------
+
+    def _roll_notes_round(self, final: bool = False):
+        """轮次推进时给上一轮存一份笔记快照；final=True 表示对局结束，补存最后一轮。"""
+        current = self.game_state.round_number
+        if self._notes_round is None:
+            self._notes_round = current
+        if final:
+            self.notes.snapshot(self._notes_round)
+            self._notes_round = None
+        elif current != self._notes_round:
+            self.notes.snapshot(self._notes_round)
+            self._notes_round = current
+
+    def on_player_death(self, player: Player):
+        """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
+        self.notes.on_death(player)
+
+    def cheat_notes_payload(self):
+        """作弊局的笔记下发内容；非作弊局恒为 None —— 服务器根本不构造 cognitive_notes 消息（D14）。"""
+        if not self.cheat_mode:
+            return None
+        reasons = getattr(self.ai_decision, "last_reasoning", {}) or {}
+        return self.notes.client_payload(reasons)
+
+    async def _emit_cognitive_notes_if_changed(self):
+        changed = self.notes.pop_changed()
+        if changed and self.cheat_mode:
+            await self.emit(ENGINE_EVENT.COGNITIVE_NOTES, **self.cheat_notes_payload())
 
     def _record_ai_outcome(self, player: Player, action: Dict, target_ids: List, ok: bool):
         """把引擎的实际执行结果回灌进该AI的会话窗口，让它记得自己刚干了什么。"""

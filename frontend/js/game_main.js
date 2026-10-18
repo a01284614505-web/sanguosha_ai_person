@@ -40,6 +40,7 @@
         thinking: {},       // 正在思考的 AI（按玩家 id）
         marks: {},          // 我对各座位身份的手动标记（按玩家 id，只存本标签页）
         thoughts: {},       // 作弊模式下各 AI 最近的公开理由（按玩家 id）
+        notes: {},          // 作弊模式下各 AI 的认知笔记（按玩家 id；非作弊局服务器不会下发）
         phase: { playerId: null, phase: '', skipped: new Set() },  // 阶段栏
         animQueue: Promise.resolve(),   // 出牌/判定动画串行队列
         ended: false,
@@ -1211,7 +1212,8 @@
             dlg.className = 'sgs-dialog';
             dlg.id = 'thoughtsModal';
             dlg.innerHTML = '<div class="frame dialog-body"><div class="dialog-head"><h2 id="thoughtsTitle"></h2>' +
-                '<button class="icon-btn" type="button" data-close aria-label="关闭">×</button></div><div class="thought-list" id="thoughtsBody"></div>' +
+                '<button class="icon-btn" type="button" data-close aria-label="关闭">×</button></div>' +
+                '<div class="notes-box" id="thoughtsNotes"></div><div class="thought-list" id="thoughtsBody"></div>' +
                 '<div class="dialog-actions"><button class="btn" type="button" id="thoughtsToLog">在战报里看全部</button></div></div>';
             document.body.appendChild(dlg);
             dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
@@ -1221,6 +1223,8 @@
         const KIND = { play: '出牌', response: '响应', confirm: '是否发动', choose_cards: '选牌', choose_players: '选人', choose_option: '选项' };
         const tidy = (c) => /^\[[\d, ]*\]$/.test(String(c || '')) ? '' : String(c || '').replace(/，合法目标(对)?=\[[^\]]*\]/g, '');
         const list = (G.thoughts[id] || []).slice(-12).reverse().map(t => Object.assign({}, t, { kind: KIND[t.kind] || t.kind, choice: tidy(t.choice) }));
+        dlg.dataset.seat = String(id);
+        dlg.querySelector('#thoughtsNotes').innerHTML = notesHtml(id);
         dlg.querySelector('#thoughtsTitle').textContent = p.name + ' 的思考';
         dlg.querySelector('#thoughtsBody').innerHTML = list.length
             ? list.map(t => '<div class="thought"><small>第 ' + esc(String(t.round || '-')) + ' 轮 · ' + esc(t.kind || '') +
@@ -1228,6 +1232,20 @@
                 (t.choice ? '<small class="faint">→ ' + esc(t.choice) + '</small>' : '') + '</div>').join('')
             : '<p class="muted">这名 AI 还没有给出理由。没填 API Key 的规则 AI 不会有理由。</p>';
         dlg.showModal();
+    }
+
+    /** 认知笔记表（座位 / 猜测 / 把握 / 理由）。数据来自服务器的 cognitive_notes（仅作弊局），没有则提示。 */
+    const GUESS_NAME = { lord: '主公', loyalist: '忠臣', rebel: '反贼', spy: '内奸', unknown: '未知' };
+    function notesHtml(id) {
+        const row = G.notes[id];
+        const rows = row && Array.isArray(row.notes) ? row.notes : [];
+        if (!rows.length) {
+            return '<h3 class="notes-title">认知笔记</h3><p class="muted notes-empty">无笔记。没填 API Key 的规则 AI 不写笔记；模型 AI 要打出第一手牌后才会有。</p>';
+        }
+        const body = rows.map(n => '<tr' + (n.locked ? ' class="locked"' : '') + '><td>' + esc(String(n.seat)) + '号</td><td>' +
+            esc(GUESS_NAME[n.guess] || n.guess) + '</td><td>' + esc(n.locked ? '公开' : n.conf) + '</td><td>' + esc(n.why) + '</td></tr>').join('');
+        return '<h3 class="notes-title">认知笔记' + (row.frozen ? '（已阵亡，冻结）' : '') + '</h3>' +
+            '<table class="notes-table"><thead><tr><th>座位</th><th>猜测</th><th>把握</th><th>理由</th></tr></thead><tbody>' + body + '</tbody></table>';
     }
 
     /** 出牌与判定共用一条队列，保证顺序与引擎结算一致。 */
@@ -1503,6 +1521,18 @@
         if (status && status.enabled) clearIdleWatch();
         else if (G.turn || G.req) beginIdleWatch();
         renderTrusteeStatus();
+    };
+
+    gameClient.onCognitiveNotes = function (data) {
+        // 只有作弊局才会收到；非作弊局服务器不下发，这里也不依赖前端隐藏。
+        (data && Array.isArray(data.players) ? data.players : []).forEach(row => {
+            if (Number.isInteger(row.player_id)) G.notes[row.player_id] = row;
+        });
+        const dlg = document.getElementById('thoughtsModal');
+        if (dlg && dlg.open && dlg.dataset.seat !== undefined) {
+            const box = dlg.querySelector('#thoughtsNotes');
+            if (box) box.innerHTML = notesHtml(Number(dlg.dataset.seat));
+        }
     };
 
     gameClient.onDecisionTrace = function (trace) {
