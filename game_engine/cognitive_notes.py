@@ -185,6 +185,7 @@ class CognitiveNotes:
                 "round": round_number,
                 "player_id": owner_id,
                 "seat": seat_of(self.engine.game_state, owner_id),
+                "plan": dict(getattr(getattr(self.engine, "ai_decision", None), "plans", {}).get(owner_id) or {}),
                 "notes": {str(seat_of(self.engine.game_state, tid)): dict(entry) for tid, entry in self.view(owner_id).items()},
             })
 

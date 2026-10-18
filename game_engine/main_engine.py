@@ -831,7 +831,12 @@ class MainEngine:
         if not self.cheat_mode:
             return None
         reasons = getattr(self.ai_decision, "last_reasoning", {}) or {}
-        return self.notes.client_payload(reasons)
+        payload = self.notes.client_payload(reasons)
+        for row in payload["players"]:
+            plan = getattr(self.ai_decision, "plans", {}).get(row["player_id"])
+            if plan:
+                row["plan"] = dict(plan)
+        return payload
 
     async def _emit_cognitive_notes_if_changed(self):
         changed = self.notes.pop_changed()
@@ -866,7 +871,7 @@ class MainEngine:
         # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。
         self.decision_log.append({
             "seq": self.next_log_seq(), "round": self.game_state.round_number, "player_id": player.id, "player_name": player.name,
-            "kind": kind, "model": meta.get("model"), "reason": private_reason[:400],
+            "kind": kind, "model": meta.get("model"), "reason": private_reason[:1000],
             "choice": str(full_choice)[:200], "validation": validation,
             "elapsed_ms": meta.get("elapsed_ms"),
         })

@@ -182,6 +182,8 @@
         (log.chat || []).forEach(c => push(c.round, '<div class="tl-line tl-chat">💬 <b>' + esc((c.seat ? c.seat + '号 ' : '') + (c.from || '')) + '</b>：' + esc(c.message || '') + '</div>', c.seq));
         (log.blocked_chat || []).forEach(c => push(c.round, '<div class="tl-line">发言被拦截：<b>' +
             esc(c.name) + '</b>：' + esc(c.text) + ' · ' + esc(c.detail) + '</div>', c.seq));
+        (log.plan_snapshots || []).forEach(t => push(t.round, '<div class="tl-line">' + esc(String(t.seat)) +
+            '号打法：' + esc(t.plan.style) + ' · ' + esc(t.plan.why)));
         (log.decisions || []).forEach(d => {
             // 选项下标（如 [0]）对人没有意义，去掉；“合法目标=[…]”这类引擎内部信息也去掉。
             d = Object.assign({}, d, { choice: /^\[[\d, ]*\]$/.test(String(d.choice || '')) ? '' : String(d.choice || '').replace(/，合法目标(对)?=\[[^\]]*\]/g, '') });

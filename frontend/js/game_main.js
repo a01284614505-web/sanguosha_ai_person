@@ -1247,7 +1247,8 @@
         }
         const body = rows.map(n => '<tr' + (n.locked ? ' class="locked"' : '') + '><td>' + esc(String(n.seat)) + '号</td><td>' +
             esc(GUESS_NAME[n.guess] || n.guess) + '</td><td>' + esc(n.locked ? '公开' : n.conf) + '</td><td>' + esc(n.why) + '</td></tr>').join('');
-        return '<h3 class="notes-title">认知笔记' + (row.frozen ? '（已阵亡，冻结）' : '') + '</h3>' +
+        const plan = row && row.plan ? '<p class="muted">当前打法：' + esc(row.plan.style) + ' · ' + esc(row.plan.why) + '</p>' : '';
+        return plan + '<h3 class="notes-title">认知笔记'  + (row.frozen ? '（已阵亡，冻结）' : '') + '</h3>' +
             '<table class="notes-table"><thead><tr><th>座位</th><th>猜测</th><th>把握</th><th>理由</th></tr></thead><tbody>' + body + '</tbody></table>';
     }
 

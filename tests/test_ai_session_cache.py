@@ -116,6 +116,9 @@ class PrefixStabilityTest(unittest.TestCase):
         return quiet(self.ai.make_decision(self.player, actions))[0]
 
     def test_prefix_grows_monotonically_over_ten_calls(self):
+        # 本用例只测未压缩窗口的追加不变性；压缩由 CompressionTest 独立覆盖。
+        self.ai.session_max_chars = 10 ** 9
+        self.ai.session_max_l2 = 100
         for _ in range(10):
             self._decide_once()
         calls = self.ai.gateway.calls
