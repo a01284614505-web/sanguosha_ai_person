@@ -40,6 +40,7 @@ def model_call_kwargs(player) -> Dict[str, Any]:
 from .seats import seat_of, player_of, player_label
 from .prompt_trace import capture
 from .tactical_context import goal_block, clean_plan, feedback
+from .strategy_library import select_examples, examples_prompt
 
 
 class WorldbookManager:
@@ -433,9 +434,16 @@ class AIDecision:
             return self.simple_ai_decision(player, available_actions)
 
         try:
-            response = await self._call_with_session(
-                player, "decision", self.build_decision_turn_message(player, available_actions)
-            )
+            examples = select_examples(self.engine, player, self.rng) if len(available_actions) > 1 and player.is_ai else []
+            if examples:
+                # 两个真正分开的请求：先生成自己的判断，再看示例。每次最多一次复核，不递归。
+                await self._call_with_session(
+                    player, "decision", self.build_decision_turn_message(player, available_actions, reflection_only=True))
+                content = examples_prompt(examples) + "\n" + self.build_decision_turn_message(player, available_actions)
+                content += "\n上一条是你在没看示例前的独立判断。现在有没有更好的做法？可维持原判断，也可修改；最终选择只执行这次的 action_index。"
+            else:
+                content = self.build_decision_turn_message(player, available_actions)
+            response = await self._call_with_session(player, "decision", content)
             return self.parse_ai_response(response, player, available_actions)
         except Exception as exc:
             self.last_failure[player.id] = type(exc).__name__
@@ -462,7 +470,7 @@ class AIDecision:
                 break
         return "\n".join(selected)
 
-    def build_decision_turn_message(self, player, available_actions: List[Dict]) -> str:
+    def build_decision_turn_message(self, player, available_actions: List[Dict], *, reflection_only=False) -> str:
         """L2 局势层：只含每次都变的内容，追加在会话窗口末尾。"""
         settings = self.engine.game_config.get("global_settings") or {}
         if settings.get("worldbook_enabled", True):
@@ -493,7 +501,12 @@ class AIDecision:
                        "how_others_see_me": "这步之后别人会怎么看我",
                        "reasoning": "比较可选行动的收益、代价以及身份判断依据",
                        "target_ids": [1], "action_index": 0})
+        if reflection_only:
+            output.pop("target_ids")
+            output.pop("action_index")
         json_example = json.dumps(output, ensure_ascii=False)
+        choice_instruction = ("【独立判断阶段】先只写自己的局势判断、笔记与打算，稍后再给老玩家示例；本次不选择操作。"
+                              if reflection_only else "按下列字段顺序输出JSON，先想后选，action_index 放最后，target_ids 填合法目标的座位号：")
         return f"""{situation}
 
 当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
@@ -502,7 +515,7 @@ class AIDecision:
 {chr(10).join(action_lines)}
 
 谁最可能是你的敌人？证据是什么？如果你是主公会怀疑谁？这一步别人会怎样解读？
-按下列字段顺序输出JSON，先想后选，action_index 放最后，target_ids 填合法目标的座位号：
+{choice_instruction}
 {json_example}
 把推理用于比较行动，并说明为什么采取这一打法。{notes_rule}"""
 
