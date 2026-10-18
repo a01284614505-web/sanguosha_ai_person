@@ -22,6 +22,7 @@ from .rules_engine import RulesEngine
 from .ai_decision import AIDecision
 from .identity_system import IdentitySystem
 from .chat_engine import ChatEngine
+from .token_usage import USAGE_KINDS, apply_usage, empty_bucket
 from .config_validator import normalize_ai, normalize_config
 from .deck_manager import DeckManager
 from .game_stats import GameStats, record_stat
@@ -110,7 +111,7 @@ class MainEngine:
         self.rules = RulesEngine(self.game_state, self.skill_manager)
         self.ai_decision = AIDecision(self)
         self.identity_system = IdentitySystem()
-        self.chat_engine = ChatEngine(self.ai_decision.gateway)
+        self.chat_engine = ChatEngine(self.ai_decision.gateway, usage_sink=self.record_usage)
 
         self.handlers: Dict[str, Callable] = {}
         self._player_event = asyncio.Event()
@@ -123,6 +124,8 @@ class MainEngine:
         self._request_seq = 0
         self._effect_seq = 0
         self.game_log: List[Dict] = []
+        # 按座位与调用类型累计的 token 消耗，结构见 token_usage.py。
+        self.usage_stats: Dict[Any, Dict[str, Dict[str, int]]] = {}
         self.completed_turns = 0
         self.max_turns = int(game_config.get("max_turns", 300))
         self.human_action_timeout = int(game_config.get("human_action_timeout", 120))
@@ -517,6 +520,13 @@ class MainEngine:
             self._spawn_chat("turn_start", player, {"round": self.game_state.round_number})
         await self._run_phases(player)
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+    def record_usage(self, player_id, kind: str, usage: Any = None, failed: bool = False):
+        """累计一次模型调用的 token。usage 缺字段计入 unknown_usage_calls，不当 0。"""
+        if kind not in USAGE_KINDS:
+            raise ValueError(f"unknown usage kind: {kind}")
+        seat = self.usage_stats.setdefault(player_id, {})
+        apply_usage(seat.setdefault(kind, empty_bucket()), usage, failed)
 
     def _spawn_chat(self, event_type: str, player: Player, context: Dict):
         """台词在后台生成，主循环不等它：模型慢或失败都不会拖住对局。"""

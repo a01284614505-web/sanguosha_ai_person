@@ -21,8 +21,10 @@ _PERMANENT_STATUS = {401, 403, 404}
 
 
 class ChatEngine:
-    def __init__(self, ai_gateway):
+    def __init__(self, ai_gateway, usage_sink=None):
         self.gateway = ai_gateway
+        # usage_sink(player_id, kind, usage, failed)：通常是 MainEngine.record_usage。
+        self._usage_sink = usage_sink
         self.last_chat_time = {}
         self.chat_cooldown = 8  # 8秒冷却
         # 本局已因配置错误停用聊天的座位：只警告一次，之后不再发请求。
@@ -50,23 +52,26 @@ class ChatEngine:
         prompt = self.build_chat_prompt(event_type, player, context)
 
         try:
-            response = await self.gateway.call_api(
+            response, usage = await self.gateway.call_ai(
                 **model_call_kwargs(player),
                 messages=[
                     {"role": "system", "content": f"你是{player.hero.get('name', player.name)}，三国武将。"},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.9
+                temperature=0.9,
+                return_usage=True,
             )
 
             # 提取对话（限制30字）
             msg = response.strip()[:30]
+            self._note_usage(player, usage, failed=False)
             self.last_chat_time[player.id] = now
 
             return msg
         except asyncio.CancelledError:
             raise
         except httpx.HTTPStatusError as exc:
+            self._note_usage(player, None, failed=True)
             status = exc.response.status_code
             if status in _PERMANENT_STATUS:
                 self._muted.add(player.id)
@@ -78,13 +83,19 @@ class ChatEngine:
             return None
         except ValueError as exc:
             # 例如 claude/gemini 未提供 OpenAI 兼容地址：配置问题，同样只提示一次。
+            self._note_usage(player, None, failed=True)
             self._muted.add(player.id)
             logger.warning("聊天AI配置不可用，本局不再为 %s 发起聊天：%s", player.name, exc)
             return None
         except Exception as exc:
+            self._note_usage(player, None, failed=True)
             logger.warning("聊天AI调用失败（%s）：%s", type(exc).__name__, player.name)
             logger.debug("聊天AI调用失败详情", exc_info=True)
             return None
+
+    def _note_usage(self, player, usage, failed: bool):
+        if self._usage_sink is not None:
+            self._usage_sink(player.id, "chat", usage, failed)
 
     def build_chat_prompt(self, event_type: str, player, context: Dict) -> str:
         """构建对话prompt"""
