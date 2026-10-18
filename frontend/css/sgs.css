@@ -648,3 +648,22 @@ dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
 .idcard-hint { margin: 0; font-size: 12px; color: var(--text-dim); }
 .idcard-hint b { color: var(--gold-hi); font-weight: 600; }
 .sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* 属性杀（军争）：火杀 = 朱红，雷杀 = 紫蓝；牌名与右上角竖签同色，在手牌/处理区/浮层/图鉴里一眼可辨 */
+.card .c-nature {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font: 700 calc(var(--w) * .13)/1 var(--font-kai);
+    padding: 3px 3px;
+    border-radius: 2px;
+    color: #fff;
+    writing-mode: vertical-rl;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .55);
+}
+.card .c-nature.fire { background: #d2321f; }
+.card .c-nature.thunder { background: #5b3fc4; }
+.card.nat-fire .c-name { color: #d2321f; text-shadow: 0 0 6px rgba(210, 50, 31, .35); }
+.card.nat-thunder .c-name { color: #5b3fc4; text-shadow: 0 0 6px rgba(91, 63, 196, .35); }
+.card.nat-fire { box-shadow: inset 0 0 0 2px rgba(210, 50, 31, .55), 0 0 10px rgba(210, 50, 31, .28); }
+.card.nat-thunder { box-shadow: inset 0 0 0 2px rgba(91, 63, 196, .55), 0 0 10px rgba(91, 63, 196, .28); }

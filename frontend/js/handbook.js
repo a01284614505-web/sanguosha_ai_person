@@ -30,12 +30,14 @@
         pane.innerHTML = SGS_CARD_GROUPS.map(([group, names]) =>
             '<div class="hb-group"><h2 class="section-title">' + esc(group) + '</h2><div class="hb-cards">' +
             names.map(name => {
-                const info = SGS_CARD_INFO[name] || {};
+                // 火杀 / 雷杀不是独立牌名，是带属性的【杀】：说明取 NATURE_INFO，牌面按 nature 画
+                const nature = Object.keys(SGS.NATURE_INFO).find(k => SGS.NATURE_INFO[k].name === name) || '';
+                const info = nature ? SGS.NATURE_INFO[nature] : (SGS_CARD_INFO[name] || {});
                 const tags = ['<span class="hb-tag">' + esc(info.type || '') + '</span>'];
                 if (info.range) tags.push('<span class="hb-tag">攻击范围 ' + info.range + '</span>');
                 if (info.horse) tags.push('<span class="hb-tag">距离 ' + esc(info.horse) + '</span>');
                 return '<article class="frame hb-card">' +
-                    SGS.cardHTML({ name: name, card_type: cardType(info) }, { noDetail: true }) +
+                    SGS.cardHTML({ name: nature ? '杀' : name, nature: nature, card_type: cardType(info) }, { noDetail: true }) +
                     '<div><h3>' + esc(name) + '</h3>' + tags.join('') +
                     '<p>' + esc(info.text || '') + '</p>' +
                     (info.pending ? '<div class="hb-note">引擎暂未实现此装备特效' + (info.range ? '，目前只生效攻击范围' : '') + '。</div>' : '') +

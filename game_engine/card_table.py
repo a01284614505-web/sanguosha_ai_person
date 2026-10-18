@@ -29,17 +29,18 @@ class CardSpec:
     # group 群体牌（只记一条不归属的群体事件）/ borrow 借刀杀人（两个目标，规则特殊）。
     ledger_kind: str = "none"
     ledger_weight: float = 1.0            # 该牌记入账本时的权重（铁索连环意图不明确，取 0.5）
+    recast: bool = False                  # 军争重铸：出牌阶段可置入弃牌堆并摸一张牌（不算使用，铁索连环）
 
 
 def _c(card_type, target_rule, *, wuxie=False, resolver=None, usage="play",
        image=None, keep=20, priority=0, source_key=None,
-       weapon_range=1, equipment_slot=None, ledger="none", ledger_weight=1.0):
+       weapon_range=1, equipment_slot=None, ledger="none", ledger_weight=1.0, recast=False):
     return CardSpec(
         card_type=card_type, target_rule=target_rule,
         wuxie_targetable=wuxie, resolver=resolver, usage=usage,
         image=image, discard_keep_score=keep, play_priority=priority,
         source_key=source_key, weapon_range=weapon_range, equipment_slot=equipment_slot,
-        ledger_kind=ledger, ledger_weight=ledger_weight,
+        ledger_kind=ledger, ledger_weight=ledger_weight, recast=recast,
     )
 
 
@@ -66,7 +67,7 @@ CARD_TABLE: Dict[str, CardSpec] = {
     "无中生有": _c("trick", {"type": "self"},
                   wuxie=True, resolver="use_wuzhongshengyou", image="wuzhongshengyou", source_key="wuzhong"),
     "铁索连环": _c("trick", {"min": 1, "max": 2, "type": "any"},
-                  wuxie=True, resolver="use_tiesuo", image="tiesuo", source_key="tiesuo", ledger="hostile", ledger_weight=0.5),
+                  wuxie=True, resolver="use_tiesuo", image="tiesuo", source_key="tiesuo", ledger="hostile", ledger_weight=0.5, recast=True),
     "兵粮寸断": _c("trick", {"min": 1, "max": 1, "type": "other"},
                   wuxie=True, resolver="use_bingliang", image="bingliang", source_key="bingliang", ledger="hostile"),
     "乐不思蜀": _c("trick", {"min": 1, "max": 1, "type": "other"},
@@ -173,3 +174,30 @@ CARD_TABLE: Dict[str, CardSpec] = {
                   resolver="use_equipment", image="muniu", keep=40, source_key="muniu",
                   equipment_slot="treasure"),
 }
+
+
+# ---- 牌的属性（军争）：属性文字的单一来源 ----
+# nature 取值只有 fire / thunder（None 为普通）。其他模块一律经下列函数取文字，不得再各写一份。
+NATURE_PREFIX = {"fire": "火", "thunder": "雷"}          # 火【杀】 / 雷【杀】
+NATURE_DAMAGE_TEXT = {"fire": "火焰", "thunder": "雷电"}  # 火焰伤害 / 雷电伤害
+
+
+def nature_of(card) -> Optional[str]:
+    """牌（Card 或 card_to_dict 字典）的属性；非火/雷一律视为普通。"""
+    value = card.get("nature") if isinstance(card, dict) else getattr(card, "nature", None)
+    return value if value in NATURE_PREFIX else None
+
+
+def card_label(card, name: Optional[str] = None, nature: Optional[str] = None) -> str:
+    """牌名的带括号文字：普通【杀】、火【杀】、雷【杀】。只有【杀】带属性前缀。
+
+    card 可为 Card 或 card_to_dict 字典；name/nature 可显式覆盖（技能虚拟牌、朱雀羽扇转化）。"""
+    base = name or (card.get("name") if isinstance(card, dict) else getattr(card, "name", None)) or "?"
+    nat = nature if nature in NATURE_PREFIX else (nature_of(card) if card is not None else None)
+    prefix = NATURE_PREFIX.get(nat, "") if base == "杀" else ""
+    return f"{prefix}【{base}】"
+
+
+def damage_text(amount, nature: Optional[str] = None) -> str:
+    """“1 点伤害 / 1 点火焰伤害 / 3 点雷电伤害”。"""
+    return f"{amount}点{NATURE_DAMAGE_TEXT.get(nature, '')}伤害"
