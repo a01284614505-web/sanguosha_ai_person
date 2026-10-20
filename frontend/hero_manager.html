@@ -111,6 +111,18 @@
             line-height: 1.6;
         }
 
+        .trial-scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+        .trial-scenario { text-align: left; border: 1px solid var(--border-dark); border-radius: 8px; padding: 12px; color: var(--text-light); background: rgba(10,10,10,.35); cursor: pointer; }
+        .trial-scenario[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+        .trial-scenario strong, .trial-scenario small { display: block; }
+        .trial-scenario small { color: var(--text-muted); margin-top: 4px; }
+        .trial-output { display: grid; gap: 12px; margin-top: 18px; }
+        .trial-result-card { border: 1px solid var(--border-dark); border-radius: 8px; padding: 14px; background: rgba(10,10,10,.35); }
+        .trial-result-card h3 { color: var(--text-gold); margin: 0 0 8px; font-size: 15px; }
+        .trial-result-card pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-light); margin: 0; font-size: 12px; }
+        .trial-status[data-kind="error"] { color: #ff9b8e !important; }
+        .trial-status[data-kind="success"] { color: #a8d6a0 !important; }
+
         @media (max-width: 768px) {
             .converter-area {
                 grid-template-columns: 1fr;
@@ -134,20 +146,54 @@
 
             <div class="converter-area">
                 <div class="input-panel">
+                    <label style="color: var(--text-gold); font-weight: bold;">武将包：</label>
+                    <input id="packageId" placeholder="包 ID，例如 my_favorites" maxlength="48">
+                    <input id="packageName" placeholder="包名称" maxlength="80">
                     <label style="color: var(--text-gold); font-weight: bold;">输入贴吧格式：</label>
                     <textarea id="inputText" placeholder="刘备 蜀&#10;称号:乱世的枭雄&#10;编号:SHU 001&#10;体力:4&#10;画师:KayaK&#10;技能:&#10;仁德：..."></textarea>
                     <div style="display: flex; gap: 12px;">
                         <button class="btn-primary" onclick="convertHero()">转换</button>
                         <button class="btn-primary" onclick="convertWithAI()">使用AI转换</button>
                     </div>
+                    <div style="display:grid;gap:8px;margin-top:8px">
+                        <label style="color:var(--text-muted)">AI 转换配置（仅在本次请求中使用）</label>
+                        <select id="convertProvider"></select>
+                        <input id="convertModel" placeholder="模型名称">
+                        <input id="convertUrl" placeholder="兼容 API 地址（可选）">
+                        <input id="convertKey" type="password" placeholder="API Key（不会保存到服务器）" autocomplete="off">
+                    </div>
                 </div>
 
                 <div class="output-panel">
                     <label style="color: var(--text-gold); font-weight: bold;">输出JSON：</label>
-                    <textarea id="outputJSON" readonly></textarea>
-                    <button class="btn-primary" onclick="saveJSON()">保存JSON</button>
+                    <textarea id="outputJSON" aria-label="可编辑英雄 JSON"></textarea>
+                    <small style="color:var(--text-muted)">可直接编辑英雄 ID、技能 DSL 与 implementation_status，也可粘贴 JSON；新技能默认 data_only，确认 DSL 可用后再设为 active。</small>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap">
+                        <button class="btn-primary" onclick="importHero()">导入到服务器</button>
+                        <button class="btn-primary" onclick="saveJSON()">下载JSON</button>
+                    </div>
+                    <div id="managerStatus" role="status" style="color:var(--text-muted);white-space:pre-wrap"></div>
                 </div>
             </div>
+        </section>
+
+        <!-- 技能试验台：结果由隔离试验接口返回；通过一次试跑不等于完整认证。 -->
+        <section class="section" id="skillTrial" aria-labelledby="trialTitle">
+            <div class="section-title" id="trialTitle">🧪 技能试运行</div>
+            <p style="color:var(--text-muted);margin-bottom:14px">选择服务端预设局面，使用当前编辑器中的草稿进行离线规则试跑。试跑不会启用或保存武将包。</p>
+            <div class="trial-scenarios" role="group" aria-label="试验预设场景">
+                <button class="trial-scenario" type="button" data-scenario="active_choose_target" aria-pressed="true"><strong>主动选目标</strong><small>检查发动条件、目标选择和结算</small></button>
+                <button class="trial-scenario" type="button" data-scenario="damage_received" aria-pressed="false"><strong>受伤触发</strong><small>检查伤害事件触发与效果</small></button>
+                <button class="trial-scenario" type="button" data-scenario="phase_draw" aria-pressed="false"><strong>阶段摸牌</strong><small>检查阶段钩子和摸牌变化</small></button>
+                <button class="trial-scenario" type="button" data-scenario="cancel_activation" aria-pressed="false"><strong>取消发动</strong><small>检查取消时成本与状态是否回滚</small></button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
+                <label for="trialSeed" style="color:var(--text-muted)">随机种子</label>
+                <input id="trialSeed" type="number" value="20261019" min="0" max="2147483647" style="width:180px">
+                <button id="runSkillTrial" class="btn-primary" type="button">运行试验</button>
+                <span id="trialStatus" class="trial-status" role="status" aria-live="polite" style="color:var(--text-muted)">尚未运行</span>
+            </div>
+            <div id="trialOutput" class="trial-output" aria-live="polite"></div>
         </section>
 
         <!-- 武将包列表 -->
@@ -157,6 +203,11 @@
                 <!-- 动态生成 -->
             </div>
             <button class="btn-primary" style="margin-top: 16px;" onclick="refreshPackages()">刷新武将包</button>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px">
+                <label for="packageBackup" style="color:var(--text-muted)">从服务器备份恢复</label>
+                <select id="packageBackup"><option value="">没有可用备份</option></select>
+                <button class="btn-primary" type="button" onclick="restorePackageBackup()">恢复备份</button>
+            </div>
         </section>
 
         <!-- 使用说明 -->
@@ -166,10 +217,9 @@
                 <li>从贴吧复制武将数据，粘贴到左侧输入框</li>
                 <li>点击"转换"或"使用AI转换"</li>
                 <li>查看右侧生成的JSON</li>
-                <li>点击"保存JSON"自动下载</li>
-                <li>将JSON和武将图片放到 <code>/storage/emulated/0/Download/sanguosha/sanguosha_data/wujiang/对应包名/</code></li>
-                <li>点击"刷新武将包"，勾选启用</li>
-                <li>完成！AI会自动识别武将技能</li>
+                <li>确认生成的 ASCII 武将 ID 唯一；普通描述或 AI 转换技能默认仅作为资料展示</li>
+                <li>点击“导入到服务器”完成校验和原子保存，或下载 JSON 留作备份</li>
+                <li>在武将包列表中启用后，新开局会把该包武将加入将池；已开始的对局保持原快照</li>
             </ol>
         </section>
 
@@ -221,8 +271,9 @@
                     const parts = line.split(/\s+/);
                     hero.name = parts[0];
                     hero.faction = parts[1] || '';
-                    hero.id = nameToId[hero.name] || hero.name.toLowerCase();
-                    hero.image = `${hero.id}.jpg`;
+                    const baseId = nameToId[hero.name] || `hero_${Date.now().toString(36)}`;
+                    hero.id = `custom_${baseId}`;
+                    hero.image = '';
                     continue;
                 }
 
@@ -248,7 +299,8 @@
                         name: parts[0].trim(),
                         description: parts[1] ? parts[1].trim() : '',
                         type: detectSkillType(parts[1] || ''),
-                        trigger: 'UNKNOWN'
+                        trigger: 'UNKNOWN',
+                        implementation_status: 'data_only'
                     };
                 }
             }
@@ -302,8 +354,39 @@
 
         // 使用AI转换
         async function convertWithAI() {
-            alert('AI转换功能需要配置API Key，请先使用普通转换测试');
-            // TODO: 实现AI转换
+            const status = document.getElementById('managerStatus');
+            const settings = { text: document.getElementById('inputText').value,
+                provider: document.getElementById('convertProvider').value,
+                model: document.getElementById('convertModel').value.trim(),
+                api_url: document.getElementById('convertUrl').value.trim(),
+                api_key: document.getElementById('convertKey').value };
+            if (!settings.text.trim() || !settings.api_key || !settings.model) {
+                status.textContent = '请填写武将文本、模型和 API Key'; return;
+            }
+            status.textContent = '正在通过 AI 网关转换…';
+            try {
+                const response = await fetch('/api/heroes/convert', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(settings) });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.message || '转换失败');
+                document.getElementById('outputJSON').value = JSON.stringify(result.hero, null, 2);
+                document.getElementById('convertKey').value = '';
+                status.textContent = '转换完成。AI 生成的技能默认为 data_only，请检查后导入。';
+            } catch (error) { status.textContent = 'AI 转换失败：' + error.message; }
+        }
+
+        async function importHero() {
+            const status = document.getElementById('managerStatus');
+            try {
+                const hero = JSON.parse(document.getElementById('outputJSON').value);
+                const packageData = { id: document.getElementById('packageId').value.trim(),
+                    name: document.getElementById('packageName').value.trim(), version: '1.0' };
+                const response = await fetch('/api/heroes/import', { method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({ package:packageData, hero }) });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.message || '导入失败');
+                status.textContent = `已导入 ${result.hero.name}。新包默认关闭，请在包列表中启用。`;
+                refreshPackages();
+            } catch (error) { status.textContent = '导入失败：' + error.message; }
         }
 
         // 保存JSON
@@ -330,47 +413,81 @@
         }
 
         // 刷新武将包
-        function refreshPackages() {
-            // TODO: 从服务器加载武将包列表
-            const mockPackages = [
-                {
-                    id: 'jiexian',
-                    name: '界限突破',
-                    version: '1.0',
-                    heroes: ['刘备', '曹操', '孙权', '诸葛亮'],
-                    enabled: true
-                }
-            ];
-
-            renderPackages(mockPackages);
+        async function refreshPackages() {
+            const list = document.getElementById('packageList');
+            try {
+                const response = await fetch('/api/hero-packages', {cache:'no-store'});
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || '读取失败');
+                renderPackages(data.packages || []);
+            } catch (error) { list.textContent = '武将包读取失败：' + error.message; }
         }
 
+        function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
         function renderPackages(packages) {
             const list = document.getElementById('packageList');
-            list.innerHTML = packages.map(pkg => `
+            list.innerHTML = packages.length ? packages.map(pkg => `
                 <div class="package-card ${pkg.enabled ? 'enabled' : ''}">
                     <div class="package-header">
-                        <div class="package-name">${pkg.name}</div>
-                        <button class="toggle-btn" onclick="togglePackage('${pkg.id}')">
+                        <div class="package-name">${esc(pkg.name)}</div>
+                        <button class="toggle-btn" data-package="${esc(pkg.id)}" data-enabled="${!pkg.enabled}">
                             ${pkg.enabled ? '✓ 已启用' : '启用'}
                         </button>
                     </div>
                     <div class="hero-list">
-                        武将数：${pkg.heroes.length}<br>
-                        ${pkg.heroes.join('、')}
+                        ${esc(pkg.id)} · v${esc(pkg.version)}<br>
+                        武将数：${(pkg.heroes || []).length}<br>
+                        ${(pkg.hero_names || []).map(esc).join('、')}
                     </div>
                 </div>
-            `).join('');
+            `).join('') : '<p style="color:var(--text-muted)">还没有导入的武将包。</p>';
+            list.querySelectorAll('[data-package]').forEach(button => button.addEventListener('click', () => togglePackage(button.dataset.package, button.dataset.enabled === 'true')));
         }
 
-        function togglePackage(id) {
-            alert(`切换武将包：${id}`);
-            // TODO: 实现启用/禁用
+        async function togglePackage(id, enabled) {
+            const status = document.getElementById('managerStatus');
+            try {
+                const response = await fetch(`/api/hero-packages/${encodeURIComponent(id)}/enabled`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled})});
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.message || '切换失败');
+                status.textContent = `武将包已${enabled ? '启用' : '禁用'}，仅影响新开局。`;
+                refreshPackages();
+            } catch (error) { status.textContent = '更新失败：' + error.message; }
         }
 
-        // 初始化
+        async function refreshBackups() {
+            const select = document.getElementById('packageBackup');
+            try {
+                const response = await fetch('/api/hero-packages/backups', {cache:'no-store'});
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || '读取失败');
+                select.innerHTML = (data.backups || []).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('') || '<option value="">没有可用备份</option>';
+            } catch (_) { select.innerHTML = '<option value="">备份列表不可用</option>'; }
+        }
+        async function restorePackageBackup() {
+            const filename = document.getElementById('packageBackup').value;
+            const status = document.getElementById('managerStatus');
+            if (!filename || !confirm('恢复将替换当前导入包数据，并把当前版本另存为备份。继续吗？')) return;
+            try {
+                const response = await fetch('/api/hero-packages/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({filename})});
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || '恢复失败');
+                status.textContent = '已恢复备份。新开局将使用恢复后的将池。';
+                refreshPackages(); refreshBackups();
+            } catch (error) { status.textContent = '恢复失败：' + error.message; }
+        }
+
+        fetch('/api/providers').then(r => r.json()).then(data => {
+            const select = document.getElementById('convertProvider');
+            select.innerHTML = (data.providers || []).map(p => `<option value="${esc(p.value)}">${esc(p.label || p.name || p.value)}</option>`).join('');
+            const settings = window.getGlobalSettings ? window.getGlobalSettings() : {};
+            select.value = settings.default_provider || select.value;
+            document.getElementById('convertModel').value = settings.default_model || '';
+        }).catch(() => {});
         refreshPackages();
+        refreshBackups();
     </script>
+    <script src="js/skill_trial.js?v=20261019a"></script>
     <script src="js/global_settings.js?v=20260803c"></script>
 </body>
 </html>

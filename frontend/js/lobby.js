@@ -27,6 +27,11 @@
 
         // 绑定表单与按钮事件，并读取 Provider、牌堆和本机战绩。
         init() {
+            const postDeathNotice = store.sget('postDeathNotice', '');
+            if (postDeathNotice) {
+                store.sset('postDeathNotice', null);
+                toast(postDeathNotice, { ms: 6000 });
+            }
             const name = document.getElementById('playerName');
             name.value = this.prefs.playerName || '';
             name.addEventListener('input', () => this.savePrefs());

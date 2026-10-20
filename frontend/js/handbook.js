@@ -1,4 +1,4 @@
-// 图鉴页：列出全部 42 种卡牌（说明来自 card_info.js）与 27 名武将（来自 /data/heroes.json）。
+// 图鉴页：列出卡牌说明与内置/已启用武将包中的武将。
 // 纯展示，不影响对局。
 (function () {
     'use strict';
@@ -73,7 +73,7 @@
         document.querySelectorAll('#heroFaction button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
         renderHeroes();
     });
-    SGS.fetchJSON('/data/heroes.json').then(data => {
+    SGS.fetchJSON('/api/heroes').then(data => {
         heroes = Array.isArray(data) ? data : (data.heroes || []);
         renderHeroes();
     }).catch(err => {

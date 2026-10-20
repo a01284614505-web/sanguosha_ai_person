@@ -4,9 +4,11 @@
 import random
 from typing import Dict, List, Optional
 
+from .mode_registry import get_mode, identity_victory
+
 
 class IdentitySystem:
-    IDENTITY_5 = ["lord", "loyalist", "rebel", "rebel", "spy"]
+    IDENTITY_5 = list(get_mode("5人身份局").identities)
     IDENTITY_ALIASES = {
         "主公": "lord", "lord": "lord",
         "忠臣": "loyalist", "loyalist": "loyalist",
@@ -16,13 +18,16 @@ class IdentitySystem:
 
     @classmethod
     def assign_identities(cls, players: List, mode="5人身份局", identity_card: Optional[Dict] = None) -> Dict:
-        if mode != "5人身份局" or len(players) != 5:
+        try:
+            spec = get_mode(mode)
+        except ValueError:
             return {}
-        return cls._assign_5players(players, identity_card or {})
+        if len(players) != spec.player_count:
+            return {}
+        return cls._assign(players, list(spec.identities), identity_card or {})
 
     @classmethod
-    def _assign_5players(cls, players: List, identity_card: Dict) -> Dict:
-        pool = list(cls.IDENTITY_5)
+    def _assign(cls, players: List, pool: List[str], identity_card: Dict) -> Dict:
         requested = None
         if identity_card.get("use"):
             requested = cls.IDENTITY_ALIASES.get(identity_card.get("identity"))
@@ -52,21 +57,8 @@ class IdentitySystem:
         }
 
     @staticmethod
-    def check_victory(players: List) -> Dict:
-        alive_players = [p for p in players if p.alive]
-        lord = next((p for p in players if p.identity == "lord"), None)
-        if not lord:
-            return {"game_over": False}
-
-        if not lord.alive:
-            if len(alive_players) == 1 and alive_players[0].identity == "spy":
-                return {"game_over": True, "winner": "spy", "message": "内奸获胜！"}
-            return {"game_over": True, "winner": "rebel", "message": "反贼获胜！"}
-
-        alive_identities = {p.identity for p in alive_players}
-        if "rebel" not in alive_identities and "spy" not in alive_identities:
-            return {"game_over": True, "winner": "lord", "message": "主公和忠臣获胜！"}
-        return {"game_over": False}
+    def check_victory(players: List, mode="5人身份局") -> Dict:
+        return identity_victory(players, mode)
 
 
 __all__ = ["IdentitySystem"]

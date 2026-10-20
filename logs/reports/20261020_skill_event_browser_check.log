@@ -1,0 +1,8 @@
+Public skill event and replay browser verification
+Date: 2026-10-20
+Command: PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright python3 scripts/manual/skill_event_browser_check.py
+Exit: 0
+
+Chromium opened the live game UI and delivered frozen public `skill_decision`, existing `skill_activation`, and `dying_rescue` events through the same event callback used by WebSocket messages. The desk log showed the accepted/declined reason and public rescue participants/card; skill decisions received a distinct class without exposing model reasoning.
+
+The script also opened `/logs.html` against a temporary `GameLogStore` fixture served by the actual `/api/logs` handlers. Replay rendered the skill decision and dying rescue as distinct timeline rows in sequence. No browser page errors occurred. Data was isolated under a temporary directory.

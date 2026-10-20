@@ -620,7 +620,8 @@ class CardSystem:
             await self._notify_gain(f"{player.name}对{target.name}使用【顺手牵羊】，获得一张【{gained.name}】")
         return True
     
-    def build_response_options(self, player, card_filter: Callable, requested_name=None) -> List[dict]:
+    def build_response_options(self, player, card_filter: Callable, requested_name=None,
+                               requested_names=None) -> List[dict]:
         """引擎侧算出全部合法响应候选：手牌直接打出 + 技能转化。末项恒为「不响应」。"""
         hand_blocked = bool(getattr(player, "flags", {}).get("cannot_use_hand"))
         options: List[dict] = []
@@ -647,7 +648,10 @@ class CardSystem:
                         "as_name": card.name, "skill_name": None,
                     })
 
-        skill_options = self.trigger_manager.response_options(player, requested_name) if requested_name else []
+        names = list(requested_names or ([requested_name] if requested_name else []))
+        skill_options = []
+        for name in names:
+            skill_options.extend(self.trigger_manager.response_options(player, name))
         for option in skill_options:
             card = option.get("card")
             if card is None:
@@ -676,7 +680,8 @@ class CardSystem:
         return options
 
     async def choose_to_respond(self, player, prompt: str, card_filter: Callable,
-                                requested_name=None, context=None, kind="respond"):
+                                requested_name=None, context=None, kind="respond",
+                                requested_names=None):
         """选择响应（核心方法）：引擎算候选 → 真人或AI从候选里挑 → 引擎复核后返回。"""
         if (requested_name == "闪" and self.engine is not None
                 and not (context or {}).get("ignore_armor")
@@ -692,7 +697,9 @@ class CardSystem:
                     return {"bool": True, "virtual": True,
                             "card": Card(f"bagua:{judged.id}", "闪", judged.suit, judged.rank, "basic"),
                             "as_name": "闪", "owner": player}
-        options = self.build_response_options(player, card_filter, requested_name)
+        options = self.build_response_options(
+            player, card_filter, requested_name, requested_names=requested_names,
+        )
         if not options:
             asked = f"【{requested_name}】" if requested_name else "符合条件的牌"
             logger.info(f"  → {player.name} 没有{asked}")
@@ -707,6 +714,8 @@ class CardSystem:
             "options": options,
             "context": context or {},
         }
+        if requested_names:
+            request["allowed_names"] = list(requested_names)
         result = await self.responder(player, request)
         if result and result.get("bool") and result.get("skill_name") == "激将":
             offered = await self.trigger_manager.request_lord_sha(player, result.get("owner"))
@@ -909,7 +918,7 @@ class CardSystem:
                     )
     
     async def enter_dying(self, player):
-        """濒死求桃：按座次逐个询问存活角色，每人都可以拒绝。"""
+        """濒死救援：本人可用桃或酒，其他角色只能用桃；按座次逐个询问。"""
         if self.engine is not None and self.engine.game_aborted:
             return
         logger.info(f"  ⚠️ {player.name} 进入濒死状态！HP:{player.hp}")
@@ -926,14 +935,17 @@ class CardSystem:
             rescuers = [p for offset in range(len(seats))
                         if (p := seats[(start + offset) % len(seats)]).alive]
             for rescuer in rescuers:
+                self_rescue = rescuer is player
                 prompt = (
-                    "你已濒死，是否使用【桃】自救？" if rescuer is player
+                    "你已濒死，是否使用【桃】或【酒】自救？" if self_rescue
                     else f"{player.name}濒死，是否使用【桃】救援？"
                 )
                 result = await self.choose_to_respond(
                     rescuer, prompt,
-                    card_filter=lambda c: c.name == '桃',
-                    requested_name='桃',
+                    card_filter=(lambda c: c.name in ('桃', '酒')) if self_rescue
+                    else (lambda c: c.name == '桃'),
+                    requested_name='桃或酒' if self_rescue else '桃',
+                    requested_names=('桃', '酒') if self_rescue else None,
                     context={'target': player, 'source': rescuer},
                     kind='dying',
                 )
@@ -958,6 +970,12 @@ class CardSystem:
                 # 治疗归属与统计一致：记给实际提供桃的角色（owner），不是被询问者。
                 await self.trigger_manager.on_recover(player, 1, owner, 'dying_rescue')
                 logger.info(f"  🍑 {owner.name}救援{player.name}，体力回复至{player.hp}")
+                if self.engine is not None:
+                    await self.engine.log_event(
+                        f"{owner.name}使用【{result.get('as_name') or card.name}】救援{player.name}",
+                        event_kind="dying_rescue", provider_id=owner.id,
+                        target_id=player.id, card_name=result.get("as_name") or card.name,
+                    )
                 # 救援是最强的站队信号（高权重）；自救不记，「没救」更不记。
                 self._ledger_record(owner, player, "friendly", "救援", 3.0)
                 rescued = True
@@ -1021,12 +1039,14 @@ class CardSystem:
 
     async def _settle_identity_death(self, victim, killer):
         """身份奖惩在阵亡清牌之后结算，胜负紧接着检查。"""
+        from .mode_registry import get_mode
+        mode = get_mode(self.game_state.mode)
         if killer is not None and killer.alive and victim.identity == "rebel":
             if self.engine is not None and hasattr(self.engine, "draw_cards"):
-                drawn = await self.engine.draw_cards(killer, 3, "kill_rebel_reward")
+                drawn = await self.engine.draw_cards(killer, mode.rebel_kill_draw, "kill_rebel_reward")
             else:
                 drawn = []
-                for _ in range(3):
+                for _ in range(mode.rebel_kill_draw):
                     if not self.game_state.refill_deck_if_empty():
                         break
                     killer.hand.append(self.game_state.deck.pop(0))
@@ -1034,12 +1054,13 @@ class CardSystem:
             if drawn:
                 await self.trigger_manager.on_card_gained(killer, drawn, "kill_rebel_reward")
             logger.info(f"  → {killer.name} 击杀反贼，摸 {len(drawn)} 张牌")
-        elif killer is not None and killer.alive and killer.identity == "lord" and victim.identity == "loyalist":
+        elif (mode.lord_kills_loyalist_discards and killer is not None and killer.alive
+              and killer.identity == "lord" and victim.identity == "loyalist"):
             logger.info(f"  → {killer.name}误杀忠臣，弃置所有牌")
             await self._discard_player_zones(killer, "lord_killed_loyalist", include_judge=False)
 
         from .identity_system import IdentitySystem
-        victory = IdentitySystem.check_victory(self.game_state.players)
+        victory = IdentitySystem.check_victory(self.game_state.players, self.game_state.mode)
         if victory.get("game_over"):
             self.game_state.game_over = True
             self.game_state.winner = victory["winner"]
@@ -1187,7 +1208,9 @@ class CardSystem:
         effect_context = self._effect_context(source, card, target, effect_context)
         current, other = target, source
         while current.alive and other.alive:
-            required = 2 if self.trigger_manager.has_skill(other, "无双") else 1
+            base_required = 2 if self.trigger_manager.has_skill(other, "无双") else 1
+            required = self.trigger_manager.required_response_count(other, "杀", base_required,
+                                                                    context={"source": other, "target": current, "card_name": card.name})
             for response_number in range(required):
                 result = await self.choose_to_respond(
                     current, (f"【决斗】：请打出【杀】（共需 {required} 张，第 {response_number + 1} 张）"

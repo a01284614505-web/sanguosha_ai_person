@@ -1,0 +1,103 @@
+E1 post-death browser acceptance
+Date: 2026-10-20 UTC
+Command: PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright python3 scripts/manual/post_death_browser_check.py
+Result: PASS (isolated browser; actual game page/WebSocket client with controlled protocol frames)
+Coverage: spectate becomes read-only while chat/log remain; refresh resumes as spectator; background waits for accepted ACK, clears activeGame and returns to lobby with a settlement notice; end waits for game_end before result dialog; repeated clicks while pending send one request; no pageerror.
+Backend lifecycle verification: python3 -m pytest -q tests/test_plan_e_post_death_lifecycle.py — 4 passed.
+Output:
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /game.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /css/sgs.css?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/audio.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /css/game.css?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/sgs_common.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/card_info.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/local_skins.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/protocol.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/ws_client.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/global_settings.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/game_main.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /js/chat_panel.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/discard.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/damage.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/recover.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/coin.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/die_male.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/win.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/lose.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /assets/audio/judge.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:20] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:21] "GET /assets/heroes/caocao.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:21] "GET /assets/heroes/liubei.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:21] "GET /game.html HTTP/1.1" 304 -
+127.0.0.1 - - [20/Oct/2026 00:11:21] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /game.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /css/sgs.css?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /css/game.css?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/protocol.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/card_info.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/sgs_common.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/local_skins.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/audio.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/ws_client.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/global_settings.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/chat_panel.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /js/game_main.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/discard.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/damage.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/recover.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/die_male.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/win.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/coin.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/lose.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/audio/judge.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/heroes/liubei.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:22] "GET /assets/heroes/caocao.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /css/pages.css?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/heroes/sunquan.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/lobby.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /api/decks HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /api/history?profile_id=a679a8fe_e801_4783_a567_9c4a8bb55ce7 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /api/ai-players?profile_id=a679a8fe_e801_4783_a567_9c4a8bb55ce7 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /game.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /css/sgs.css?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/protocol.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /css/game.css?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/sgs_common.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/card_info.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/local_skins.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/audio.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/ws_client.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/chat_panel.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/global_settings.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /js/game_main.js?v=20261020e1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/discard.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/damage.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/recover.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/coin.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/die_male.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/lose.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/win.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/audio/judge.mp3 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/heroes/liubei.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:11:23] "GET /assets/heroes/caocao.jpg HTTP/1.1" 200 -
+{
+  "check": "POST_DEATH_BROWSER_OK",
+  "spectate": {
+    "readonly": true,
+    "chat_log_visible": true,
+    "resume": true
+  },
+  "background": {
+    "acknowledged": true,
+    "active_game_cleared": true,
+    "lobby_notice": true
+  },
+  "end": {
+    "waited_for_game_end": true
+  },
+  "page_errors": []
+}

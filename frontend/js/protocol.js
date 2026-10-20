@@ -3,10 +3,10 @@
 const Protocol = {
   VERSION: "1.0",
   INBOUND: {
-  CREATE_GAME: "create_game",   PLAYER_ACTION: "player_action",   CHAT: "chat",   CARD_ANIMATION_DONE: "card_animation_done",   END_GAME: "end_game",   UPDATE_AI_CONFIG: "update_ai_config",   SET_TRUSTEE: "set_trustee",   PING: "ping",   SERVER_INFO: "server_info",   RESUME_GAME: "resume_game",   UPDATE_SETTINGS: "update_settings"
+  CREATE_GAME: "create_game",   PLAYER_ACTION: "player_action",   CHAT: "chat",   CARD_ANIMATION_DONE: "card_animation_done",   END_GAME: "end_game",   UPDATE_AI_CONFIG: "update_ai_config",   SET_TRUSTEE: "set_trustee",   PING: "ping",   SERVER_INFO: "server_info",   RESUME_GAME: "resume_game",   UPDATE_SETTINGS: "update_settings",   POST_DEATH_ACTION: "post_death_action"
   },
   OUTBOUND: {
-  PONG: "pong",   SERVER_INFO: "server_info",   GAME_CREATED: "game_created",   GAME_STATE: "game_state",   YOUR_TURN: "your_turn",   REQUIRE_RESPONSE: "require_response",   ACTION_RESULT: "action_result",   SELECTION_RESULT: "selection_result",   CARD_MOVED: "card_moved",   AI_ACTION: "ai_action",   CHAT: "chat",   EVENT_NOTIFICATION: "event_notification",   AI_CONFIG_UPDATED: "ai_config_updated",   TRUSTEE_STATUS: "trustee_status",   DECISION_TRACE: "decision_trace",   END_GAME_ACCEPTED: "end_game_accepted",   GAME_END: "game_end",   ERROR: "error",   GAME_RESUMED: "game_resumed",   RESUME_FAILED: "resume_failed",   COGNITIVE_NOTES: "cognitive_notes",   CHAT_REJECTED: "chat_rejected"
+  PONG: "pong",   SERVER_INFO: "server_info",   GAME_CREATED: "game_created",   GAME_STATE: "game_state",   YOUR_TURN: "your_turn",   REQUIRE_RESPONSE: "require_response",   ACTION_RESULT: "action_result",   SELECTION_RESULT: "selection_result",   CARD_MOVED: "card_moved",   AI_ACTION: "ai_action",   CHAT: "chat",   EVENT_NOTIFICATION: "event_notification",   AI_CONFIG_UPDATED: "ai_config_updated",   TRUSTEE_STATUS: "trustee_status",   DECISION_TRACE: "decision_trace",   END_GAME_ACCEPTED: "end_game_accepted",   GAME_END: "game_end",   ERROR: "error",   GAME_RESUMED: "game_resumed",   RESUME_FAILED: "resume_failed",   COGNITIVE_NOTES: "cognitive_notes",   CHAT_REJECTED: "chat_rejected",   POST_DEATH_ACTION_RESULT: "post_death_action_result"
   },
   PROVIDERS: [
   {

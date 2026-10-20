@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17110c">
+    <title>本地武将皮肤 · 三国杀酒馆</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="stylesheet" href="css/sgs.css?v=20261020f1">
+    <link rel="stylesheet" href="css/pages.css?v=20261020f1">
+    <style>
+        .skin-panel { display:grid; gap:16px; }
+        .skin-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; align-items:end; }
+        .skin-preview { min-height:230px; border:1px solid var(--field-line); border-radius:8px; display:grid; place-items:center; overflow:hidden; background:rgba(0,0,0,.2); }
+        .skin-preview img { max-width:100%; max-height:360px; object-fit:contain; }
+        .skin-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+        .skin-card { border:1px solid var(--field-line); border-radius:8px; padding:10px; display:grid; gap:8px; background:var(--panel); }
+        .skin-card img { width:100%; height:160px; object-fit:contain; background:rgba(0,0,0,.18); border-radius:5px; }
+        .skin-card .skin-meta { color:var(--text-dim); font-size:12px; overflow-wrap:anywhere; }
+        .skin-actions { display:flex; gap:8px; flex-wrap:wrap; }
+        .skin-status { min-height:1.5em; }
+        @media(max-width:680px) { .skin-form { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+<div class="page">
+    <header class="topbar">
+        <a class="logo" href="index.html" aria-label="返回大厅"><span class="logo-seal">杀</span><span class="logo-text gold-text">三国杀酒馆</span></a>
+        <nav aria-label="主导航"><a href="index.html">大厅</a><a href="hero_manager.html">武将包</a><a href="skins.html" aria-current="page">本地皮肤</a><button class="icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button></nav>
+    </header>
+    <main>
+        <section class="result-hero"><h1 class="brush gold-text">本地武将皮肤</h1><p>图片保存在此浏览器的 IndexedDB，仅对当前设备和浏览器可见。你可以随时恢复默认立绘或删除本地资源。</p></section>
+        <section class="frame log-panel skin-panel" aria-labelledby="skinImportTitle">
+            <h2 id="skinImportTitle" class="section-title">导入并绑定</h2>
+            <div class="skin-form">
+                <label class="field"><span>武将 ID</span><input id="skinHeroId" list="skinHeroIds" maxlength="64" autocomplete="off" placeholder="例如 caocao"><datalist id="skinHeroIds"></datalist></label>
+                <label class="field"><span>选择本地图片</span><input id="skinFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+                <div class="skin-preview" id="skinPreview" aria-label="皮肤预览"><span class="muted">扫描并预览后显示图片</span></div>
+                <div class="skin-panel">
+                    <div id="skinFileInfo" class="muted">支持 PNG、JPEG、WebP；最大 2 MiB，宽高各 64–2048 像素。</div>
+                    <div class="skin-actions"><button id="scanSkinBtn" type="button" class="btn">扫描并预览</button><button id="importSkinBtn" type="button" class="btn primary" disabled>导入并应用</button></div>
+                    <div id="skinStatus" class="skin-status muted" role="status" aria-live="polite">尚未选择图片</div>
+                </div>
+            </div>
+        </section>
+        <section class="frame log-panel skin-panel" aria-labelledby="skinLibraryTitle">
+            <div class="log-toolbar"><h2 id="skinLibraryTitle" class="section-title">本地资源库</h2><button id="refreshSkinsBtn" type="button" class="btn small">刷新列表</button></div>
+            <label class="field"><span>将已有资源绑定到当前武将</span><select id="existingSkin"><option value="">没有已导入资源</option></select></label>
+            <div class="skin-actions"><button id="bindSkinBtn" type="button" class="btn" disabled>绑定选中资源</button><button id="resetSkinBtn" type="button" class="btn danger">恢复默认立绘</button></div>
+            <div id="skinLibrary" class="skin-grid"><p class="muted">正在读取本地资源…</p></div>
+        </section>
+    </main>
+</div>
+<script src="js/sgs_common.js?v=20261020f1"></script>
+<script src="js/local_skins.js?v=20261020f1"></script>
+<script src="js/skins_manager.js?v=20261020f1"></script>
+</body>
+</html>

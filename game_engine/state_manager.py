@@ -12,6 +12,7 @@ import json
 import logging
 
 from .deck_manager import DeckManager
+from .mode_registry import get_mode
 
 
 logger = logging.getLogger(__name__)
@@ -161,6 +162,10 @@ class GameState:
     def init_game(self, config: Dict):
         """初始化游戏"""
         self.game_config = config
+        # 内存试验可注入独立 RNG，避免 HTTP 试跑推进正式对局共用的全局随机流。
+        # 正式配置不提供该内部字段时保持原有 random 模块行为。
+        candidate_rng = config.get("_rng")
+        self._rng = candidate_rng if callable(getattr(candidate_rng, "shuffle", None)) else random
         self.mode = config.get('mode', '5人身份局')
         
         # 初始化玩家
@@ -237,7 +242,7 @@ class GameState:
 
     def shuffle_deck(self):
         """洗牌"""
-        random.shuffle(self.deck)
+        self._rng.shuffle(self.deck)
 
     def refill_deck_if_empty(self) -> bool:
         """摸牌堆为空时把弃牌堆洗成新的摸牌堆；返回摸牌堆此刻是否有牌。
@@ -252,9 +257,9 @@ class GameState:
     
     def _deal_cards(self):
         """发牌"""
+        initial_hand = get_mode(self.mode).initial_hand
         for player in self.players:
-            # 每人发4张牌
-            for _ in range(4):
+            for _ in range(initial_hand):
                 if self.deck:
                     player.hand.append(self.deck.pop(0))
     

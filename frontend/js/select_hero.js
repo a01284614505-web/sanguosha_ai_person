@@ -1,4 +1,4 @@
-// 选将页：读取 /data/heroes.json（与 data/heroes.json 同源），选中后写回开局配置并进入对局。
+// 选将页：读取内置/已启用武将包中的武将，选中后写回开局配置并进入对局。
 // 单击选中、双击直接出战；右侧显示武将全部技能。
 (function () {
     'use strict';
@@ -82,7 +82,7 @@
         render();
     });
 
-    SGS.fetchJSON('/data/heroes.json').then(data => {
+    SGS.fetchJSON('/api/heroes').then(data => {
         heroes = Array.isArray(data) ? data : (data.heroes || []);
         render();
         const cfg = readConfig();

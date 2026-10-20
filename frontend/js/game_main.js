@@ -44,6 +44,8 @@
         phase: { playerId: null, phase: '', skipped: new Set() },  // 阶段栏
         animQueue: Promise.resolve(),   // 出牌/判定动画串行队列
         ended: false,
+        postDeathMode: 'player',
+        postDeathPending: '',
         trustee: null,
         idleSince: 0,
         idleWarningTimer: null,
@@ -1301,7 +1303,55 @@
         renderHand();
         renderActionBar();
         renderShownPool();
+        renderPostDeath();
     }
+
+    function renderPostDeath() {
+        const info = G.state && G.state.post_death;
+        const modal = document.getElementById('postDeathModal');
+        if (!modal) return;
+        if (info && info.mode === 'spectator') G.postDeathMode = 'spectator';
+        const spectator = G.postDeathMode === 'spectator';
+        document.body.classList.toggle('spectator-mode', spectator);
+        const available = !!(info && info.available) && !G.ended && !spectator;
+        if (available && !modal.open) modal.showModal();
+        if ((!available || spectator) && modal.open) modal.close();
+        ['postDeathSpectate', 'postDeathBackground', 'postDeathEnd'].forEach(id => {
+            const button = document.getElementById(id);
+            if (button) button.disabled = !!G.postDeathPending;
+        });
+    }
+
+    function postDeathAction(action) {
+        if (G.postDeathPending || G.ended || G.postDeathMode === 'spectator') return;
+        G.postDeathPending = action;
+        document.getElementById('postDeathStatus').textContent = action === 'end' ? '正在结束本局，等待结算…' : '正在提交选择…';
+        renderPostDeath();
+        gameClient.send({ type: Protocol.INBOUND.POST_DEATH_ACTION, action: action });
+    }
+
+    gameClient.onPostDeathActionResult = function (data) {
+        G.postDeathPending = '';
+        if (data.status === 'accepted' && data.action === 'spectate') {
+            G.postDeathMode = 'spectator';
+            G.turn = null; G.sel = null;
+            if (G.req) { G.req = null; clearInterval(G.reqTimer); }
+            clearIdleWatch();
+            document.getElementById('postDeathStatus').textContent = '观战已开启。你只能查看公开战况，席间聊天和战报仍可使用。';
+            toast('已进入只读观战');
+            renderAll();
+        } else if (data.status === 'accepted' && data.action === 'background') {
+            gameClient.autoReconnect = false;
+            store.sset('activeGame', null);
+            store.sset('postDeathNotice', '对局已转入后台结算；结算后可在战绩页查看。现在可以在大厅开始新局。');
+            window.location.href = 'index.html';
+        } else if (data.status === 'accepted' && data.action === 'end') {
+            document.getElementById('postDeathStatus').textContent = '结束请求已受理，正在等待正式结算…';
+        } else {
+            document.getElementById('postDeathStatus').textContent = '对局已结束，请等待结算结果。';
+            renderPostDeath();
+        }
+    };
 
     // ------------------------------------------------------------------ 五谷丰登展示池
     // 亮出的牌全桌可见：谁取走了哪张、轮到谁挑都由引擎在 state.shown_pool 里下发。
@@ -1423,6 +1473,7 @@
     gameClient.onStateUpdate = function (s) {
         const prevMap = G.prev;
         G.state = s;
+        if (s.post_death && s.post_death.mode === 'spectator') G.postDeathMode = 'spectator';
         G.players = s.players || [];
         if (s.chat_level) window.currentChatLevel = s.chat_level;
         syncShownPool(s);
@@ -1516,6 +1567,27 @@
                 ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '发动【' + data.skill_name + '】'));
                 if (Number.isInteger(data.actor_id)) skillShout(data.actor_id, data.skill_name || '');
                 return;
+            case 'skill_decision': {
+                const decisions = { accepted: '接受发动', declined: '拒绝发动' };
+                const reasons = {
+                    selection_resolved: '已完成选择',
+                    selection_cancelled: '主动取消',
+                    selection_rejected: '选择未生效'
+                };
+                const kinds = { confirm: '发动', choose_players: '选角色', choose_cards: '选牌', choose_option: '选项' };
+                const fallback = (data.actor_name || '角色') + (decisions[data.decision] || '处理了') +
+                    '【' + (data.skill_name || '技能') + '】的' + (kinds[data.selection_kind] || '选择') +
+                    '机会 · ' + (reasons[data.reason] || '未提供原因');
+                ChatPanel.addLog(data.message || fallback, 'skill-decision');
+                return;
+            }
+            case 'dying_rescue': {
+                const provider = playerById(data.provider_id);
+                const target = playerById(data.target_id);
+                ChatPanel.addLog(data.message || (((provider && provider.name) || '角色') + '使用【' +
+                    (data.card_name || '桃') + '】救援' + ((target && target.name) || '濒死角色')), 'important');
+                return;
+            }
             default:
                 if (data.message) {
                     ChatPanel.addLog(data.message, data.important ? 'important' : (data.trustee ? 'bad' : ''));
@@ -1676,6 +1748,12 @@
     };
 
     gameClient.onError = function (data) {
+        if (G.postDeathPending) {
+            G.postDeathPending = '';
+            const status = document.getElementById('postDeathStatus');
+            if (status) status.textContent = data.message || '操作未受理，请重试。';
+            renderPostDeath();
+        }
         const msg = data.message || '服务器错误';
         ChatPanel.addLog(msg, 'bad');
         toast(msg, { bad: true, ms: 3000 });
@@ -1952,6 +2030,9 @@
         document.getElementById('cancelBtn').addEventListener('click', onCancel);
         document.getElementById('peekLog').addEventListener('click', () => ChatPanel.open('log'));
         document.getElementById('endBtn').addEventListener('click', onEnd);
+        document.getElementById('postDeathSpectate').addEventListener('click', () => postDeathAction('spectate'));
+        document.getElementById('postDeathBackground').addEventListener('click', () => postDeathAction('background'));
+        document.getElementById('postDeathEnd').addEventListener('click', () => postDeathAction('end'));
         document.getElementById('quitBtn').addEventListener('click', quitGame);
         document.getElementById('sbtn').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
         document.getElementById('trusteeBtn').addEventListener('click', openTrusteeDialog);

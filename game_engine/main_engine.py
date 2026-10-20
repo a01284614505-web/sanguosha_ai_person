@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Set, Tuple
 
-from .state_manager import Card, GameState, Player, Phase, card_to_dict
+from .state_manager import Card, GameState, Player, PlayerStatus, Phase, card_to_dict
 from .phase_controller import PhaseController
 from .skill_manager import SkillManager
 from .card_system import CardSystem, make_pass_option, option_label
@@ -32,6 +32,8 @@ from .cognitive_notes import CognitiveNotes
 from .seats import seat_of
 from .chat_facts import contradiction
 from .prompt_trace import redact
+from .public_situation import build_public_situation
+from .mode_registry import get_mode, supported_modes
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +72,8 @@ class MainEngine:
         stats = SkillManager().registration_stats()
         return {
             "engine": "MainEngine-v2",
-            "supported_modes": ["5人身份局"],
+            "supported_modes": [row["id"] for row in supported_modes()],
+            "modes": supported_modes(),
             "hero_count": registry.count(),
             "worldbook_hero_count": registry.count(),
             "generated_skill_count": stats["total_classes"],
@@ -312,6 +315,11 @@ class MainEngine:
         if self.game_aborted:
             return
         player = self.game_state.current_player
+        # 判定牌或技能已经决定跳过的阶段不属于“阶段开始/结束”。先消费
+        # 公共 skip 标记，避免英姿、闭月及 DSL phase hooks 在跳过阶段误触发。
+        if phase in self.phase_controller.skip_phases:
+            await self.phase_controller.execute_phase(phase)
+            return
         before_discard = len(self.game_state.discard_pile)
         before_hand = list(player.hand)
         skill_result = await self.skill_manager.before_phase(player, phase)
@@ -470,9 +478,10 @@ class MainEngine:
         if not assigned:
             raise ValueError(f"当前引擎暂不支持该模式或人数不匹配: {self.game_state.mode}/{len(self.game_state.players)}人")
 
-        lord = assigned["lord"]
-        lord.max_hp += 1
-        lord.hp += 1
+        mode = get_mode(self.game_state.mode)
+        lord = assigned[mode.first_player_identity]
+        lord.max_hp += mode.lord_hp_bonus
+        lord.hp += mode.lord_hp_bonus
         self.game_state.current_player_index = self.game_state.players.index(lord)
         self.game_state.current_player = lord
         self.game_state.round_anchor_index = self.game_state.current_player_index
@@ -503,17 +512,19 @@ class MainEngine:
                     self.game_state.next_turn()
                     continue
 
-                await self.skill_manager.on_turn_start(player)
-                if player.is_ai:
-                    await self._ai_turn(player)
-                else:
-                    await self._human_turn(player)
+                if not await self._consume_turned_over_turn(player):
+                    await self.skill_manager.on_turn_start(player)
+                    if player.is_ai:
+                        await self._ai_turn(player)
+                    else:
+                        await self._human_turn(player)
 
                 if self.game_state.game_over:
                     break
 
                 self.completed_turns += 1
-                victory = self.identity_system.check_victory(self.game_state.players)
+                victory = self.identity_system.check_victory(
+                    self.game_state.players, self.game_state.mode)
                 if victory.get("game_over"):
                     self.game_state.game_over = True
                     self.game_state.winner = victory.get("winner")
@@ -544,7 +555,24 @@ class MainEngine:
 
     # ---------- 玩家回合 ----------
 
+    async def _consume_turned_over_turn(self, player: Player) -> bool:
+        """翻回正面并跳过整个回合；不派发任一阶段或技能钩子。"""
+        if player.status != PlayerStatus.TURNED:
+            return False
+        player.status = PlayerStatus.NORMAL
+        self.phase_controller.skip_phases.clear()
+        self.skill_manager.reset_turn_scope(player)
+        player.sha_count = 0
+        player.jiu_used_this_turn = False
+        player.jiu_buff = False
+        await self.log_event(f"{player.name}翻回正面并跳过本回合", player_id=player.id)
+        if not self.game_aborted:
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        return True
+
     async def _ai_turn(self, player: Player):
+        if await self._consume_turned_over_turn(player):
+            return
         logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
@@ -641,6 +669,8 @@ class MainEngine:
         self.chat_director.on_dying(player)
 
     async def _human_turn(self, player: Player):
+        if await self._consume_turned_over_turn(player):
+            return
         logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
@@ -891,12 +921,24 @@ class MainEngine:
             full_choice = self.ai_decision.format_action(choice, self.game_state)
         else:
             full_choice = choice.get("type", "") if isinstance(choice, dict) else ("放弃" if choice is None else str(choice)[:100])
+        public_situation = build_public_situation(self)
+        situation_version = public_situation["state_version"]
+        fallback_reason = failure or (None if meta.get("model") else "rules_no_provider")
         # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。
         self.decision_log.append({
             "seq": self.next_log_seq(), "round": self.game_state.round_number, "player_id": player.id, "player_name": player.name,
             "kind": kind, "model": meta.get("model"), "reason": private_reason[:1000],
             "choice": str(full_choice)[:200], "validation": validation,
             "elapsed_ms": meta.get("elapsed_ms"),
+            "prompt_tokens": meta.get("prompt_tokens"),
+            "cached_tokens": meta.get("cached_tokens"),
+            "completion_tokens": meta.get("completion_tokens"),
+            "situation_version": situation_version,
+            "selection_kind": kind,
+            "candidates_summary": f"{kind}：{int(candidate_count)} 个引擎候选",
+            "chosen_summary": str(full_choice)[:200],
+            "validation_status": validation,
+            "fallback_reason": fallback_reason,
         })
         if not reason:
             reason = "模型结果已由引擎复核" if meta.get("model") and not failure else "按规则选择合法候选"
@@ -909,9 +951,14 @@ class MainEngine:
             player_id=player.id, player_name=player.name, kind=kind,
             source="trustee" if own_decision else "rules" if failure or not meta.get("model") else "model",
             model=meta.get("model"), elapsed_ms=meta.get("elapsed_ms"),
-            prompt_tokens=meta.get("prompt_tokens"), completion_tokens=meta.get("completion_tokens"),
+            prompt_tokens=meta.get("prompt_tokens"), cached_tokens=meta.get("cached_tokens"),
+            completion_tokens=meta.get("completion_tokens"),
             candidate_count=int(candidate_count),
             candidate_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
+            situation_version=situation_version, selection_kind=kind,
+            candidates_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
+            chosen_summary=str(final_choice)[:200], validation_status=validation,
+            fallback_reason=fallback_reason,
             worldbook_hits=meta.get("worldbook_hits") or [], reason=reason[:200],
             final_choice=final_choice, validation=validation,
             cheat=bool(self.cheat_mode and player.is_ai and private_reason),
@@ -1048,6 +1095,7 @@ class MainEngine:
             player_id=player.id,
             kind=request.get("kind", "respond"),
             status=status,
+            skill_name=request.get("skill_name"),
         )
 
     def _new_effect_context(self, player: Player, card, *, skill_source=None, card_cost_ids=None, target=None):
@@ -1116,7 +1164,11 @@ class MainEngine:
             return {"bool": False}
         as_name = option.get("as_name") or card.name
         requested = request.get("requested_name")
-        if requested and as_name != requested:
+        allowed_names = request.get("allowed_names")
+        if allowed_names and as_name not in allowed_names:
+            logger.info(f"  ❌ 响应复核失败：候选只允许{allowed_names}，实际给的是【{as_name}】")
+            return {"bool": False}
+        if not allowed_names and requested and as_name != requested:
             logger.info(f"  ❌ 响应复核失败：需要【{requested}】，候选给的是【{as_name}】")
             return {"bool": False}
         return {
@@ -1598,6 +1650,21 @@ class MainEngine:
             "candidate_version": request.get("candidate_version"),
         })
         await self._emit_selection_result(player, request, status)
+        skill_name = request.get("skill_name")
+        if skill_name and not self.game_aborted:
+            accepted = bool(result.get("bool"))
+            await self.log_event(
+                f"{player.name}{'接受' if accepted else '拒绝'}【{skill_name}】的{request.get('kind', '选择')}机会",
+                event_kind="skill_decision",
+                actor_id=player.id,
+                actor_name=player.name,
+                skill_name=skill_name,
+                decision="accepted" if accepted else "declined",
+                reason=("selection_resolved" if accepted else
+                        "selection_cancelled" if status == "cancelled" else
+                        "selection_rejected"),
+                selection_kind=request.get("kind", "confirm"),
+            )
         if (player.is_ai or trustee_request or input_status in {"timeout", "trustee"}) and not self.game_aborted:
             await self._emit_decision_trace(
                 player, request.get("kind", "confirm"), len(request.get("options") or []),

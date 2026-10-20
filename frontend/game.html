@@ -7,7 +7,7 @@
     <title>三国杀酒馆 · 对局</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="css/sgs.css?v=20261018c">
-    <link rel="stylesheet" href="css/game.css?v=20261018p5">
+    <link rel="stylesheet" href="css/game.css?v=20261020e1">
 </head>
 <body class="game-page">
 <div class="battle" id="battle">
@@ -59,6 +59,19 @@
                 <button class="btn primary" id="endBtn" type="button" disabled>结束出牌</button>
             </div>
         </div>
+
+    <dialog class="sgs-dialog post-death-dialog" id="postDeathModal" aria-labelledby="postDeathTitle">
+        <div class="frame dialog-body">
+            <h2 id="postDeathTitle" class="brush gold-text">你已阵亡</h2>
+            <p class="muted">你可以继续观看公开战况，离席后让对局在后台结算，或结束本局。</p>
+            <p id="postDeathStatus" class="post-death-status" role="status" aria-live="polite"></p>
+            <div class="post-death-actions">
+                <button class="btn" id="postDeathSpectate" type="button">继续观战</button>
+                <button class="btn confirm" id="postDeathBackground" type="button">后台结算</button>
+                <button class="btn danger" id="postDeathEnd" type="button">结束本局</button>
+            </div>
+        </div>
+    </dialog>
     </div>
 
     <!-- 自己的区域 -->
@@ -158,11 +171,12 @@
 
 <script src="js/protocol.js?v=20261018c"></script>
 <script src="js/card_info.js?v=20261018c"></script>
-<script src="js/sgs_common.js?v=20261018c"></script>
+<script src="js/sgs_common.js?v=20261020f1"></script>
+<script src="js/local_skins.js?v=20261020f1"></script>
 <script src="js/audio.js?v=20261018c"></script>
-<script src="js/ws_client.js?v=20261018c"></script>
+<script src="js/ws_client.js?v=20261020e1"></script>
 <script src="js/global_settings.js?v=20261018c"></script>
 <script src="js/chat_panel.js?v=20261018c"></script>
-<script src="js/game_main.js?v=20261018p5"></script>
+<script src="js/game_main.js?v=20261020e1"></script>
 </body>
 </html>

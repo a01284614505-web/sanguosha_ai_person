@@ -436,7 +436,12 @@ class WuSkillHandler(FactionSkillHandler):
         lord = next((p for p in self.state.players if p.alive and p.identity == "lord" and self.has(p, "救援")), None)
         if not lord or player.hp < lord.hp or lord.hp >= lord.max_hp:
             return
-        use = await self.manager.ask_confirm(player, f"是否发动【救援】改为令主公{lord.name}回复？", skill_name="救援", default=False)
+        use = await self.manager.ask_confirm(
+            player, f"是否发动【救援】改为令主公{lord.name}回复？",
+            skill_name="救援",
+            context={"beneficiary": lord, "intent": "benefit", "cost": "redirect_recovery"},
+            default=False,
+        )
         if not use or self._finished():
             return
         before_player = player.hp

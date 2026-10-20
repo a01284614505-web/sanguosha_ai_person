@@ -29,6 +29,8 @@ sanguosha_ai_person/
 │   ├── ai_decision.py          # 多 Provider 决策与会话缓存
 │   ├── chat_engine.py          # 聊天生成骨架
 │   ├── skill_manager.py        # 技能注册与统一调度
+│   ├── skill_dsl.py            # 受限 JSON 技能 DSL 编译与运行
+│   ├── hero_package_store.py   # 武将包校验、原子保存、备份与恢复
 │   ├── skill_runtime_core.py   # 技能运行时基础类型
 │   ├── skills_generated.py     # 27 将技能定义
 │   ├── game_stats.py           # 真实对局统计（7 项指标口径与 MVP）
@@ -170,13 +172,22 @@ PYTHONIOENCODING=utf-8 python -m pytest -q --tb=no -p no:cacheprovider
 | 结算统计 | 引擎产出 7 项真实统计与 MVP（`game_stats.py`），随 `game_end` 下发，`result.js` 渲染真实数据 |
 | 托管 | 默认连接、复制场上 AI 连接、单独配置及规则脚本四种来源已接入；真实外部 Provider API 待凭据验收 |
 | 武将导入 | `hero_manager.html` 为 UI 空壳，后端无导入 API |
-### 7.3 本轮验收入口
+
+### 7.3 Stage 8：自定义武将 DSL 与包导入
+
+`hero_package_store.py` 校验自定义武将包后，以原子替换提交包注册表与世界书源文件，并保存可校验恢复的备份。新对局从当前启用包构建将池；已创建对局保留自己的武将快照。`game_server.py` 暴露导入、包启禁、转换和备份恢复接口，前端管理页只提交操作并展示服务端结果。
+
+导入技能的 `implementation_status` 决定运行边界：`data_only` 只保留数据，`partial` 可显示但不进入主动或事件结算，`active` 才能进入动作与 DSL hook。DSL 编译器只接受 JSON 白名单，不提供 Python、文件或网络入口；`card_as` 仍经引擎规则校验。执行时使用共享 100 步预算与重入保护，运行超限禁用对应技能实例，不中断整局。
+
+语法及边界见 [`SKILL_DSL.md`](SKILL_DSL.md)。33/54 是带完整语义映射且可编译的表达性清单；英姿、闭月、克己、替身、连营另有 Python 行为等价测试。表达性清单不代表 33 项都已做同技能 parity 测试。
+
+### 7.4 本轮验收入口
 B2–B4 已有代表机制实现；B5–B7 的当前状态、未签收规则及浏览器场景以本轮交接日志为准。固定种子五人局批量入口：`.venv/bin/python -m scripts.verify_b7_games`（三套牌堆各十局，检查胜负终结、非法操作及每张实体牌守恒）。完整回归及两项 WebSocket 冒烟仍由 `scripts/verify_project.py` 提供。
 
 6A 交互原语层与选牌消费者补全已完成（2026-09-13 / 2026-10-03），详见
 [Stage 6A](logs/handover/20260913_0000_Stage6A交互原语层.md) 与
 [选牌流程完善与对局统计](logs/handover/20261003_1855_选牌流程完善与对局统计.md)。
-### 7.4 验收工具提示
+### 7.5 验收工具提示
 `ws_diag_smoke.py`（带动画 ACK、多选应答与结算统计输出）仍是首选自驱冒烟入口；
 `ws_engine_smoke.py` 的 `type:"response"` 缺失与多选应答已于 2026-10-03 修复。
 当前完成状态以 `logs/handover/` 最新交接及真实测试输出为准；`logs/CHRONICLE.md` 的早期章节只代表当时记录。

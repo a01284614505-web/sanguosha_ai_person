@@ -10,7 +10,8 @@
     <link rel="stylesheet" href="css/pages.css?v=20261018c">
     <!-- 主题脚本放在 head：先于页面渲染应用暖纸/夜墨，避免闪烁 -->
     <script src="js/card_info.js?v=20261018c"></script>
-    <script src="js/sgs_common.js?v=20261018c"></script>
+    <script src="js/sgs_common.js?v=20261020f1"></script>
+    <script src="js/local_skins.js?v=20261020f1"></script>
 </head>
 <body>
 <div class="page">
@@ -22,6 +23,7 @@
         <nav aria-label="主导航">
             <a href="index.html" aria-current="page">大厅</a>
             <a href="handbook.html">图鉴</a>
+            <a href="skins.html">本地皮肤</a>
             <a href="history.html">历史</a>
             <a href="settings.html">设置</a>
             <button class="icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button>
@@ -49,9 +51,9 @@
                     </div>
                 </div>
                 <div class="hall-art" aria-hidden="true">
-                    <div class="portrait p1"><img src="assets/heroes/caocao.jpg" alt=""></div>
-                    <div class="portrait p2"><img src="assets/heroes/liubei.jpg" alt=""></div>
-                    <div class="portrait p3"><img src="assets/heroes/sunquan.jpg" alt=""></div>
+                    <div class="portrait p1"><img src="assets/heroes/caocao.jpg" data-default-src="assets/heroes/caocao.jpg" data-hero-id="caocao" alt=""></div>
+                    <div class="portrait p2"><img src="assets/heroes/liubei.jpg" data-default-src="assets/heroes/liubei.jpg" data-hero-id="liubei" alt=""></div>
+                    <div class="portrait p3"><img src="assets/heroes/sunquan.jpg" data-default-src="assets/heroes/sunquan.jpg" data-hero-id="sunquan" alt=""></div>
                 </div>
             </section>
 
@@ -152,6 +154,6 @@
 
 <script src="js/protocol.js?v=20261018c"></script>
 <script src="js/global_settings.js?v=20261018c"></script>
-<script src="js/lobby.js?v=20261018p5"></script>
+<script src="js/lobby.js?v=20261020e1"></script>
 </body>
 </html>

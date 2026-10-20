@@ -17,6 +17,7 @@ from typing import Dict, Iterable, List, Optional
 
 from .game_history import validate_profile_id
 from .prompt_trace import redact
+from .public_situation import build_public_situation
 from .token_usage import USAGE_KINDS, empty_bucket
 
 LOG_SCHEMA = 1
@@ -68,6 +69,22 @@ def _token_usage_summary(engine) -> List[Dict]:
     return rows
 
 
+def _animation_summary(engine) -> Dict:
+    metrics = dict(getattr(engine, "animation_metrics", None) or {})
+    awaited = int(metrics.get("awaited", 0))
+    acked = int(metrics.get("acked", 0))
+    total = float(metrics.get("total_ack_ms", 0.0))
+    return {
+        "awaited": awaited,
+        "acked": acked,
+        "timed_out": int(metrics.get("timed_out", 0)),
+        "no_viewer": int(metrics.get("no_viewer", 0)),
+        "ack_rate": (acked / awaited) if awaited else None,
+        "mean_ack_ms": round(total / acked, 2) if acked else None,
+        "max_ack_ms": round(float(metrics.get("max_ack_ms", 0.0)), 2) if acked else None,
+    }
+
+
 def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
     """从引擎与 game_end 载荷组装日志。只读，不改引擎状态。"""
     state = game_end.get("state") or {}
@@ -117,6 +134,9 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "chat": list(getattr(engine, "chat_log", []))[-1000:],
         "decisions": decisions[-2000:],
         "token_usage": _token_usage_summary(engine),
+        "animation_diagnostics": _animation_summary(engine),
+        "public_situation": (build_public_situation(engine)
+                             if getattr(engine, "game_state", None) is not None else None),
         # 行为账本流水（Stage T · T1）：均为公开事实，不含手牌区牌名与任何隐藏信息。
         "ledger": ledger.snapshot() if ledger is not None else [],
         # 认知笔记快照（Stage T · T2）：每个模型 AI 每轮一份，非作弊局也写（对局结束后才落盘，不影响游戏体验）。

@@ -1,0 +1,59 @@
+F1 local skin browser acceptance
+Date: 2026-10-20 UTC
+Command: PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright python3 scripts/manual/local_skins_browser_check.py
+Result: PASS (isolated temporary server and browser profile)
+Coverage: actual browser imports two generated PNGs; rebinds existing resource; checks both mappings after refresh; rejects corrupt PNG and >2 MiB file; restores built-in portrait; deletes shared resource and verifies mappings cleared; no pageerror.
+Storage: browser IndexedDB only; no server-side asset writes.
+Output:
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /skins.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /css/sgs.css?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /css/pages.css?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /js/sgs_common.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /js/local_skins.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /js/skins_manager.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:27] "GET /api/heroes HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /css/sgs.css?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /js/card_info.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /css/pages.css?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /assets/heroes/caocao.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /assets/heroes/liubei.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /assets/heroes/sunquan.jpg HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /js/protocol.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /js/global_settings.js?v=20261018c HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /js/lobby.js?v=20261018p5 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/history?profile_id=8bcf1e46_e60c_43fe_aa39_bc9ddee06750 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/decks HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/ai-players?profile_id=8bcf1e46_e60c_43fe_aa39_bc9ddee06750 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /index.html HTTP/1.1" 304 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/ai-players?profile_id=8bcf1e46_e60c_43fe_aa39_bc9ddee06750 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/decks HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/history?profile_id=8bcf1e46_e60c_43fe_aa39_bc9ddee06750 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:28] "GET /api/heroes HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:29] "GET /js/protocol.js?v=20261018c HTTP/1.1" 304 -
+127.0.0.1 - - [20/Oct/2026 00:07:29] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:29] "GET /api/history?profile_id=8bcf1e46_e60c_43fe_aa39_bc9ddee06750 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:29] "GET /api/decks HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:29] "GET /api/ai-players?profile_id=8bcf1e46_e60c_43fe_aa39_bc9ddee06750 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:07:29] "GET /api/heroes HTTP/1.1" 200 -
+{
+  "check": "LOCAL_SKINS_BROWSER_OK",
+  "mapping_ids": [
+    "4630b88faba44993b757567b4507c375",
+    "2f37cfbc41334cd2b636d2cc55a50b02"
+  ],
+  "switched_to": "4630b88faba44993b757567b4507c375",
+  "persisted_after_refresh": [
+    "caocao",
+    "liubei"
+  ],
+  "rejected": [
+    "corrupt PNG",
+    "over 2 MiB"
+  ],
+  "restored_default": true,
+  "deleted_mapping_cleared": true,
+  "page_errors": []
+}

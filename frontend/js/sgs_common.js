@@ -210,10 +210,25 @@
     function heroImgHTML(heroId, name, cls) {
         const fallback = esc(String(name || '?').replace(/^界/, '').charAt(0) || '?');
         if (!heroId) return '<div class="hero-fallback ' + esc(cls || '') + '">' + fallback + '</div>';
-        return '<img class="' + esc(cls || '') + '" src="' + heroImageURL(heroId) + '" alt="' + esc(name || '') +
-            '" data-fallback="' + fallback + '" loading="lazy" onerror="SGS.imgFallback(this)">';
+        const imageURL = heroImageURL(heroId);
+        return '<img class="' + esc(cls || '') + '" src="' + imageURL + '" data-default-src="' + imageURL + '" alt="' + esc(name || '') +
+            '" data-hero-id="' + esc(heroId) + '" data-fallback="' + fallback + '" loading="lazy" onerror="SGS.imgFallback(this)">';
     }
     function imgFallback(img) {
+        const localSkins = global.LocalHeroSkins;
+        const heroId = img && img.dataset && img.dataset.heroId;
+        if (heroId && localSkins && !img.dataset.skinFallbackChecked) {
+            img.dataset.skinFallbackChecked = '1';
+            localSkins.getHeroImageURL(heroId).then(url => {
+                if (url && img.isConnected) { img.src = url; return; }
+                replaceWithHeroFallback(img);
+            }).catch(() => replaceWithHeroFallback(img));
+            return;
+        }
+        replaceWithHeroFallback(img);
+    }
+    function replaceWithHeroFallback(img) {
+        if (!img || !img.isConnected) return;
         const div = document.createElement('div');
         div.className = 'hero-fallback ' + (img.className || '');
         div.textContent = img.dataset.fallback || '?';

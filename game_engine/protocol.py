@@ -13,7 +13,7 @@ PROTOCOL_VERSION = "1.0"
 
 
 class INBOUND:
-    """前端 → 服务器（WebSocket 入站消息类型，11 种）。"""
+    """前端 → 服务器（WebSocket 入站消息类型，12 种）。"""
 
     CREATE_GAME = "create_game"
     PLAYER_ACTION = "player_action"
@@ -28,10 +28,12 @@ class INBOUND:
     RESUME_GAME = "resume_game"
     # 对局中修改设置：{"settings": {"chat_level": "quiet" | "normal" | "lively"}}；本批只放行 chat_level。
     UPDATE_SETTINGS = "update_settings"
+    # 真人阵亡后明确选择：留桌观战、回大厅后台结算、结束本局。
+    POST_DEATH_ACTION = "post_death_action"
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，22 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，23 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -59,6 +61,7 @@ class OUTBOUND:
     COGNITIVE_NOTES = "cognitive_notes"
     # 仅作弊局下发公开事实冲突，不进入桌面聊天。
     CHAT_REJECTED = "chat_rejected"
+    POST_DEATH_ACTION_RESULT = "post_death_action_result"
 
 
 class ENGINE_EVENT:

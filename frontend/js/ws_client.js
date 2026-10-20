@@ -153,6 +153,9 @@ class GameClient {
             case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
                 break;
+            case Protocol.OUTBOUND.POST_DEATH_ACTION_RESULT:
+                if (this.onPostDeathActionResult) this.onPostDeathActionResult(data);
+                break;
             case Protocol.OUTBOUND.ERROR:
                 console.error('[服务器错误]', data.message);
                 if (this.onError) this.onError(data);
@@ -224,6 +227,7 @@ GameClient.prototype.onTrusteeStatus = null;
 GameClient.prototype.onDecisionTrace = null;
 GameClient.prototype.onCognitiveNotes = null;
 GameClient.prototype.onEndGameAccepted = null;
+GameClient.prototype.onPostDeathActionResult = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;
 GameClient.prototype.onGameCreated = null;

@@ -17,6 +17,11 @@ from .card_table import CARD_TABLE, card_label
 from .card_text import CARD_TEXT, NATURE_CARD_TEXT
 from .hero_registry import HeroRegistry
 from .protocol import PROVIDERS
+from .public_situation import (
+    build_private_situation,
+    build_public_situation,
+    compact_public_situation,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -71,9 +76,17 @@ class WorldbookManager:
         hero = next((h for h in self.cache.get("heroes", []) if h.get("id") == hero_id), None)
         if not hero:
             return ""
-        lines = [f"【{hero['name']}】{hero['faction']}势力，{hero['max_hp']}点体力", "你的技能："]
+        worldbook = hero.get("worldbook") if isinstance(hero.get("worldbook"), dict) else {}
+        summary = worldbook.get("summary") or f"【{hero['name']}】{hero['faction']}势力，{hero['max_hp']}点体力"
+        lines = [summary, "你的技能："]
         for skill in hero.get("skills", []):
             lines.append(f"- 【{skill['name']}】{skill.get('worldbook', skill.get('description', ''))}")
+        if worldbook.get("usage_tips"):
+            lines.append("使用提示：" + str(worldbook["usage_tips"]))
+        if worldbook.get("combos"):
+            lines.append("配合：" + "；".join(map(str, worldbook["combos"])))
+        if worldbook.get("counters"):
+            lines.append("应对：" + "；".join(map(str, worldbook["counters"])))
         return "\n".join(lines)
 
     def get_phase_worldbook(self, phase: str) -> str:
@@ -102,7 +115,7 @@ class WorldbookManager:
             "【三国杀通用规则】",
             "- 回合流程：准备 → 判定 → 摸牌 → 出牌 → 弃牌 → 结束。",
             "- 出牌阶段每回合限用1张【杀】（技能可突破）；手牌上限等于当前体力值。",
-            "- 体力降到0进入濒死，按座次逐个询问是否使用【桃】；无人施救即阵亡。",
+            "- 体力降到0进入濒死，按座次逐个询问救援；濒死者本人可使用【桃】或【酒】，其他角色只能使用【桃】；无人施救即阵亡。",
             "- 身份局胜负：主公与忠臣需杀光反贼与内奸；反贼杀死主公即胜；内奸需最后与主公单挑取胜。",
             "- 身份奖惩：任何角色杀死反贼后摸3张牌；主公杀死忠臣须弃置所有手牌和装备区的牌。",
             "- 属性伤害：火【杀】/雷【杀】、【火攻】、【闪电】造成属性伤害；处于连环状态的角色受到属性伤害时，"
@@ -227,11 +240,14 @@ class AIDecision:
         self._chat_seen: Dict[int, int] = {}
         self.notes_diagnostics: List[Dict] = []
         self.plans: Dict[int, Dict[str, str]] = {}
+        self.last_situation_versions: Dict[int, str] = {}
         # 本地随机选择用的随机源；测试可换成固定种子的 random.Random。
         self.rng = random
         config = getattr(game_engine, "game_config", {}) or {}
         self.session_max_l2 = int(config.get("session_max_l2", 24))
         self.session_max_chars = int(config.get("session_max_chars", 12000))
+        variable_limit = config.get("session_variable_max_chars")
+        self.session_variable_max_chars = int(variable_limit) if variable_limit is not None else None
         self.cache_stats_path = os.path.join(
             os.path.dirname(__file__), "..", "logs", "runtime", "ai_cache_stats.jsonl"
         )
@@ -276,6 +292,11 @@ class AIDecision:
     def _session_chars(session: Dict) -> int:
         return sum(len(m.get("content", "")) for m in session["messages"])
 
+    @staticmethod
+    def _variable_chars(session: Dict) -> int:
+        return sum(len(m.get("content", ""))
+                   for m in session["messages"][session["prefix_len"]:])
+
     def maybe_compress(self, session: Dict):
         """超限时**一次性**把最老的一批压成一条摘要并重建，而不是逐条滑窗删除（R12）。
 
@@ -284,7 +305,9 @@ class AIDecision:
         """
         over_count = session["l2_count"] >= self.session_max_l2
         over_chars = self._session_chars(session) > self.session_max_chars
-        if not (over_count or over_chars):
+        over_variable = (self.session_variable_max_chars is not None
+                         and self._variable_chars(session) > self.session_variable_max_chars)
+        if not (over_count or over_chars or over_variable):
             return False
 
         base = session["prefix_len"]
@@ -398,8 +421,10 @@ class AIDecision:
                 "model": player.ai_config.get("model"),
                 "elapsed_ms": round((time.perf_counter() - started) * 1000),
                 "prompt_tokens": (usage or {}).get("prompt_tokens"),
+                "cached_tokens": (usage or {}).get("cached_tokens"),
                 "completion_tokens": (usage or {}).get("completion_tokens"),
                 "worldbook_hits": self._public_worldbook_hits(player),
+                "situation_version": self.last_situation_versions.get(player.id),
             }
         self.push_assistant(player, reply)
         self._note_usage(player, kind, usage, failed=False)
@@ -424,6 +449,19 @@ class AIDecision:
             if phase:
                 hits.append(f"阶段规则：{phase}")
         return hits
+
+    def _authoritative_situation_block(self, player) -> str:
+        """Build the one current-state view shared by play/response/choice."""
+        public = build_public_situation(self.engine)
+        private = build_private_situation(self.engine, player)
+        self.last_situation_versions[player.id] = public["state_version"]
+        return (
+            "【引擎权威当前公开状态】\n"
+            + compact_public_situation(public)
+            + "\n【仅你可见的当前状态】\n"
+            + compact_public_situation(private)
+            + "\n若历史摘要与这里冲突，以本区块为准。"
+        )
 
     async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
         api_key = player.ai_config.get("api_key", "")
@@ -477,6 +515,7 @@ class AIDecision:
             situation = self.worldbook_manager.build_situation(player, self.engine.game_state, available_actions)
         else:
             situation = "内置世界书已在全局设置中关闭。"
+        situation = self._authoritative_situation_block(player) + "\n\n" + situation
 
         custom = self._custom_worldbook_text(player)
         if custom:
@@ -894,6 +933,7 @@ class AIDecision:
             situation = self.worldbook_manager.build_situation(player, self.engine.game_state, [])
         else:
             situation = "内置世界书已在全局设置中关闭。"
+        situation = self._authoritative_situation_block(player) + "\n\n" + situation
 
         options = request.get("options") or []
         option_lines = [f"{i}. {option_label(option)}" +
@@ -1029,9 +1069,37 @@ class AIDecision:
     def simple_choice_decision(self, player, request: Dict) -> List[int]:
         """四原语规则兜底，始终返回合法 List[int]。"""
         kind = request.get("kind", "confirm")
+        ablation = self.engine.game_config.get("ai_ablation") or {}
+        skill_strategy = ablation.get("skill_strategy", True) is not False
+        target_strategy = ablation.get("target_strategy", True) is not False
 
         if kind == "confirm":
             default = bool(request.get("default", False))
+            skill_name = request.get("skill_name")
+            context = request.get("context") or {}
+            if skill_strategy and skill_name in {
+                    "闭月", "奸雄", "天妒", "遗计", "集智"}:
+                # 这些技能没有资源成本；遗计的分配仍由后续选择单独决策。
+                return [0]
+            if skill_strategy and skill_name == "救援":
+                beneficiary = context.get("beneficiary")
+                beneficiary_identity = (beneficiary.get("identity") if isinstance(beneficiary, dict)
+                                        else getattr(beneficiary, "identity", None)
+                                        if getattr(beneficiary, "identity_revealed", False) else None)
+                if beneficiary_identity == "lord" and player.identity == "loyalist":
+                    return [0]
+                if beneficiary_identity == "lord" and player.identity == "spy":
+                    alive = sum(1 for candidate in self.engine.game_state.players if candidate.alive)
+                    return [0] if alive > 2 else [1]
+                return [1]
+            if skill_strategy and skill_name == "利驭":
+                source = context.get("source")
+                source_identity = (source.get("identity") if isinstance(source, dict)
+                                   else getattr(source, "identity", None)
+                                   if getattr(source, "identity_revealed", False) else None)
+                friendly = ({"lord", "loyalist"} if player.identity in {"lord", "loyalist"}
+                            else {player.identity})
+                return [0] if source_identity in friendly else [1]
             return [0] if default else [1]
 
         if kind == "choose_option":
@@ -1048,6 +1116,8 @@ class AIDecision:
             players_map = {public_field(p, "id"): p for p in all_players}
             min_n = request.get("min_n", 1)
             max_n = request.get("max_n", 1)
+            if not target_strategy:
+                return list(range(min(len(cand_ids), max_n))) if len(cand_ids) >= min_n else []
             known_friendly = {"lord", "loyalist"} if player.identity in ("lord", "loyalist") else {player.identity}
             known_enemy = ({"rebel", "spy"} if player.identity in ("lord", "loyalist")
                            else {"lord", "loyalist"} if player.identity == "rebel" else set())
@@ -1126,7 +1196,9 @@ class AIDecision:
         visible = [{"index": i, "label": player_label(self.engine.game_state, option["player_id"])
                     if option.get("player_id") is not None else str(option.get("label", i))}
                    for i, option in enumerate(options)]
+        situation = self._authoritative_situation_block(player)
         prompt = (
+            f"{situation}\n\n"
             "引擎负责合法性，请比较选项对胜利与资源的影响，再选择候选索引。\n"
             f"{goal_block(player)}{self._build_plan_block(player)}\n"
             f"请求类型：{request.get('kind', 'choose_option')}\n"

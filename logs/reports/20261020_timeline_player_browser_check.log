@@ -1,0 +1,37 @@
+E2 public timeline player browser acceptance
+Date: 2026-10-20 UTC
+Command: PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright python3 scripts/manual/timeline_player_browser_check.py
+Result: PASS against actual /api/logs list/detail handlers using an isolated temporary log store.
+Coverage: first/previous/play/pause/next/last, ArrowLeft/ArrowRight/Home/End/Space, 0.5x/1x/2x choices, seq ordering, per-event highlighting, pause, switching logs resets highlight, missing seq preserves source order, empty timeline disables controls, no pageerror.
+Output:
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /logs.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /css/sgs.css?v=20261017e HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /css/pages.css?v=20261020e2 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /js/card_info.js?v=20261017e HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /js/global_settings.js?v=20261017e HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /js/logs_page.js?v=20261020e2 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /js/local_skins.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /js/sgs_common.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /api/logs?profile_id=profile_timeline_browser HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:14:59] "GET /api/logs/timeline_ordered?profile_id=profile_timeline_browser HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:15:02] "GET /api/logs/timeline_legacy?profile_id=profile_timeline_browser HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:15:02] "GET /api/logs/timeline_empty?profile_id=profile_timeline_browser HTTP/1.1" 200 -
+{
+  "check": "TIMELINE_PLAYER_BROWSER_OK",
+  "ordered_controls": true,
+  "keyboard": [
+    "ArrowLeft",
+    "ArrowRight",
+    "Home",
+    "End"
+  ],
+  "speed_options": [
+    "0.5",
+    "1",
+    "2"
+  ],
+  "pause": true,
+  "legacy_no_seq": true,
+  "empty_timeline": true,
+  "page_errors": []
+}
