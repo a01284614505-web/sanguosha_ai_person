@@ -496,26 +496,45 @@ img { display: block; }
 .card.mini { --w: 54px; }
 
 /* ---------- 11. 详情浮窗（长按 / 悬停卡牌或技能时出现） ---------- */
+/* 宽约 216px，高度随内容；只放小插画缩略图，不放整张大牌面（W3） */
 .detail-pop {
     position: fixed;
     z-index: 9500;
-    width: min(300px, calc(100vw - 20px));
-    padding: 12px 14px;
+    width: 216px;
+    max-width: calc(100vw - 16px);
+    padding: 9px 10px 10px;
     border-radius: 8px;
     background: linear-gradient(180deg, #33251a, #1d150f);
     border: 1px solid var(--gold-dim);
     box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .3), inset 0 0 0 4px rgba(201, 163, 90, .25), 0 12px 32px rgba(0, 0, 0, .65);
     color: #eadcbf;
-    font: 13.5px/1.7 var(--font-ui);
+    font: 12px/1.55 var(--font-ui);
     pointer-events: none;
     animation: pop-in .14s var(--ease);
 }
-.detail-pop .dp-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 6px; }
-.detail-pop .dp-head .card { --w: 48px; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
-.detail-pop h4 { margin: 0; font-family: var(--font-kai); font-size: 18px; color: #f1d898; line-height: 1.3; }
-.detail-pop .dp-meta { font-size: 12px; color: #a89577; }
-.detail-pop .dp-tag { display: inline-block; margin-right: 4px; padding: 0 6px; border: 1px solid #6e5229; border-radius: 8px; font-size: 11px; color: #d9c7a0; }
-.detail-pop .dp-note { margin-top: 6px; font-size: 12px; color: #c89a6a; }
+.detail-pop .dp-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+/* 插画缩略图：奶白底与插画叠合（multiply），和牌面的宣纸底色一致 */
+.detail-pop .dp-art {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 5px;
+    border: 1px solid #8a6b3a;
+    background-color: #efe0bb;
+    background-blend-mode: multiply;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    display: grid;
+    place-items: center;
+}
+.detail-pop .dp-art.text-art { font-family: var(--font-brush); font-size: 18px; color: rgba(80, 50, 20, .78); }
+.detail-pop .dp-title { min-width: 0; }
+.detail-pop h4 { margin: 0; font-family: var(--font-kai); font-size: 15px; font-weight: 700; color: #f1d898; line-height: 1.25; }
+.detail-pop .dp-meta { font-size: 11px; color: #a89577; line-height: 1.4; }
+.detail-pop .dp-tag { display: inline-block; margin-right: 4px; padding: 0 5px; border: 1px solid #6e5229; border-radius: 8px; font-size: 10.5px; color: #d9c7a0; }
+.detail-pop .dp-body { font-size: 12px; line-height: 1.55; }
+.detail-pop .dp-note { margin-top: 5px; font-size: 11px; color: #c89a6a; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px); } }
 
 /* ---------- 12. 对话框 ---------- */

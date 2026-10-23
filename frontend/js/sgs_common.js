@@ -301,43 +301,30 @@
     }
 
     // ------------------------------------------------------------------ 详情浮窗
-    // 电脑：鼠标停留 350ms 显示，移开消失。
-    // 手机：手指按住 450ms 显示（并吞掉松手时的那次点击，避免误出牌），松手 1.6 秒后消失。
+    // 电脑：右键卡牌或技能弹出（代替浏览器菜单）；左键、再次右键别处、滚动时收起。
+    //       不再随鼠标悬停自动弹出，悬停时界面更安静，也不会误弹。
+    // 手机：手指按住 450ms 弹出（并吞掉松手时的那次点击，避免误出牌）；
+    //       松手后不自动消失，下一次点任意处收起。
     const Detail = {
         el: null,
         timer: null,
-        hideTimer: null,
         swallowClick: false,
-        current: null,
 
         init() {
-            const fine = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
-            if (fine) {
-                document.addEventListener('mouseover', (e) => {
-                    const t = e.target.closest('[data-card-name],[data-skill-name]');
-                    if (t === this.current) return;
-                    this.hide();
-                    if (!t) return;
-                    this.current = t;
-                    this.timer = setTimeout(() => this.show(t), 350);
-                });
-                document.addEventListener('mousedown', () => this.hide(), true);
-            }
+            // 按下时先收起旧浮窗。右键按下不收起，由下面的 contextmenu 决定是换一张还是收起。
             document.addEventListener('pointerdown', (e) => {
+                if (!(e.pointerType === 'mouse' && e.button === 2)) this.hide();
                 if (e.pointerType === 'mouse') return;
                 const t = e.target.closest('[data-card-name],[data-skill-name]');
-                this.hide();
                 if (!t) return;
                 const x0 = e.clientX, y0 = e.clientY;
                 const cancel = () => { clearTimeout(this.timer); document.removeEventListener('pointermove', move); };
                 const move = (ev) => { if (Math.abs(ev.clientX - x0) > 10 || Math.abs(ev.clientY - y0) > 10) cancel(); };
                 document.addEventListener('pointermove', move);
-                document.addEventListener('pointerup', () => {
-                    cancel();
-                    if (this.el) this.hideTimer = setTimeout(() => this.hide(), 1600);
-                }, { once: true });
+                document.addEventListener('pointerup', cancel, { once: true });
+                document.addEventListener('pointercancel', cancel, { once: true });
                 this.timer = setTimeout(() => { this.swallowClick = true; this.show(t); if (navigator.vibrate) navigator.vibrate(12); }, 450);
-            }, { passive: true });
+            }, { passive: true, capture: true });
             // 长按之后松手产生的 click 不应触发出牌/选择
             document.addEventListener('click', (e) => {
                 if (!this.swallowClick) return;
@@ -345,16 +332,18 @@
                 e.stopPropagation();
                 e.preventDefault();
             }, true);
+            // 右键卡牌或技能：弹出小框并阻止浏览器菜单；右键别处：收起旧浮窗，保留浏览器菜单
             document.addEventListener('contextmenu', (e) => {
-                if (e.target.closest('[data-card-name],[data-skill-name]')) e.preventDefault();
+                const t = e.target.closest('[data-card-name],[data-skill-name]');
+                if (!t) { this.hide(); return; }
+                e.preventDefault();
+                this.show(t);
             });
             window.addEventListener('scroll', () => this.hide(), true);
         },
 
         hide() {
             clearTimeout(this.timer);
-            clearTimeout(this.hideTimer);
-            this.current = null;
             if (this.el) { this.el.remove(); this.el = null; }
         },
 
@@ -386,27 +375,38 @@
         }
     };
 
-    /** 卡牌详情：小牌面 + 名称 + 类型/射程 + 效果；引擎未实现的特效如实注明。 */
+    /**
+     * 卡牌详情（W3）：左上一个 34px 插画缩略图 + 牌名 + 一行小字（类型、花色点数、射程、坐骑距离）+ 效果说明。
+     * 不再放整张大牌面，框宽固定约 216px。引擎未实现的特效如实注明。
+     */
     function cardDetailHTML(name, suit, rank, nature) {
         const nat = natureOf({ name: name, nature: nature });
         // 火杀 / 雷杀：标题与说明用属性杀自己的条目，没有时退回普通【杀】
         const info = (nat && NATURE_INFO[nat].text) ? NATURE_INFO[nat] : (CARD_INFO[name] || {});
         const title = nat ? NATURE_INFO[nat].name : name;
         const s = suitInfo(suit);
-        const face = cardHTML({ name: name, nature: nat, suit: suit, rank: rank, card_type: info.type === '基本' ? 'basic' : (/武器|防具|坐骑|宝物/.test(info.type || '') ? 'equipment' : 'trick') }, { noDetail: true });
-        const tags = [info.type ? '<span class="dp-tag">' + esc(info.type) + '</span>' : ''];
-        if (info.range) tags.push('<span class="dp-tag">攻击范围 ' + info.range + '</span>');
-        if (info.horse) tags.push('<span class="dp-tag">距离 ' + esc(info.horse) + '</span>');
-        const meta = s.sym ? s.name + ' ' + rankText(rank) : '';
-        return '<div class="dp-head">' + face + '<div><h4>' + esc(title) + '</h4><div>' + tags.join('') + '</div>' +
-            (meta ? '<div class="dp-meta">' + esc(meta) + '</div>' : '') + '</div></div>' +
-            '<div>' + esc(info.text || '暂无说明。') + '</div>' +
+        // 插画缩略图：没有图就用牌名首字（与 cardHTML 的兜底一致）
+        const art = cardArtURL(name);
+        const artHTML = art
+            ? '<div class="dp-art" style="background-image:url(' + art + ')"></div>'
+            : '<div class="dp-art text-art">' + esc(name.charAt(0)) + '</div>';
+        // 类型、花色点数、射程、坐骑距离挤成一行小字
+        const parts = [];
+        if (info.type) parts.push(esc(info.type));
+        if (s.sym) parts.push(esc(s.name + ' ' + rankText(rank)));
+        if (info.range) parts.push('攻击范围 ' + esc(String(info.range)));
+        if (info.horse) parts.push('距离 ' + esc(String(info.horse)));
+        return '<div class="dp-head">' + artHTML + '<div class="dp-title"><h4>' + esc(title) + '</h4>' +
+            (parts.length ? '<div class="dp-meta">' + parts.join(' · ') + '</div>' : '') + '</div></div>' +
+            '<div class="dp-body">' + esc(info.text || '暂无说明。') + '</div>' +
             (info.pending ? '<div class="dp-note">本项目引擎暂未实现这件装备的特效' + (info.range ? '，目前只生效攻击范围' : '') + '。</div>' : '');
     }
 
+    /** 技能详情：与卡牌详情同宽，标题加类型标签，下面是技能说明。 */
     function skillDetailHTML(name, desc, type) {
         const tag = SKILL_TAG[type] ? '<span class="dp-tag">' + SKILL_TAG[type] + '</span>' : '';
-        return '<div class="dp-head"><div><h4>【' + esc(name) + '】</h4>' + tag + '</div></div><div>' + esc(desc || '暂无技能说明。') + '</div>';
+        return '<div class="dp-head"><div class="dp-title"><h4>【' + esc(name) + '】</h4>' + (tag ? '<div class="dp-meta">' + tag + '</div>' : '') + '</div></div>' +
+            '<div class="dp-body">' + esc(desc || '暂无技能说明。') + '</div>';
     }
 
     // ------------------------------------------------------------------ 存储
