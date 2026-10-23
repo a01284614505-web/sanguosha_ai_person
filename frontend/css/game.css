@@ -159,13 +159,19 @@
 .seat.pos-3 { left: 24%; top: 9%; }
 .seat.pos-4 { left: 2.5%; top: 34%; }
 
-/* 武将框：立绘 + 势力色描边 + 鎏金细框 */
+/* 武将框：立绘 + 势力色描边 + 鎏金边框（W4.1）。
+   鎏金边用 border + 渐变背景做：border-box 层是渐变金，padding-box 层是暗底。
+   这样金边不会被立绘盖住，框内的 inset:0 元素也只占内侧。 */
 .seat-frame, .hero-frame {
     position: relative;
+    box-sizing: border-box;
     aspect-ratio: 3 / 4;
-    border-radius: 7px;
+    border: 3px solid transparent;
+    border-radius: 9px;
     overflow: hidden;
-    background: #1a120c;
+    background:
+        linear-gradient(180deg, #1a120c, #1a120c) padding-box,
+        linear-gradient(145deg, #fff0b0 0%, #c9952e 16%, #6e4512 32%, #f7dc8a 50%, #94631f 68%, #ffe9a6 84%, #7c4f18 100%) border-box;
     cursor: pointer;
     box-shadow:
         0 0 0 2px var(--faction, var(--qun)),
@@ -177,6 +183,15 @@
 .seat-frame > img, .hero-frame > img, .seat-frame > .hero-fallback, .hero-frame > .hero-fallback {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%;
 }
+/* 四角云纹角花（W4.1）：画在金边内侧，最上层，不接收点击。tr/bl/br 用翻转复用同一个 SVG。 */
+.seat-frame > .cn, .hero-frame > .cn { position: absolute; width: 16px; height: 16px; z-index: 4; pointer-events: none; }
+.seat-frame > .cn.tl, .hero-frame > .cn.tl { left: 0; top: 0; }
+.seat-frame > .cn.tr, .hero-frame > .cn.tr { right: 0; top: 0; transform: scaleX(-1); }
+.seat-frame > .cn.bl, .hero-frame > .cn.bl { left: 0; bottom: 0; transform: scaleY(-1); }
+.seat-frame > .cn.br, .hero-frame > .cn.br { right: 0; bottom: 0; transform: scale(-1, -1); }
+/* 武将框上方的称号牌匾所在行（W4.3）：固定高度，四名对手和自己的框顶对齐 */
+.plaque-row { height: 24px; margin-bottom: 4px; display: flex; justify-content: center; align-items: flex-end; min-width: 0; }
+.seat-stack, .hero-stack { position: relative; min-width: 0; }
 /* 顶部名字条：势力印 | 玩家名 | 身份印 */
 .s-top {
     position: absolute; top: 0; left: 0; right: 0;
@@ -192,7 +207,17 @@
 }
 .s-labels { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: center; gap: 1px; }
 .s-labels .s-name { width: 100%; flex: none; }
-.ai-title-badge { position: relative; width: max-content; max-width: 100%; overflow: hidden; padding: 1px 3px; border: 1px solid rgba(224, 188, 111, .75); border-radius: 5px; color: #f5d58e; background: rgba(40, 26, 12, .9); font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; box-shadow: 0 0 5px rgba(223, 185, 99, .25); }
+/* 称号牌匾（W4.3）：金色铭牌，放在武将框上方。四字称号必须完整显示（不截断），
+   所以字号和字距都压得比较紧；框宽不够时在手机小屏用 media 再缩小。 */
+.ai-title-badge {
+    position: relative; width: max-content; max-width: 100%; overflow: hidden;
+    padding: 2px 8px; border-radius: 2px;
+    font: 700 11px/1.3 var(--font-kai); letter-spacing: .5px; white-space: nowrap; text-overflow: ellipsis;
+    color: #3a2405;
+    background: linear-gradient(180deg, #fff2bf, #e2b24c 55%, #a8761f);
+    box-shadow: 0 0 0 1px #4a2e08, 0 0 10px rgba(255, 200, 90, .5);
+    pointer-events: none;
+}
 .ai-title-badge.title-高级, .ai-title-badge.title-稀有 { box-shadow: 0 0 8px rgba(223, 185, 99, .4); }
 .ai-title-badge.title-稀有 { text-shadow: 0 0 5px rgba(255, 230, 166, .8); }
 .ai-title-badge.title-高级::after, .ai-title-badge.title-稀有::after { content: ''; position: absolute; top: -40%; bottom: -40%; left: -70%; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 244, 199, .6), transparent); transform: skewX(-20deg); animation: game-title-sheen 5s ease-in-out infinite; }
@@ -208,40 +233,78 @@
     text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, .8);
     letter-spacing: .05em;
 }
-.s-hp { position: absolute; right: 2px; bottom: 4px; }
+/* 体力阴阳鱼（W4.5）：一律竖排在头像右侧，后面垫一条半透明深色圆角底，和原型 .gycol 一致 */
+.s-hp {
+    position: absolute; right: 4px; bottom: 4px;
+    padding: 4px 2px; border-radius: 9px;
+    background: rgba(10, 6, 3, .55);
+}
 .s-hp .gouyu { width: 15px; height: 15px; }
-/* 左下角手牌数：暗朱漆小牌 */
+/* 左下角手牌数（W4.4）：灰色牌背小方块 + 白色数字，不用金边和红底 */
 .s-hand {
     position: absolute; left: 4px; bottom: 4px;
-    min-width: 24px; height: 28px; padding: 0 4px;
+    min-width: 18px; height: 24px; padding: 0 3px;
     display: grid; place-items: center;
     border-radius: 3px;
-    background: linear-gradient(180deg, var(--lacquer-1), var(--lacquer-2));
-    border: 1px solid var(--gold);
-    font: 700 14px/1 var(--font-ui); color: #f3dca0;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, .6);
+    background: repeating-linear-gradient(45deg, #6b665f 0 3px, #59544e 3px 6px);
+    box-shadow: 0 0 0 1px #2a2622, 0 2px 4px rgba(0, 0, 0, .6);
+    font: 700 12px/1 var(--font-ui); color: #f3ede2; text-shadow: 0 1px 1px #000;
 }
-/* 判定区：底部居中的延时锦囊小方块 */
-.s-judge { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); display: flex; gap: 2px; }
+/* 判定区（W4.6）：正菱形标记。外层旋转 45 度，内层反向旋转回正，文字和闪电图标才是正的 */
+.s-judge { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; gap: 8px; }
 .judge-tile {
     position: relative;
-    width: 21px; height: 21px;
     display: inline-block;
-    border-radius: 3px;
-    overflow: hidden;
-    background: linear-gradient(180deg, #f6ecd2, #e2cfa2);
-    box-shadow: 0 0 0 1px var(--gold), 0 1px 3px rgba(0, 0, 0, .7);
-    cursor: help;
+    width: 18px; height: 18px;
     flex: none;
+    border-radius: 3px;
+    transform: rotate(45deg);
+    cursor: help;
 }
-.judge-tile i { position: absolute; inset: 1px; background-size: cover; background-position: center; mix-blend-mode: multiply; }
-.judge-tile b {
-    position: absolute; right: 0; bottom: 0;
-    padding: 0 2px;
-    font: 700 9px/1.25 var(--font-kai);
-    color: #f3dca0;
-    background: rgba(70, 17, 12, .9);
-    border-top-left-radius: 3px;
+.judge-tile .jm-in {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    transform: rotate(-45deg);
+    font: 900 11px/1 var(--font-kai); color: #fff; text-shadow: 0 0 4px rgba(0, 0, 0, .6);
+}
+.judge-tile .jm-in svg { width: 12px; height: 12px; filter: drop-shadow(0 0 3px #fff); }
+/* 闪电：蓝紫渐变，外圈一圈旋转的虚线电弧，外光闪烁 */
+.judge-tile.thunder {
+    background: linear-gradient(135deg, #8f80ff, #4a2aa8 60%, #2a145e);
+    box-shadow: 0 0 0 1.5px #d9d0ff, 0 0 10px 2px rgba(150, 130, 255, .75);
+    animation: judge-zap 1.4s infinite;
+}
+.judge-tile.thunder::before {
+    content: ""; position: absolute; inset: -5px; border-radius: 5px;
+    border: 1.5px dashed rgba(210, 200, 255, .85);
+    animation: judge-spin 2.4s linear infinite;
+}
+@keyframes judge-zap {
+    0%, 100% { box-shadow: 0 0 0 1.5px #d9d0ff, 0 0 8px 2px rgba(150, 130, 255, .6); }
+    45% { box-shadow: 0 0 0 1.5px #fff, 0 0 16px 5px rgba(190, 175, 255, .95); }
+    50% { box-shadow: 0 0 0 1.5px #d9d0ff, 0 0 6px 1px rgba(150, 130, 255, .5); }
+    55% { box-shadow: 0 0 0 1.5px #fff, 0 0 18px 6px rgba(210, 200, 255, 1); }
+}
+@keyframes judge-spin { to { transform: rotate(360deg); } }
+/* 乐不思蜀：粉色渐变，轻微呼吸光 */
+.judge-tile.lebu {
+    background: linear-gradient(135deg, #ffb3d6, #d24b8c 60%, #7e1f4f);
+    box-shadow: 0 0 0 1.5px #ffe0ef, 0 0 10px 2px rgba(255, 140, 200, .6);
+    animation: judge-pink 2.2s infinite;
+}
+@keyframes judge-pink { 50% { box-shadow: 0 0 0 1.5px #fff, 0 0 16px 4px rgba(255, 150, 210, .85); } }
+/* 兵粮寸断：土黄渐变 */
+.judge-tile.bing {
+    background: linear-gradient(135deg, #c9b77a, #7a6a2a 60%, #3e3410);
+    box-shadow: 0 0 0 1.5px #f4e6b8, 0 0 8px 2px rgba(220, 200, 120, .5);
+}
+/* 其他延时锦囊（将来可能有）：深棕底，首字 */
+.judge-tile.other {
+    background: linear-gradient(135deg, #7a5a3a, #4a3520 60%, #2a1c10);
+    box-shadow: 0 0 0 1.5px #d8c08a;
+}
+@media (prefers-reduced-motion: reduce) {
+    .judge-tile.thunder, .judge-tile.thunder::before, .judge-tile.lebu { animation: none; }
 }
 /* “思考中…”提示 */
 .s-status {
@@ -268,10 +331,22 @@
 .equip-line b { color: var(--gold); font-weight: 600; font-size: 10px; min-width: 14px; }
 
 /* ---------- 座位状态 ---------- */
-/* 当前回合：亮金描边 + 外发光 */
+/* 当前回合（W4.2）：亮金描边 + 外发光 + 轻微抬起放大；头像顶部显示"出牌中"缎带 */
 .seat.current .seat-frame, .my-hero.current .hero-frame {
     box-shadow: 0 0 0 2px var(--gold-hi), 0 0 0 3px rgba(0, 0, 0, .6), 0 0 20px 4px rgba(241, 216, 152, .5), 0 8px 18px rgba(0, 0, 0, .55);
+    transform: translateY(-4px) scale(1.03);
 }
+/* 缎带放在立绘内部、两枚印章之下（武将名条下方），不放在框外，免得压住上方的称号牌匾 */
+.seat.current .seat-frame::before, .my-hero.current .hero-frame::before {
+    content: "出牌中";
+    position: absolute; left: 50%; top: 38px; transform: translateX(-50%); z-index: 5;
+    padding: 2px 9px;
+    font: 900 11px/1.2 var(--font-kai); letter-spacing: 2px; color: #fff3d2; white-space: nowrap;
+    background: linear-gradient(180deg, #c43a24, #7a1a0e);
+    clip-path: polygon(6% 0, 94% 0, 100% 50%, 94% 100%, 6% 100%, 0 50%);
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { .seat.current .seat-frame, .my-hero.current .hero-frame { transform: none; } }
 /* 可选为目标：绿光呼吸（官方同样用绿色表示可选） */
 .seat.targetable .seat-frame, .my-hero.targetable .hero-frame { animation: target-pulse 1.1s ease-in-out infinite; }
 @keyframes target-pulse {
@@ -879,6 +954,8 @@
     .zone-slot { min-height: 22px; font-size: 11px; }
     .hand-wrap { grid-area: hand; }
     .my-hero { grid-area: hero; display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 5px; }
+    /* 牌匾与武将框组成一列（hero-stack），这样横排布局里仍只占一列 */
+    .my-hero .hero-stack { flex: none; width: 72px; }
     .my-hero .hero-frame { height: 96px; width: 72px; flex: none; }
     .my-hero .skill-btns { flex-direction: column; align-items: stretch; }
     .hand { padding-top: 16px; justify-content: flex-start; }
@@ -898,15 +975,9 @@
     .reconnect-banner { top: calc(52px + env(safe-area-inset-top)); font-size: 12px; padding: 5px 12px; white-space: nowrap; }
 }
 
-/* 铁索连环横置标记 */
-.s-chain {
-    position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%) rotate(-8deg);
-    padding: 1px 6px; border-radius: 3px;
-    background: rgba(40, 46, 58, 0.88); color: #d9e4f2;
-    border: 1px solid #8fa3bd; font: 700 12px/1.4 var(--font-ui); letter-spacing: 2px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, .5); pointer-events: none;
-}
-@media (max-width: 640px) { .s-chain { font-size: 10px; letter-spacing: 1px; padding: 0 4px; } }
+/* 铁索连环（W4.7）：真铁链横贯头像，链环由 SGS.chainSVG() 画出，钢灰渐变 */
+.s-chain { position: absolute; left: -4px; right: -4px; top: 44%; z-index: 3; pointer-events: none; }
+.s-chain svg { display: block; width: 100%; height: 18px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .8)); }
 
 /* 鼠标设备上快捷发言换行排列：原来横向滚动又隐藏了滚动条，最后一个气泡被切掉一半也没法发现 */
 @media (hover: hover) and (pointer: fine) {

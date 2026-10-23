@@ -193,14 +193,25 @@
     }
 
     // ------------------------------------------------------------------ 渲染：座位
-    /** 判定区的延时锦囊小方块（带插画，长按/悬停可看说明）。 */
+    /**
+     * 判定区的延时锦囊标记（W4.6）：正菱形，内容反向旋转回正。
+     * 闪电蓝紫配白色闪电，乐不思蜀粉色配“乐”，兵粮寸断土黄配“兵”，其他延时锦囊深棕配首字。
+     * 右键或长按仍可看说明（cardDetailAttrs）。
+     */
     function judgeTilesHTML(names) {
         return (names || []).map(name => {
-            const art = SGS.cardArtURL(name);
-            return '<span class="judge-tile" ' + SGS.cardDetailAttrs({ name: name }) + ' title="' + esc(name) + '">' +
-                (art ? '<i style="background-image:url(' + art + ')"></i>' : '') +
-                '<b>' + esc(SGS.DELAYED[name] || name.charAt(0)) + '</b></span>';
+            const kind = name === '闪电' ? 'thunder' : name === '乐不思蜀' ? 'lebu' : name === '兵粮寸断' ? 'bing' : 'other';
+            const mark = kind === 'thunder' ? SGS.BOLT_SVG : esc(SGS.DELAYED[name] || name.charAt(0));
+            return '<span class="judge-tile jm ' + kind + '" ' + SGS.cardDetailAttrs({ name: name }) + ' title="' + esc(name) + '">' +
+                '<span class="jm-in">' + mark + '</span></span>';
         }).join('');
+    }
+
+    /** 称号牌匾（W4.3）：不再放在武将框里，而是由调用方放在框的上方。 */
+    function titleBadgeHTML(p) {
+        const title = p.title || (p.ai_config && p.ai_config.title);
+        return title
+            ? '<span class="ai-title-badge title-' + esc(title.tier || '普通') + '" title="' + esc(title.name) + '">' + esc(title.name) + '</span>' : '';
     }
 
     /** 武将框内部：立绘、名字条、势力/身份印、竖排武将名、手牌数、判定区、勾玉、思考中。 */
@@ -223,16 +234,15 @@
         }
         const cheatPeek = G.state && G.state.cheat_mode && p.is_ai && !isMe
             ? '<button class="cheat-peek" type="button" data-peek-seat="' + p.id + '" title="看这名 AI 的思考" aria-label="看 ' + esc(p.name) + ' 的思考">›</button>' : '';
-        const title = p.title || (p.ai_config && p.ai_config.title);
-        const badge = title
-            ? '<span class="ai-title-badge title-' + esc(title.tier || '普通') + '" title="' + esc(title.name) + '">' + esc(title.name) + '</span>' : '';
+        // 称号牌匾不在这里输出：它在武将框上方，由 titleBadgeHTML() 单独渲染（W4.3）
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-labels">' + badge + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span></span>' + idSeal + '</div>' + cheatPeek +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-labels"><span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span></span>' + idSeal + '</div>' + cheatPeek +
             '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
             (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
-            (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">连环</div>' : '') +
-            '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status;
+            (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">' + SGS.chainSVG() + '</div>' : '') +
+            '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status +
+            SGS.cornersHTML();
     }
 
     /** 武将框下方的装备栏（只列出已装备的格子）。 */
@@ -253,7 +263,8 @@
             if (!el) {
                 el = document.createElement('div');
                 el.dataset.id = p.id;
-                el.innerHTML = '<div class="seat-frame" role="button" tabindex="0"></div><div class="seat-equips"></div>';
+                // 称号牌匾放在武将框上方的 plaque-row 里（W4.3），不在框内，避免被框的 overflow 裁掉
+                el.innerHTML = '<div class="seat-stack"><div class="plaque-row"></div><div class="seat-frame" role="button" tabindex="0"></div></div><div class="seat-equips"></div>';
                 const frame = el.querySelector('.seat-frame');
                 frame.addEventListener('click', (e) => {
                     const mark = e.target.closest('[data-mark-seat]');
@@ -279,9 +290,11 @@
             el.className = cls.concat(keep).join(' ');
             const frameHTML = seatFrameHTML(p);
             const equipHTML = equipLines(p);
-            const sig = frameHTML + '|' + equipHTML;
+            const badgeHTML = titleBadgeHTML(p);
+            const sig = frameHTML + '|' + equipHTML + '|' + badgeHTML;
             if (G.seatSig[p.id] !== sig) {
                 G.seatSig[p.id] = sig;
+                el.querySelector('.plaque-row').innerHTML = badgeHTML;
                 el.querySelector('.seat-frame').innerHTML = frameHTML;
                 el.querySelector('.seat-equips').innerHTML = equipHTML;
             }
@@ -327,10 +340,13 @@
                 ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' + esc(s.name) + '</button>';
         }).join('');
         const frameHTML = seatFrameHTML(p, { hideHand: true });
-        const sig = frameHTML + '|' + skillHTML;
+        const badgeHTML = titleBadgeHTML(p);
+        const sig = frameHTML + '|' + skillHTML + '|' + badgeHTML;
         if (G.seatSig.me !== sig) {
             G.seatSig.me = sig;
-            heroBox.innerHTML = '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div><div class="skill-btns">' + skillHTML + '</div>';
+            heroBox.innerHTML = '<div class="hero-stack"><div class="plaque-row">' + badgeHTML + '</div>' +
+                '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div></div>' +
+                '<div class="skill-btns">' + skillHTML + '</div>';
             heroBox.querySelector('.hero-frame').addEventListener('click', () => onSeatClick(p.id));
             heroBox.querySelectorAll('.skill-btn').forEach(b => b.addEventListener('click', () => onSkillClick(b.dataset.skill, b)));
         }

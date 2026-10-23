@@ -168,6 +168,8 @@
             '<radialGradient id="gy-green" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#d6ffc8"/><stop offset=".45" stop-color="#57c05a"/><stop offset="1" stop-color="#1d5a1f"/></radialGradient>' +
             '<radialGradient id="gy-yellow" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#fff6c4"/><stop offset=".45" stop-color="#e4c24a"/><stop offset="1" stop-color="#7a5c10"/></radialGradient>' +
             '<radialGradient id="gy-red" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#ffd0c4"/><stop offset=".45" stop-color="#d8422f"/><stop offset="1" stop-color="#6a130a"/></radialGradient>' +
+            // 铁索连环用的钢灰渐变（W4.7）：chainSVG() 里 url(#steel) 引用它
+            '<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef2f6"/><stop offset=".45" stop-color="#9aa6b2"/><stop offset="1" stop-color="#4a545e"/></linearGradient>' +
             '</defs></svg>';
         document.body.appendChild(holder.firstChild);
     }
@@ -199,6 +201,35 @@
         let html = '';
         for (let i = 0; i < max; i++) html += one(i < hp ? col : 'lost');
         return '<span class="' + cls + '" role="img" aria-label="' + label + '">' + html + '</span>';
+    }
+
+    // ------------------------------------------------------------------ 武将框装饰（W4）
+    /** 四角云纹角花：放在武将框内侧最上层，pointer-events:none，CSS 用 tl/tr/bl/br 翻转到四个角。 */
+    const CORNER_PATH = '<path d="M3 22V10a7 7 0 0 1 7-7h12" fill="none" stroke="#1c1105" stroke-width="4.4"/>' +
+        '<path d="M3 22V10a7 7 0 0 1 7-7h12" fill="none" stroke="#f1cf78" stroke-width="2"/>' +
+        '<path d="M7.6 15.6c-2.4 0-3.7-1.6-3.7-3.4s1.4-3.2 3.1-3.2 2.7 1.2 2.7 2.6-1 2.2-2.1 2.2" fill="none" stroke="#f1cf78" stroke-width="1.5"/>' +
+        '<circle cx="22" cy="3" r="1.9" fill="#f1cf78"/><circle cx="3" cy="22" r="1.9" fill="#f1cf78"/>';
+    function cornersHTML() {
+        return ['tl', 'tr', 'bl', 'br'].map(k => '<svg class="cn ' + k + '" viewBox="0 0 24 24" aria-hidden="true">' + CORNER_PATH + '</svg>').join('');
+    }
+
+    /** 判定区闪电的白色闪电图标（W4.6）。 */
+    const BOLT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h5.6L9.5 22 19 9.8h-5.8z" fill="#fff"/></svg>';
+
+    /**
+     * 铁索连环：真铁链横贯头像（W4.7）。链环交替：偶数为椭圆环，奇数为扁条。
+     * viewBox 固定 9 个链环宽，CSS 里拉满武将框宽度（preserveAspectRatio=none）。
+     */
+    function chainSVG() {
+        const n = 9;
+        let s = '';
+        for (let i = 0; i < n; i++) {
+            const x = i * 15;
+            s += i % 2 === 0
+                ? '<ellipse cx="' + (x + 7.5) + '" cy="9" rx="8.5" ry="5.6" fill="none" stroke="#1a1d22" stroke-width="5"/><ellipse cx="' + (x + 7.5) + '" cy="9" rx="8.5" ry="5.6" fill="none" stroke="url(#steel)" stroke-width="3"/>'
+                : '<rect x="' + (x + 1) + '" y="6.6" width="13" height="4.8" rx="2.4" fill="#1a1d22"/><rect x="' + (x + 1.8) + '" y="7.4" width="11.4" height="3.2" rx="1.6" fill="url(#steel)"/>';
+        }
+        return '<svg viewBox="0 0 ' + (n * 15) + ' 18" preserveAspectRatio="none" aria-hidden="true">' + s + '</svg>';
     }
 
     // ------------------------------------------------------------------ 印章与立绘
@@ -581,7 +612,7 @@
     // ------------------------------------------------------------------ 导出与初始化
     const SGS = {
         SUIT, CARD_ART, CARD_INFO, DELAYED, EQUIP_SLOT, EQUIP_ORDER, IDENTITY, WINNER, PHASE, PHASE_ORDER, PHASE_SHORT, SKILL_TAG,
-        esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs,
+        esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs, cornersHTML, chainSVG, BOLT_SVG,
         identitySeal, factionSeal, heroImageURL, heroImgHTML, imgFallback, icon, hydrateIcons,
         applyTheme, toggleTheme, Detail, cardDetailHTML, natureOf, displayName, bracketName, NATURE_INFO, skillDetailHTML, store, toast, fetchJSON, attachModelPicker, identityCardHTML
     };
