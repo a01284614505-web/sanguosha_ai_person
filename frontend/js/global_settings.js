@@ -12,6 +12,7 @@
         animation_ms: 1100,
         show_ai_thinking: true,
         show_decision_trace: true,
+        table_palette: 'night',
         worldbook_enabled: true,
         custom_worldbook_enabled: true,
         default_provider: 'deepseek',
@@ -55,6 +56,7 @@
             .gs-section{border-top:1px solid rgba(201,163,90,.22);padding:12px 0 4px}
             .gs-section h4{margin:0 0 6px;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:16px;color:#f1d898;font-weight:600}
             .gs-row{display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;margin:8px 0;font-size:14px}
+            .gs-row[hidden]{display:none}
             .gs-row>span:first-child{color:#d9c7a0}
             .gs-row input:not([type=checkbox]):not([type=range]),.gs-row select{min-width:0;width:100%;background:rgba(8,5,3,.55);border:1px solid #5d4730;color:#eadcbf;border-radius:5px;padding:7px 9px}
             .gs-row input[type=checkbox]{width:16px;height:16px;accent-color:#a8261c;vertical-align:-3px;margin-right:6px}
@@ -105,6 +107,7 @@
                     <label class="gs-row"><span>界面主题</span><select id="gsTheme"><option value="dark">夜墨（深色）</option><option value="light">暖纸（浅色）</option><option value="system">跟随系统</option></select></label>
                     <label class="gs-row"><span>出牌动画</span><select id="gsAnimation"><option value="800">轻快 0.8 秒</option><option value="1100">标准 1.1 秒</option><option value="1600">从容 1.6 秒</option></select></label>
                     <label class="gs-row"><span>AI 思考提示</span><span><input id="gsThinking" type="checkbox">在武将框上显示“思考中”，并把思考摘要写进战报</span></label>
+                    <label class="gs-row" id="gsPaletteRow" hidden><span>牌桌配色</span><select id="gsTablePalette"><option value="night">夜幕江山（默认）</option><option value="jade">江山暮色</option></select></label>
                     <label class="gs-row"><span>决策轨迹</span><span><input id="gsDecisionTrace" type="checkbox">在战报中显示可展开的简略与完整决策记录</span></label>
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
                     <label class="gs-row"><span>语音播报</span><span><input id="gsSpeech" type="checkbox">朗读公开对局事件（仅此设备播放，默认关闭）<small class="muted" style="display:block;margin-top:4px">依赖浏览器语音合成和设备已安装的中文语音；无可用语音时静默跳过，不连接外部语音服务。</small></span></label>
@@ -210,6 +213,9 @@
         document.getElementById('gsLogThinking').checked = s.log_include_thinking !== false;
         // 热闹程度只在对局页出现；显示的是服务器确认过的当前档位（window.currentChatLevel 由对局页随状态更新）。
         const inGame = !!document.getElementById('battle');
+        // 牌桌配色只在对局页出现，保存后立即生效（game_main.js 监听 global-settings-changed）
+        document.getElementById('gsTablePalette').value = s.table_palette === 'jade' ? 'jade' : 'night';
+        document.getElementById('gsPaletteRow').hidden = !inGame;
         document.getElementById('gsChatSection').hidden = !inGame;
         if (inGame) document.getElementById('gsChatLevel').value = window.currentChatLevel || 'normal';
         loadStats();
@@ -222,6 +228,7 @@
             animation_ms: Number(document.getElementById('gsAnimation').value) || 1100,
             show_ai_thinking: document.getElementById('gsThinking').checked,
             show_decision_trace: document.getElementById('gsDecisionTrace').checked,
+            table_palette: document.getElementById('gsTablePalette').value,
             sfx_enabled: document.getElementById('gsSfx').checked,
             sfx_volume: Number(document.getElementById('gsVolume').value),
             speech_enabled: document.getElementById('gsSpeech').checked,

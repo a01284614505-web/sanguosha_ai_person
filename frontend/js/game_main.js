@@ -193,14 +193,25 @@
     }
 
     // ------------------------------------------------------------------ 渲染：座位
-    /** 判定区的延时锦囊小方块（带插画，长按/悬停可看说明）。 */
+    /**
+     * 判定区的延时锦囊标记（W4.6）：正菱形，内容反向旋转回正。
+     * 闪电蓝紫配白色闪电，乐不思蜀粉色配“乐”，兵粮寸断土黄配“兵”，其他延时锦囊深棕配首字。
+     * 右键或长按仍可看说明（cardDetailAttrs）。
+     */
     function judgeTilesHTML(names) {
         return (names || []).map(name => {
-            const art = SGS.cardArtURL(name);
-            return '<span class="judge-tile" ' + SGS.cardDetailAttrs({ name: name }) + ' title="' + esc(name) + '">' +
-                (art ? '<i style="background-image:url(' + art + ')"></i>' : '') +
-                '<b>' + esc(SGS.DELAYED[name] || name.charAt(0)) + '</b></span>';
+            const kind = name === '闪电' ? 'thunder' : name === '乐不思蜀' ? 'lebu' : name === '兵粮寸断' ? 'bing' : 'other';
+            const mark = kind === 'thunder' ? SGS.BOLT_SVG : esc(SGS.DELAYED[name] || name.charAt(0));
+            return '<span class="judge-tile jm ' + kind + '" ' + SGS.cardDetailAttrs({ name: name }) + ' title="' + esc(name) + '">' +
+                '<span class="jm-in">' + mark + '</span></span>';
         }).join('');
+    }
+
+    /** 称号牌匾（W4.3）：不再放在武将框里，而是由调用方放在框的上方。 */
+    function titleBadgeHTML(p) {
+        const title = p.title || (p.ai_config && p.ai_config.title);
+        return title
+            ? '<span class="ai-title-badge title-' + esc(title.tier || '普通') + '" title="' + esc(title.name) + '">' + esc(title.name) + '</span>' : '';
     }
 
     /** 武将框内部：立绘、名字条、势力/身份印、竖排武将名、手牌数、判定区、勾玉、思考中。 */
@@ -223,16 +234,22 @@
         }
         const cheatPeek = G.state && G.state.cheat_mode && p.is_ai && !isMe
             ? '<button class="cheat-peek" type="button" data-peek-seat="' + p.id + '" title="看这名 AI 的思考" aria-label="看 ' + esc(p.name) + ' 的思考">›</button>' : '';
-        const title = p.title || (p.ai_config && p.ai_config.title);
-        const badge = title
-            ? '<span class="ai-title-badge title-' + esc(title.tier || '普通') + '" title="' + esc(title.name) + '">' + esc(title.name) + '</span>' : '';
+        // 称号牌匾不在这里输出：它在武将框上方，由 titleBadgeHTML() 单独渲染（W4.3）
+        // 框顶只留两枚印章（W 第二轮 R1/R2）；座位号+名字挪到框下方的名签（seatNameHTML）；
+        // 武将名与手牌数放进框底的名牌（.s-plate）。
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-labels">' + badge + '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span></span>' + idSeal + '</div>' + cheatPeek +
-            '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
-            (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + idSeal + '</div>' + cheatPeek +
+            '<div class="s-plate"><span class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</span>' +
+            (opts.hideHand ? '' : '<span class="s-hand" title="手牌数">' + p.hand_count + '</span>') + '</div>' +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
-            (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">连环</div>' : '') +
-            '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status;
+            (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">' + SGS.chainSVG() + '</div>' : '') +
+            '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status +
+            SGS.cornersHTML();
+    }
+
+    /** 武将框下方的名签：“N号 名字”。.s-name 的元素与文字格式保持不变（测试依赖）。 */
+    function seatNameHTML(p) {
+        return '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>';
     }
 
     /** 武将框下方的装备栏（只列出已装备的格子）。 */
@@ -241,6 +258,9 @@
         return SGS.EQUIP_ORDER.filter(slot => eq[slot]).map(slot =>
             '<div class="equip-line" ' + SGS.cardDetailAttrs({ name: eq[slot] }) + '><b>' + SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot]) + '</div>').join('');
     }
+
+    /** 技能类型的中文小字（引擎的 skill_type 原始值）。没有对应的写法就留空。 */
+    const SKILL_TYPE_LABEL = { locked: '锁定技', lord: '主公技', limited: '限定技', awaken: '觉醒技', trigger: '触发技', active: '主动技' };
 
     /** 渲染四名对手。座位 DOM 只建一次，之后按签名增量更新，气泡/特效不会被冲掉。 */
     function renderSeats() {
@@ -253,7 +273,8 @@
             if (!el) {
                 el = document.createElement('div');
                 el.dataset.id = p.id;
-                el.innerHTML = '<div class="seat-frame" role="button" tabindex="0"></div><div class="seat-equips"></div>';
+                // 称号牌匾放在武将框上方的 plaque-row 里（W4.3），不在框内，避免被框的 overflow 裁掉
+                el.innerHTML = '<div class="seat-stack"><div class="plaque-row"></div><div class="seat-frame" role="button" tabindex="0"></div></div><div class="seat-namebar"></div><div class="seat-equips"></div>';
                 const frame = el.querySelector('.seat-frame');
                 frame.addEventListener('click', (e) => {
                     const mark = e.target.closest('[data-mark-seat]');
@@ -279,10 +300,14 @@
             el.className = cls.concat(keep).join(' ');
             const frameHTML = seatFrameHTML(p);
             const equipHTML = equipLines(p);
-            const sig = frameHTML + '|' + equipHTML;
+            const badgeHTML = titleBadgeHTML(p);
+            const nameHTML = seatNameHTML(p);
+            const sig = frameHTML + '|' + equipHTML + '|' + badgeHTML + '|' + nameHTML;
             if (G.seatSig[p.id] !== sig) {
                 G.seatSig[p.id] = sig;
+                el.querySelector('.plaque-row').innerHTML = badgeHTML;
                 el.querySelector('.seat-frame').innerHTML = frameHTML;
+                el.querySelector('.seat-namebar').innerHTML = nameHTML;
                 el.querySelector('.seat-equips').innerHTML = equipHTML;
             }
             el.querySelector('.seat-frame').setAttribute('aria-label', p.name + '，' + (p.hero_name || '') + '，体力' + p.hp + '/' + p.max_hp + '，手牌' + p.hand_count);
@@ -298,9 +323,16 @@
         if (!p) return;
         const eq = p.equipment || {};
         const judge = p.judge_area || [];
-        zones.innerHTML = '<h3>装备区</h3>' + SGS.EQUIP_ORDER.map(slot =>
-            '<div class="zone-slot' + (eq[slot] ? '' : ' empty') + '" ' + (eq[slot] ? SGS.cardDetailAttrs({ name: eq[slot] }) : '') + '><b>' +
-            SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot] || SGS.EQUIP_SLOT[slot].name) + '</div>').join('') +
+        // 装备槽（W5）：简称方块 + 插画缩略图 + 牌名；空槽半透明写"空"
+        zones.innerHTML = '<h3>装备区</h3>' + SGS.EQUIP_ORDER.map(slot => {
+            const name = eq[slot];
+            const art = name ? SGS.cardArtURL(name) : '';
+            const body = name
+                ? (art ? '<i class="zs-art" style="background-image:url(' + art + ')"></i>' : '') + '<span class="zs-name">' + esc(name) + '</span>'
+                : '<span class="zs-name">空</span>';
+            return '<div class="zone-slot' + (name ? '' : ' empty') + '" ' + (name ? SGS.cardDetailAttrs({ name: name }) : '') + '><b>' +
+                esc(SGS.EQUIP_SLOT[slot].short) + '</b>' + body + '</div>';
+        }).join('') +
             (p.treasure_count ? '<div class="zone-slot treasure-zone" title="木牛流马扣置的牌不计入手牌"><b>木</b>扣置 ' + p.treasure_count + ' 张</div>' : '') +
             '<div class="zone-judge"><span>判定区</span>' + (judge.length ? judgeTilesHTML(judge) : '<span class="faint">空</span>') + '</div>';
 
@@ -320,17 +352,26 @@
         // 每个按钮都带说明数据，悬停/长按可看技能全文。
         const readySkills = new Set(isMyPlay() ? (G.turn.actions || []).filter(a => a.type === 'use_skill').map(a => a.skill_name) : []);
         const skills = (hero.skills || []).map(s => typeof s === 'string' ? { name: s } : s);
+        // 长条按钮（W5）：左侧宝石、中间技能名、右侧状态（可发动 / 发动中 / 技能类型）
         const skillHTML = skills.map(s => {
             const ready = readySkills.has(s.name);
             const on = G.sel && G.sel.kind === 'skill' && G.sel.name === s.name;
+            // 右侧小字：可发动 / 发动中；否则写技能类型（R4），引擎里的原始类型值换成中文
+            const state = ready ? '可发动' : on ? '发动中' : esc(SKILL_TYPE_LABEL[s.type] || '');
             return '<button type="button" class="skill-btn' + (ready ? ' ready' : '') + (on ? ' on' : '') + '" data-skill="' + esc(s.name) + '"' +
-                ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' + esc(s.name) + '</button>';
+                ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' +
+                '<span class="sk-name">' + esc(s.name) + '</span><span class="sk-state">' + state + '</span></button>';
         }).join('');
         const frameHTML = seatFrameHTML(p, { hideHand: true });
-        const sig = frameHTML + '|' + skillHTML;
+        const badgeHTML = titleBadgeHTML(p);
+        const nameHTML = seatNameHTML(p);
+        const sig = frameHTML + '|' + skillHTML + '|' + badgeHTML + '|' + nameHTML;
         if (G.seatSig.me !== sig) {
             G.seatSig.me = sig;
-            heroBox.innerHTML = '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div><div class="skill-btns">' + skillHTML + '</div>';
+            heroBox.innerHTML = '<div class="hero-stack"><div class="plaque-row">' + badgeHTML + '</div>' +
+                '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div>' +
+                '<div class="seat-namebar">' + nameHTML + '</div></div>' +
+                '<div class="skill-btns">' + skillHTML + '</div>';
             heroBox.querySelector('.hero-frame').addEventListener('click', () => onSeatClick(p.id));
             heroBox.querySelectorAll('.skill-btn').forEach(b => b.addEventListener('click', () => onSkillClick(b.dataset.skill, b)));
         }
@@ -512,12 +553,22 @@
         box.style.setProperty('--overlap', Math.max(-w * 0.72, overlap) + 'px');
     }
 
+    /** 不能出的牌被点：轻抖一下（W2），让点击有回应；toast 文字提示照常保留。 */
+    function nudgeCard(i) {
+        const el = document.querySelector('#hand [data-index="' + i + '"]');
+        if (!el) return;
+        el.classList.remove('nudge');
+        void el.offsetWidth; // 强制重排，连续点同一张牌也能重新播放动画
+        el.classList.add('nudge');
+        setTimeout(() => el.classList.remove('nudge'), 320);
+    }
+
     /** 点手牌：响应模式 → 选候选；技能模式 → 增减用牌；普通出牌 → 选中/取消这张牌。 */
     function onCardClick(i) {
         const reqMap = reqHandMap();
         if (reqMap) {
             if (reqMap.has(i)) togglePick(reqMap.get(i));
-            else toast('这张牌不能用于此次响应', { bad: true });
+            else { nudgeCard(i); toast('这张牌不能用于此次响应', { bad: true }); }
             return;
         }
         if (!isMyPlay()) {
@@ -529,7 +580,7 @@
             const at = sel.cards.indexOf(i);
             if (at >= 0) sel.cards.splice(at, 1);
             else if (skillSelectableCards().has(i)) sel.cards.push(i);
-            else { toast('这张牌不能用于【' + sel.name + '】', { bad: true }); return; }
+            else { nudgeCard(i); toast('这张牌不能用于【' + sel.name + '】', { bad: true }); return; }
             refreshSkillAction();
             renderAll();
             return;
@@ -542,6 +593,7 @@
         const action = playActionFor(i) || recastActionFor(i);
         if (!action) {
             const c = G.hand[i] || {};
+            nudgeCard(i);
             toast(c.name === '闪' || c.name === '无懈可击' ? '【' + c.name + '】只能在需要时打出' : '【' + (c.name || '这张牌') + '】现在不能使用', { bad: true });
             return;
         }
@@ -696,6 +748,15 @@
             prompt.innerHTML = '已超时，由托管代为选择';
             ok.disabled = true; cancel.disabled = true;
             return;
+        }
+        // 多次响应（无双、决斗）：引擎逐张请求，提示语形如“共需 2 张，第 1 张”。界面照常逐次显示，
+        // 这里只在提示旁画 N 个圆点，前 K-1 个实心，让人知道还要出几张。不合并成一次选两张。
+        const multi = /共需\s*(\d+)\s*张\s*[，,]\s*第\s*(\d+)\s*张/.exec(r.prompt || '');
+        if (multi) {
+            const count = Math.min(6, Number(multi[1]));
+            const done = Number(multi[2]) - 1;
+            const pips = Array.from({ length: count }, (_, i) => '<i class="pip' + (i < done ? ' on' : '') + '"></i>').join('');
+            prompt.insertAdjacentHTML('beforeend', '<span class="ab-pips" aria-hidden="true">' + pips + '</span>');
         }
         const options = r.options || [];
         const isLegacy = !r.selection;
@@ -877,17 +938,24 @@
     }
 
     /** 响应倒计时条；时间到了显示“托管代选”，引擎那边会自动按规则托管。 */
+    /** 倒计时圆盘（W6）：--p 写入剩余比例（金色弧长），中间写剩余秒数；少于 5 秒由 .urgent 变红。 */
+    function paintTimer(wrap, left, total) {
+        const frac = Math.max(0, Math.min(1, left / total));
+        wrap.style.setProperty('--p', (frac * 100).toFixed(2) + '%');
+        const sec = wrap.querySelector('.ab-sec');
+        if (sec) sec.textContent = String(Math.max(0, Math.ceil(left / 1000)));
+        wrap.classList.toggle('urgent', left < 5000);
+    }
+
     function startRequestTimer(seconds) {
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
-        const bar = document.querySelector('#abTimer i');
         const wrap = document.getElementById('abTimer');
         const tick = () => {
             if (!G.req) { clearInterval(G.reqTimer); return; }
             const left = G.reqDeadline - Date.now();
-            bar.style.transform = 'scaleX(' + Math.max(0, left / total) + ')';
-            wrap.classList.toggle('urgent', left < 5000);
+            paintTimer(wrap, left, total);
             if (left <= 0) {
                 clearInterval(G.reqTimer);
                 G.req.expired = true;
@@ -954,11 +1022,30 @@
         const c = el ? centerOf(el) : { x: innerWidth / 2, y: innerHeight / 2 };
         const s = document.createElement('div');
         s.className = 'skill-shout';
-        s.textContent = text;
+        // 菱形头像徽章（W9，参照原型 .badge）：用该座位武将的立绘，没有立绘就用首字
+        const badge = document.createElement('div');
+        badge.className = 'ss-badge';
+        const img = el && el.querySelector('img');
+        const fallback = el && el.querySelector('.hero-fallback');
+        if (img && img.getAttribute('src')) {
+            const pic = document.createElement('img');
+            pic.src = img.getAttribute('src');
+            pic.alt = '';
+            badge.appendChild(pic);
+        } else {
+            const mark = document.createElement('span');
+            mark.textContent = fallback ? fallback.textContent : '';
+            badge.appendChild(mark);
+        }
+        const word = document.createElement('div');
+        word.className = 'ss-word';
+        word.textContent = text;
+        s.appendChild(badge);
+        s.appendChild(word);
         s.style.left = c.x + 'px';
         s.style.top = c.y + 'px';
         document.body.appendChild(s);
-        setTimeout(() => s.remove(), 1400);
+        setTimeout(() => s.remove(), 1600);
     }
 
     /** 聊天气泡：对手座位按方位朝向牌桌中央，我的气泡在头像上方。 */
@@ -1941,13 +2028,11 @@
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
-        const bar = document.querySelector('#abTimer i');
         const wrap = document.getElementById('abTimer');
         const tick = () => {
             if (!G.turn || G.req || G.ended) { clearInterval(G.reqTimer); return; }
             const left = G.reqDeadline - Date.now();
-            bar.style.transform = 'scaleX(' + Math.max(0, left / total) + ')';
-            wrap.classList.toggle('urgent', left < 5000);
+            paintTimer(wrap, left, total);
             if (left <= 0) clearInterval(G.reqTimer);
         };
         tick();
@@ -2029,8 +2114,17 @@
             '<span class="pt-step" title="' + SGS.PHASE[k] + '">' + SGS.PHASE_SHORT[k] + '</span>').join('');
     }
 
+    /** 牌桌配色（W8）：夜幕江山（默认）或江山暮色，写到 .battle 的 data-palette 上，CSS 变量随之切换。 */
+    function applyTablePalette() {
+        const battle = document.getElementById('battle');
+        if (battle) battle.dataset.palette = settings().table_palette === 'jade' ? 'jade' : 'night';
+    }
+
     function bindUI() {
         buildPhaseTrack();
+        applyTablePalette();
+        // 全局设置保存后立即生效（W8）
+        window.addEventListener('global-settings-changed', applyTablePalette);
         document.getElementById('decisionTracePanel').hidden = settings().show_decision_trace === false;
         document.getElementById('okBtn').addEventListener('click', onOk);
         document.getElementById('cancelBtn').addEventListener('click', onCancel);

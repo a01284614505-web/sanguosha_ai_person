@@ -261,7 +261,8 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
       .map(r => ({cls: r.className, who: r.querySelector('.who b')?.textContent})), msg);
     pass('sent message appears exactly once in 席间', rows.length === 1, JSON.stringify(rows));
     pass('message has human style (kind-human, me)', /\bkind-human\b/.test(rows[0].cls) && /\bme\b/.test(rows[0].cls) && !/\bkind-ai\b/.test(rows[0].cls), rows[0].cls);
-    pass('speaker name is the player', rows[0].who === PLAYER_NAME, String(rows[0].who));
+    // P5 起聊天名字前带公开座位号（“N号 名字”），座位号必须是 1 起的正整数。
+    pass('speaker name is the player', /^[1-9]\d*号 /.test(String(rows[0].who)) && String(rows[0].who).replace(/^[1-9]\d*号 /, '') === PLAYER_NAME, String(rows[0].who));
     pass('input cleared after send', await page.locator('#chatInput').inputValue() === '');
     pass('empty-chat placeholder removed', await page.locator('#chatList .chat-empty').count() === 0);
     const bad = await page.locator('.toast.bad').allInnerTexts();

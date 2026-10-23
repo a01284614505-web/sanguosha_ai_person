@@ -139,9 +139,11 @@
             : '';
         const asTag = opts.asName && opts.asName !== name ? '<div class="c-as">当' + esc(opts.asName) + '</div>' : '';
         const detail = opts.noDetail ? '' : cardDetailAttrs(card);
+        // 牌名颜色跟随花色（W1）：红色花色用红字，其余用深色字
+        const nameCls = 'c-name' + (shown.length > 3 ? ' long' : '') + (s.red ? ' red' : ' black');
         return '<div class="' + cls.join(' ') + '" ' + attrs + ' ' + detail + ' aria-label="' + esc(cardLabel(card)) + '">' +
             artHTML + corner + typeTag + asTag +
-            '<div class="c-name' + (shown.length > 3 ? ' long' : '') + '">' + esc(shown) + '</div></div>';
+            '<div class="' + nameCls + '">' + esc(shown) + '</div></div>';
     }
 
     /** 详情浮窗需要的数据属性（牌名、花色、点数）。 */
@@ -166,6 +168,8 @@
             '<radialGradient id="gy-green" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#d6ffc8"/><stop offset=".45" stop-color="#57c05a"/><stop offset="1" stop-color="#1d5a1f"/></radialGradient>' +
             '<radialGradient id="gy-yellow" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#fff6c4"/><stop offset=".45" stop-color="#e4c24a"/><stop offset="1" stop-color="#7a5c10"/></radialGradient>' +
             '<radialGradient id="gy-red" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#ffd0c4"/><stop offset=".45" stop-color="#d8422f"/><stop offset="1" stop-color="#6a130a"/></radialGradient>' +
+            // 铁索连环用的钢灰渐变（W4.7）：chainSVG() 里 url(#steel) 引用它
+            '<linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef2f6"/><stop offset=".45" stop-color="#9aa6b2"/><stop offset="1" stop-color="#4a545e"/></linearGradient>' +
             '</defs></svg>';
         document.body.appendChild(holder.firstChild);
     }
@@ -197,6 +201,35 @@
         let html = '';
         for (let i = 0; i < max; i++) html += one(i < hp ? col : 'lost');
         return '<span class="' + cls + '" role="img" aria-label="' + label + '">' + html + '</span>';
+    }
+
+    // ------------------------------------------------------------------ 武将框装饰（W4）
+    /** 四角云纹角花：放在武将框内侧最上层，pointer-events:none，CSS 用 tl/tr/bl/br 翻转到四个角。 */
+    const CORNER_PATH = '<path d="M3 22V10a7 7 0 0 1 7-7h12" fill="none" stroke="#1c1105" stroke-width="4.4"/>' +
+        '<path d="M3 22V10a7 7 0 0 1 7-7h12" fill="none" stroke="#f1cf78" stroke-width="2"/>' +
+        '<path d="M7.6 15.6c-2.4 0-3.7-1.6-3.7-3.4s1.4-3.2 3.1-3.2 2.7 1.2 2.7 2.6-1 2.2-2.1 2.2" fill="none" stroke="#f1cf78" stroke-width="1.5"/>' +
+        '<circle cx="22" cy="3" r="1.9" fill="#f1cf78"/><circle cx="3" cy="22" r="1.9" fill="#f1cf78"/>';
+    function cornersHTML() {
+        return ['tl', 'tr', 'bl', 'br'].map(k => '<svg class="cn ' + k + '" viewBox="0 0 24 24" aria-hidden="true">' + CORNER_PATH + '</svg>').join('');
+    }
+
+    /** 判定区闪电的白色闪电图标（W4.6）。 */
+    const BOLT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h5.6L9.5 22 19 9.8h-5.8z" fill="#fff"/></svg>';
+
+    /**
+     * 铁索连环：真铁链横贯头像（W4.7）。链环交替：偶数为椭圆环，奇数为扁条。
+     * viewBox 固定 9 个链环宽，CSS 里拉满武将框宽度（preserveAspectRatio=none）。
+     */
+    function chainSVG() {
+        const n = 9;
+        let s = '';
+        for (let i = 0; i < n; i++) {
+            const x = i * 15;
+            s += i % 2 === 0
+                ? '<ellipse cx="' + (x + 7.5) + '" cy="9" rx="8.5" ry="5.6" fill="none" stroke="#1a1d22" stroke-width="5"/><ellipse cx="' + (x + 7.5) + '" cy="9" rx="8.5" ry="5.6" fill="none" stroke="url(#steel)" stroke-width="3"/>'
+                : '<rect x="' + (x + 1) + '" y="6.6" width="13" height="4.8" rx="2.4" fill="#1a1d22"/><rect x="' + (x + 1.8) + '" y="7.4" width="11.4" height="3.2" rx="1.6" fill="url(#steel)"/>';
+        }
+        return '<svg viewBox="0 0 ' + (n * 15) + ' 18" preserveAspectRatio="none" aria-hidden="true">' + s + '</svg>';
     }
 
     // ------------------------------------------------------------------ 印章与立绘
@@ -299,43 +332,31 @@
     }
 
     // ------------------------------------------------------------------ 详情浮窗
-    // 电脑：鼠标停留 350ms 显示，移开消失。
-    // 手机：手指按住 450ms 显示（并吞掉松手时的那次点击，避免误出牌），松手 1.6 秒后消失。
+    // 电脑：右键卡牌或技能弹出（代替浏览器菜单）；左键、再次右键别处、滚动时收起。
+    //       不再随鼠标悬停自动弹出，悬停时界面更安静，也不会误弹。
+    // 手机：手指按住 450ms 弹出（并吞掉松手时的那次点击，避免误出牌）；
+    //       松手后不自动消失，下一次点任意处收起。
     const Detail = {
         el: null,
         timer: null,
-        hideTimer: null,
         swallowClick: false,
-        current: null,
+        shownAt: 0,
 
         init() {
-            const fine = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
-            if (fine) {
-                document.addEventListener('mouseover', (e) => {
-                    const t = e.target.closest('[data-card-name],[data-skill-name]');
-                    if (t === this.current) return;
-                    this.hide();
-                    if (!t) return;
-                    this.current = t;
-                    this.timer = setTimeout(() => this.show(t), 350);
-                });
-                document.addEventListener('mousedown', () => this.hide(), true);
-            }
+            // 按下时先收起旧浮窗。右键按下不收起，由下面的 contextmenu 决定是换一张还是收起。
             document.addEventListener('pointerdown', (e) => {
+                if (!(e.pointerType === 'mouse' && e.button === 2)) this.hide();
                 if (e.pointerType === 'mouse') return;
                 const t = e.target.closest('[data-card-name],[data-skill-name]');
-                this.hide();
                 if (!t) return;
                 const x0 = e.clientX, y0 = e.clientY;
                 const cancel = () => { clearTimeout(this.timer); document.removeEventListener('pointermove', move); };
                 const move = (ev) => { if (Math.abs(ev.clientX - x0) > 10 || Math.abs(ev.clientY - y0) > 10) cancel(); };
                 document.addEventListener('pointermove', move);
-                document.addEventListener('pointerup', () => {
-                    cancel();
-                    if (this.el) this.hideTimer = setTimeout(() => this.hide(), 1600);
-                }, { once: true });
+                document.addEventListener('pointerup', cancel, { once: true });
+                document.addEventListener('pointercancel', cancel, { once: true });
                 this.timer = setTimeout(() => { this.swallowClick = true; this.show(t); if (navigator.vibrate) navigator.vibrate(12); }, 450);
-            }, { passive: true });
+            }, { passive: true, capture: true });
             // 长按之后松手产生的 click 不应触发出牌/选择
             document.addEventListener('click', (e) => {
                 if (!this.swallowClick) return;
@@ -343,16 +364,19 @@
                 e.stopPropagation();
                 e.preventDefault();
             }, true);
+            // 右键卡牌或技能：弹出小框并阻止浏览器菜单；右键别处：收起旧浮窗，保留浏览器菜单
             document.addEventListener('contextmenu', (e) => {
-                if (e.target.closest('[data-card-name],[data-skill-name]')) e.preventDefault();
+                const t = e.target.closest('[data-card-name],[data-skill-name]');
+                if (!t) { this.hide(); return; }
+                e.preventDefault();
+                this.show(t);
             });
-            window.addEventListener('scroll', () => this.hide(), true);
+            // 滚动收起；但刚弹出的 300 毫秒内忽略，避免右键时浏览器把获得焦点的牌滚进视野而误收起
+            window.addEventListener('scroll', () => { if (Date.now() - this.shownAt > 300) this.hide(); }, true);
         },
 
         hide() {
             clearTimeout(this.timer);
-            clearTimeout(this.hideTimer);
-            this.current = null;
             if (this.el) { this.el.remove(); this.el = null; }
         },
 
@@ -361,6 +385,7 @@
             const html = this.content(target);
             if (!html) return;
             if (this.el) this.el.remove();
+            this.shownAt = Date.now();
             const pop = document.createElement('div');
             pop.className = 'detail-pop';
             pop.setAttribute('role', 'tooltip');
@@ -384,27 +409,38 @@
         }
     };
 
-    /** 卡牌详情：小牌面 + 名称 + 类型/射程 + 效果；引擎未实现的特效如实注明。 */
+    /**
+     * 卡牌详情（W3）：左上一个 34px 插画缩略图 + 牌名 + 一行小字（类型、花色点数、射程、坐骑距离）+ 效果说明。
+     * 不再放整张大牌面，框宽固定约 216px。引擎未实现的特效如实注明。
+     */
     function cardDetailHTML(name, suit, rank, nature) {
         const nat = natureOf({ name: name, nature: nature });
         // 火杀 / 雷杀：标题与说明用属性杀自己的条目，没有时退回普通【杀】
         const info = (nat && NATURE_INFO[nat].text) ? NATURE_INFO[nat] : (CARD_INFO[name] || {});
         const title = nat ? NATURE_INFO[nat].name : name;
         const s = suitInfo(suit);
-        const face = cardHTML({ name: name, nature: nat, suit: suit, rank: rank, card_type: info.type === '基本' ? 'basic' : (/武器|防具|坐骑|宝物/.test(info.type || '') ? 'equipment' : 'trick') }, { noDetail: true });
-        const tags = [info.type ? '<span class="dp-tag">' + esc(info.type) + '</span>' : ''];
-        if (info.range) tags.push('<span class="dp-tag">攻击范围 ' + info.range + '</span>');
-        if (info.horse) tags.push('<span class="dp-tag">距离 ' + esc(info.horse) + '</span>');
-        const meta = s.sym ? s.name + ' ' + rankText(rank) : '';
-        return '<div class="dp-head">' + face + '<div><h4>' + esc(title) + '</h4><div>' + tags.join('') + '</div>' +
-            (meta ? '<div class="dp-meta">' + esc(meta) + '</div>' : '') + '</div></div>' +
-            '<div>' + esc(info.text || '暂无说明。') + '</div>' +
+        // 插画缩略图：没有图就用牌名首字（与 cardHTML 的兜底一致）
+        const art = cardArtURL(name);
+        const artHTML = art
+            ? '<div class="dp-art" style="background-image:url(' + art + ')"></div>'
+            : '<div class="dp-art text-art">' + esc(name.charAt(0)) + '</div>';
+        // 类型、花色点数、射程、坐骑距离挤成一行小字
+        const parts = [];
+        if (info.type) parts.push(esc(info.type));
+        if (s.sym) parts.push(esc(s.name + ' ' + rankText(rank)));
+        if (info.range) parts.push('攻击范围 ' + esc(String(info.range)));
+        if (info.horse) parts.push('距离 ' + esc(String(info.horse)));
+        return '<div class="dp-head">' + artHTML + '<div class="dp-title"><h4>' + esc(title) + '</h4>' +
+            (parts.length ? '<div class="dp-meta">' + parts.join(' · ') + '</div>' : '') + '</div></div>' +
+            '<div class="dp-body">' + esc(info.text || '暂无说明。') + '</div>' +
             (info.pending ? '<div class="dp-note">本项目引擎暂未实现这件装备的特效' + (info.range ? '，目前只生效攻击范围' : '') + '。</div>' : '');
     }
 
+    /** 技能详情：与卡牌详情同宽，标题加类型标签，下面是技能说明。 */
     function skillDetailHTML(name, desc, type) {
         const tag = SKILL_TAG[type] ? '<span class="dp-tag">' + SKILL_TAG[type] + '</span>' : '';
-        return '<div class="dp-head"><div><h4>【' + esc(name) + '】</h4>' + tag + '</div></div><div>' + esc(desc || '暂无技能说明。') + '</div>';
+        return '<div class="dp-head"><div class="dp-title"><h4>【' + esc(name) + '】</h4>' + (tag ? '<div class="dp-meta">' + tag + '</div>' : '') + '</div></div>' +
+            '<div class="dp-body">' + esc(desc || '暂无技能说明。') + '</div>';
     }
 
     // ------------------------------------------------------------------ 存储
@@ -579,7 +615,7 @@
     // ------------------------------------------------------------------ 导出与初始化
     const SGS = {
         SUIT, CARD_ART, CARD_INFO, DELAYED, EQUIP_SLOT, EQUIP_ORDER, IDENTITY, WINNER, PHASE, PHASE_ORDER, PHASE_SHORT, SKILL_TAG,
-        esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs,
+        esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs, cornersHTML, chainSVG, BOLT_SVG,
         identitySeal, factionSeal, heroImageURL, heroImgHTML, imgFallback, icon, hydrateIcons,
         applyTheme, toggleTheme, Detail, cardDetailHTML, natureOf, displayName, bracketName, NATURE_INFO, skillDetailHTML, store, toast, fetchJSON, attachModelPicker, identityCardHTML
     };
