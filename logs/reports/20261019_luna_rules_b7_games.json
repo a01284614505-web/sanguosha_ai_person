@@ -1,0 +1,489 @@
+{
+  "games": 30,
+  "normal": 30,
+  "draw": 0,
+  "declined_skills": 1,
+  "ai_heroes_covered": 27,
+  "results": [
+    {
+      "deck": "standard",
+      "seed": 20261017,
+      "identity": "lord",
+      "hero": "liubei",
+      "ai_heroes": [
+        "caocao",
+        "guanyu",
+        "sunquan",
+        "huatuo"
+      ],
+      "winner": "rebel",
+      "turns": 11,
+      "card_count": 108,
+      "declined_skills": 1
+    },
+    {
+      "deck": "standard",
+      "seed": 20261120,
+      "identity": "loyalist",
+      "hero": "guanyu",
+      "ai_heroes": [
+        "simayi",
+        "zhangfei",
+        "ganning",
+        "lvbu"
+      ],
+      "winner": "rebel",
+      "turns": 40,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261223,
+      "identity": "rebel",
+      "hero": "zhangfei",
+      "ai_heroes": [
+        "xiahoudun",
+        "zhugeliang",
+        "lvmeng",
+        "diaochan"
+      ],
+      "winner": "rebel",
+      "turns": 28,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261326,
+      "identity": "spy",
+      "hero": "zhugeliang",
+      "ai_heroes": [
+        "zhangliao",
+        "zhaoyun",
+        "huanggai",
+        "huaxiong"
+      ],
+      "winner": "rebel",
+      "turns": 9,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261429,
+      "identity": "lord",
+      "hero": "zhaoyun",
+      "ai_heroes": [
+        "xuchu",
+        "machao",
+        "zhouyu",
+        "yuanshao"
+      ],
+      "winner": "spy",
+      "turns": 22,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261532,
+      "identity": "loyalist",
+      "hero": "machao",
+      "ai_heroes": [
+        "guojia",
+        "huangyueying",
+        "daqiao",
+        "zhangjiao"
+      ],
+      "winner": "rebel",
+      "turns": 53,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261635,
+      "identity": "rebel",
+      "hero": "huangyueying",
+      "ai_heroes": [
+        "zhenji",
+        "liubei",
+        "luxun",
+        "huatuo"
+      ],
+      "winner": "lord",
+      "turns": 28,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261738,
+      "identity": "spy",
+      "hero": "liubei",
+      "ai_heroes": [
+        "caocao",
+        "guanyu",
+        "sunquan",
+        "lvbu"
+      ],
+      "winner": "lord",
+      "turns": 14,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261841,
+      "identity": "lord",
+      "hero": "guanyu",
+      "ai_heroes": [
+        "simayi",
+        "zhangfei",
+        "ganning",
+        "diaochan"
+      ],
+      "winner": "spy",
+      "turns": 27,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "standard",
+      "seed": 20261944,
+      "identity": "loyalist",
+      "hero": "zhangfei",
+      "ai_heroes": [
+        "xiahoudun",
+        "zhugeliang",
+        "lvmeng",
+        "huaxiong"
+      ],
+      "winner": "rebel",
+      "turns": 3,
+      "card_count": 108,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262026,
+      "identity": "lord",
+      "hero": "liubei",
+      "ai_heroes": [
+        "zhangliao",
+        "zhaoyun",
+        "huanggai",
+        "yuanshao"
+      ],
+      "winner": "rebel",
+      "turns": 9,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262129,
+      "identity": "loyalist",
+      "hero": "guanyu",
+      "ai_heroes": [
+        "xuchu",
+        "machao",
+        "zhouyu",
+        "zhangjiao"
+      ],
+      "winner": "rebel",
+      "turns": 12,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262232,
+      "identity": "rebel",
+      "hero": "zhangfei",
+      "ai_heroes": [
+        "guojia",
+        "huangyueying",
+        "daqiao",
+        "huatuo"
+      ],
+      "winner": "rebel",
+      "turns": 19,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262335,
+      "identity": "spy",
+      "hero": "zhugeliang",
+      "ai_heroes": [
+        "zhenji",
+        "liubei",
+        "luxun",
+        "lvbu"
+      ],
+      "winner": "lord",
+      "turns": 41,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262438,
+      "identity": "lord",
+      "hero": "zhaoyun",
+      "ai_heroes": [
+        "caocao",
+        "guanyu",
+        "sunquan",
+        "diaochan"
+      ],
+      "winner": "lord",
+      "turns": 15,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262541,
+      "identity": "loyalist",
+      "hero": "machao",
+      "ai_heroes": [
+        "simayi",
+        "zhangfei",
+        "ganning",
+        "huaxiong"
+      ],
+      "winner": "rebel",
+      "turns": 17,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262644,
+      "identity": "rebel",
+      "hero": "huangyueying",
+      "ai_heroes": [
+        "xiahoudun",
+        "zhugeliang",
+        "lvmeng",
+        "yuanshao"
+      ],
+      "winner": "rebel",
+      "turns": 29,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262747,
+      "identity": "spy",
+      "hero": "liubei",
+      "ai_heroes": [
+        "zhangliao",
+        "zhaoyun",
+        "huanggai",
+        "zhangjiao"
+      ],
+      "winner": "rebel",
+      "turns": 13,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262850,
+      "identity": "lord",
+      "hero": "guanyu",
+      "ai_heroes": [
+        "xuchu",
+        "machao",
+        "zhouyu",
+        "huatuo"
+      ],
+      "winner": "rebel",
+      "turns": 10,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "extra",
+      "seed": 20262953,
+      "identity": "loyalist",
+      "hero": "zhangfei",
+      "ai_heroes": [
+        "guojia",
+        "huangyueying",
+        "daqiao",
+        "lvbu"
+      ],
+      "winner": "rebel",
+      "turns": 17,
+      "card_count": 53,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263035,
+      "identity": "lord",
+      "hero": "liubei",
+      "ai_heroes": [
+        "zhenji",
+        "guanyu",
+        "luxun",
+        "diaochan"
+      ],
+      "winner": "rebel",
+      "turns": 18,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263138,
+      "identity": "loyalist",
+      "hero": "guanyu",
+      "ai_heroes": [
+        "caocao",
+        "zhangfei",
+        "sunquan",
+        "huaxiong"
+      ],
+      "winner": "rebel",
+      "turns": 9,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263241,
+      "identity": "rebel",
+      "hero": "zhangfei",
+      "ai_heroes": [
+        "simayi",
+        "zhugeliang",
+        "ganning",
+        "yuanshao"
+      ],
+      "winner": "rebel",
+      "turns": 21,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263344,
+      "identity": "spy",
+      "hero": "zhugeliang",
+      "ai_heroes": [
+        "xiahoudun",
+        "zhaoyun",
+        "lvmeng",
+        "zhangjiao"
+      ],
+      "winner": "lord",
+      "turns": 33,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263447,
+      "identity": "lord",
+      "hero": "zhaoyun",
+      "ai_heroes": [
+        "zhangliao",
+        "machao",
+        "huanggai",
+        "huatuo"
+      ],
+      "winner": "rebel",
+      "turns": 19,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263550,
+      "identity": "loyalist",
+      "hero": "machao",
+      "ai_heroes": [
+        "xuchu",
+        "huangyueying",
+        "zhouyu",
+        "lvbu"
+      ],
+      "winner": "rebel",
+      "turns": 17,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263653,
+      "identity": "rebel",
+      "hero": "huangyueying",
+      "ai_heroes": [
+        "guojia",
+        "liubei",
+        "daqiao",
+        "diaochan"
+      ],
+      "winner": "rebel",
+      "turns": 35,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263756,
+      "identity": "spy",
+      "hero": "liubei",
+      "ai_heroes": [
+        "zhenji",
+        "guanyu",
+        "luxun",
+        "huaxiong"
+      ],
+      "winner": "lord",
+      "turns": 19,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263859,
+      "identity": "lord",
+      "hero": "guanyu",
+      "ai_heroes": [
+        "caocao",
+        "zhangfei",
+        "sunquan",
+        "yuanshao"
+      ],
+      "winner": "lord",
+      "turns": 11,
+      "card_count": 161,
+      "declined_skills": 0
+    },
+    {
+      "deck": "combined",
+      "seed": 20263962,
+      "identity": "loyalist",
+      "hero": "zhangfei",
+      "ai_heroes": [
+        "simayi",
+        "zhugeliang",
+        "ganning",
+        "zhangjiao"
+      ],
+      "winner": "rebel",
+      "turns": 29,
+      "card_count": 161,
+      "declined_skills": 0
+    }
+  ]
+}

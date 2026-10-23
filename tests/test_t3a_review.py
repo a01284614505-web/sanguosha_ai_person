@@ -180,14 +180,16 @@ def test_chat_tail_carries_only_public_facts_and_the_speakers_own_notes_and_hand
     speaker_tail = gateway.calls[0]["messages"][-1]["content"]
     other_tail = gateway.calls[1]["messages"][-1]["content"]
 
+    assert "SPEAKER_WHY" in speaker_tail
     # 发言者自己的笔记：允许出现在它自己的尾巴里
     assert "你高把握怀疑4号是反贼" in speaker_tail
     # 别人的笔记、别人的隐藏身份、别人的手牌、别人对 4 号的判断：一律不出现
-    for leak in ("OTHER_WHY_TOKEN", "SPEAKER_WHY", "内奸", "藤甲", "忠臣"):
+    for leak in ("OTHER_WHY_TOKEN", "内奸", "藤甲", "忠臣"):
         assert leak not in speaker_tail, f"发言者尾巴泄露了 {leak!r}"
     # 反过来：其他 AI 的尾巴里只有它自己的笔记
     assert "你高把握怀疑4号是忠臣" in other_tail
-    for leak in ("SPEAKER_WHY", "OTHER_WHY_TOKEN", "内奸", "藤甲", "反贼"):
+    assert "OTHER_WHY_TOKEN" in other_tail
+    for leak in ("SPEAKER_WHY", "内奸", "藤甲", "反贼"):
         assert leak not in other_tail, f"另一个 AI 的尾巴泄露了 {leak!r}"
     # 手牌与身份不随任何尾巴进入
     assert "藤甲" not in speaker_tail

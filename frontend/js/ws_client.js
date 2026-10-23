@@ -47,7 +47,9 @@ class GameClient {
 
     connect() {
         const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:8889`;
+        const httpPort = Number(window.location.port || (window.location.protocol === 'https:' ? 443 : 80));
+        const wsPort = httpPort === 80 || httpPort === 443 ? 8889 : httpPort + 1;
+        const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:${wsPort}`;
         console.log('[WS] 连接:', wsUrl);
         this.ws = new WebSocket(wsUrl);
         
@@ -144,11 +146,17 @@ class GameClient {
             case 'decision_trace':
                 if (this.onDecisionTrace) this.onDecisionTrace(data);
                 break;
+            case Protocol.OUTBOUND.CHAT_REJECTED:
+                if (this.onChatRejected) this.onChatRejected(data);
+                break;
             case Protocol.OUTBOUND.COGNITIVE_NOTES:
                 if (this.onCognitiveNotes) this.onCognitiveNotes(data);
                 break;
             case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
+                break;
+            case Protocol.OUTBOUND.POST_DEATH_ACTION_RESULT:
+                if (this.onPostDeathActionResult) this.onPostDeathActionResult(data);
                 break;
             case Protocol.OUTBOUND.ERROR:
                 console.error('[服务器错误]', data.message);
@@ -221,6 +229,7 @@ GameClient.prototype.onTrusteeStatus = null;
 GameClient.prototype.onDecisionTrace = null;
 GameClient.prototype.onCognitiveNotes = null;
 GameClient.prototype.onEndGameAccepted = null;
+GameClient.prototype.onPostDeathActionResult = null;
 GameClient.prototype.onPong = null;
 GameClient.prototype.onServerInfo = null;
 GameClient.prototype.onGameCreated = null;
@@ -237,3 +246,5 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = GameClient;
 }
+
+GameClient.prototype.onChatRejected = null;

@@ -1,0 +1,49 @@
+$ /root/sanguosha_ai_person/.venv/bin/python -m pytest -q --tb=short -p no:cacheprovider
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 22%]
+........................................................................ [ 29%]
+................................................................... [ 36%]
+........................................................................ [ 43%]
+........................................................................ [ 50%]
+........................................................................ [ 58%]
+................................................................................................... [ 68%]
+........................................................................ [ 75%]
+........................................................................ [ 82%]
+........................................................................ [ 90%]
+........................................................................ [ 97%]
+.......................                                                  [100%]
+981 passed, 50 subtests passed in 44.77s
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/check_frontend_js.py
+game.html: 无内联脚本
+handbook.html: 无内联脚本
+hero_manager.html: 第255行起的脚本块 语法通过
+history.html: 无内联脚本
+index.html: 无内联脚本
+logs.html: 无内联脚本
+result.html: 无内联脚本
+select_hero.html: 无内联脚本
+settings.html: 无内联脚本
+skins.html: 无内联脚本
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/audio.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/card_info.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/chat_panel.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/game_main.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/global_settings.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/handbook.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/history.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/lobby.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/local_skins.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/logs_page.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/protocol.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/result.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/select_hero.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/settings_page.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/sgs_common.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/skill_certification.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/skill_trial.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/skins_manager.js: 语法通过
+/root/sanguosha_ai_person_integrated_20261019/frontend/js/ws_client.js: 语法通过
+全部通过
+$ /root/sanguosha_ai_person/.venv/bin/python -c from scripts.gen_protocol_js import generate_js, OUTPUT_PATH; import sys; ok = OUTPUT_PATH.read_text(encoding='utf-8') == generate_js(); print('protocol sync:', 'OK' if ok else 'MISMATCH'); sys.exit(0 if ok else 1)
+protocol sync: OK

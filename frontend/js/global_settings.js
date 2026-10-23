@@ -19,6 +19,7 @@
         default_temperature: 0.8,
         sfx_enabled: true,
         sfx_volume: 0.5,
+        speech_enabled: false,
         theme: 'dark',
         log_incognito: false,
         log_include_thinking: true
@@ -106,6 +107,7 @@
                     <label class="gs-row"><span>AI 思考提示</span><span><input id="gsThinking" type="checkbox">在武将框上显示“思考中”，并把思考摘要写进战报</span></label>
                     <label class="gs-row"><span>决策轨迹</span><span><input id="gsDecisionTrace" type="checkbox">在战报中显示可展开的简略与完整决策记录</span></label>
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
+                    <label class="gs-row"><span>语音播报</span><span><input id="gsSpeech" type="checkbox">朗读公开对局事件（仅此设备播放，默认关闭）<small class="muted" style="display:block;margin-top:4px">依赖浏览器语音合成和设备已安装的中文语音；无可用语音时静默跳过，不连接外部语音服务。</small></span></label>
                     <label class="gs-row"><span>音量</span><input id="gsVolume" type="range" min="0" max="1" step="0.05"></label>
                 </div>
                 <div class="gs-section" id="gsChatSection" hidden>
@@ -197,6 +199,7 @@
         document.getElementById('gsThinking').checked = !!s.show_ai_thinking;
         document.getElementById('gsDecisionTrace').checked = s.show_decision_trace !== false;
         document.getElementById('gsSfx').checked = s.sfx_enabled !== false;
+        document.getElementById('gsSpeech').checked = s.speech_enabled === true;
         document.getElementById('gsVolume').value = String(s.sfx_volume ?? 0.5);
         document.getElementById('gsProvider').value = s.default_provider;
         document.getElementById('gsModel').value = s.default_model;
@@ -221,6 +224,7 @@
             show_decision_trace: document.getElementById('gsDecisionTrace').checked,
             sfx_enabled: document.getElementById('gsSfx').checked,
             sfx_volume: Number(document.getElementById('gsVolume').value),
+            speech_enabled: document.getElementById('gsSpeech').checked,
             default_provider: document.getElementById('gsProvider').value,
             default_model: document.getElementById('gsModel').value.trim() || 'deepseek-chat',
             default_temperature: Number.isFinite(temperature) ? temperature : 0.8,

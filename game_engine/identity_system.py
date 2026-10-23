@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""身份系统：5人身份局随机身份、身份卡指定与胜利判定。"""
+"""身份系统：声明式身份局的随机身份、身份卡指定与胜利判定。"""
 
 import random
 from typing import Dict, List, Optional
 
+from .mode_registry import get_mode, identity_victory
+
 
 class IdentitySystem:
-    IDENTITY_5 = ["lord", "loyalist", "rebel", "rebel", "spy"]
+    IDENTITY_5 = list(get_mode("5人身份局").identities)
+    IDENTITY_8 = list(get_mode("8人身份局").identities)
+    TEAM_2V2 = list(get_mode("2v2").identities)
+    LANDLORD = list(get_mode("斗地主").identities)
     IDENTITY_ALIASES = {
         "主公": "lord", "lord": "lord",
         "忠臣": "loyalist", "loyalist": "loyalist",
@@ -16,20 +21,29 @@ class IdentitySystem:
 
     @classmethod
     def assign_identities(cls, players: List, mode="5人身份局", identity_card: Optional[Dict] = None) -> Dict:
-        if mode != "5人身份局" or len(players) != 5:
+        try:
+            spec = get_mode(mode)
+        except ValueError:
             return {}
-        return cls._assign_5players(players, identity_card or {})
+        if len(players) != spec.player_count:
+            return {}
+        return cls._assign(players, spec, identity_card or {})
 
     @classmethod
-    def _assign_5players(cls, players: List, identity_card: Dict) -> Dict:
-        pool = list(cls.IDENTITY_5)
+    def _assign(cls, players: List, spec, identity_card: Dict) -> Dict:
+        pool = list(spec.identities)
         requested = None
+        if spec.assignment == "fixed" and identity_card.get("use"):
+            raise ValueError(f"{spec.mode_id}不支持身份卡")
         if identity_card.get("use"):
             requested = cls.IDENTITY_ALIASES.get(identity_card.get("identity"))
             if requested not in pool:
                 raise ValueError(f"身份卡指定了无效身份: {identity_card.get('identity')}")
 
-        if requested:
+        if spec.assignment == "fixed":
+            for player, identity in zip(players, pool):
+                player.identity = identity
+        elif requested:
             players[0].identity = requested
             pool.remove(requested)
             random.shuffle(pool)
@@ -41,32 +55,19 @@ class IdentitySystem:
                 player.identity = identity
 
         for player in players:
-            player.identity_revealed = player.identity == "lord"
+            player.identity_revealed = spec.identities_public or player.identity == "lord"
 
-        lord = next(player for player in players if player.identity == "lord")
-        return {
-            "lord": lord,
-            "loyalist": [p for p in players if p.identity == "loyalist"],
-            "rebel": [p for p in players if p.identity == "rebel"],
-            "spy": [p for p in players if p.identity == "spy"],
-        }
+        groups = {identity: [p for p in players if p.identity == identity]
+                  for identity in dict.fromkeys(spec.identities)}
+        first = next(player for player in players if player.identity == spec.first_player_identity)
+        result = {**groups, "first_player": first}
+        if "lord" in groups:
+            result["lord"] = groups["lord"][0]
+        return result
 
     @staticmethod
-    def check_victory(players: List) -> Dict:
-        alive_players = [p for p in players if p.alive]
-        lord = next((p for p in players if p.identity == "lord"), None)
-        if not lord:
-            return {"game_over": False}
-
-        if not lord.alive:
-            if len(alive_players) == 1 and alive_players[0].identity == "spy":
-                return {"game_over": True, "winner": "spy", "message": "内奸获胜！"}
-            return {"game_over": True, "winner": "rebel", "message": "反贼获胜！"}
-
-        alive_identities = {p.identity for p in alive_players}
-        if "rebel" not in alive_identities and "spy" not in alive_identities:
-            return {"game_over": True, "winner": "lord", "message": "主公和忠臣获胜！"}
-        return {"game_over": False}
+    def check_victory(players: List, mode="5人身份局") -> Dict:
+        return identity_victory(players, mode)
 
 
 __all__ = ["IdentitySystem"]

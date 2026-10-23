@@ -1,0 +1,1704 @@
+{
+  "schema_version": 1,
+  "report_status": "stage8_dsl_verified_against_integrated_worktree_pending_final_freeze_recheck",
+  "baseline": {
+    "workspace": "/root/sanguosha_ai_person_integrated_20261019",
+    "git_head": "2cfc2b2a143c49fb25d1263f7fecd60f55ec437b",
+    "git_worktree": "integrated P5 + Stage8 worktree with A1-A3 rule patches; evidence is a content-hash-bound snapshot, not a clean commit."
+  },
+  "counts": {
+    "catalog": 54,
+    "dsl_declared": 33,
+    "native_only": 21,
+    "parity_verified": 10,
+    "dsl_scene_only_no_parity": 0,
+    "rules_version_verified": 0
+  },
+  "evidence_dimensions": {
+    "declaration_complete": "A named DSL definition exists and has a semantic mapping; says nothing about runtime equivalence.",
+    "compile": "compile_skill accepted the definition and returned a positive step count; this is structural evidence only.",
+    "dsl_behavior_scenario_verified": "A named per-skill DSL execution scene is recorded. In this draft only the five explicit parity scenes count.",
+    "native_dsl_parity_verified": "A test runs the native handler and DSL from matching scenario state and compares concrete outcomes.",
+    "rules_version_verified": "Manual or client-specific rule-version evidence; none of the 54 entries have current-client certification."
+  },
+  "generic_dsl_runtime_evidence": [
+    {
+      "test": "tests/test_skill_dsl.py::SkillDSLTests.test_compiles_five_representative_effect_programs",
+      "proves": "Five synthetic programs compile; not five named skill behaviors."
+    },
+    {
+      "test": "tests/test_skill_dsl.py::SkillDSLTests.test_condition_language_has_deterministic_nested_semantics",
+      "proves": "Generic condition evaluator behavior."
+    },
+    {
+      "test": "tests/test_skill_dsl.py::SkillDSLTests.test_rejects_code_paths_unknown_effects_and_oversized_programs",
+      "proves": "Generic compiler rejection boundary."
+    },
+    {
+      "test": "tests/test_skill_dsl.py::SkillDSLTests.test_all_four_interaction_primitives_are_compilable",
+      "proves": "Generic interaction declaration compilation only."
+    },
+    {
+      "test": "tests/test_skill_dsl_active.py",
+      "proves": "Generic activation gating, interaction validation, state/effect behavior and runtime budget scenarios; not complete behavior certification for every catalog skill."
+    },
+    {
+      "test": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims",
+      "proves": "Catalog denominator and compilation of all 33 declared definitions."
+    }
+  ],
+  "entries": [
+    {
+      "skill": "奸雄",
+      "native_id": "caocao_奸雄",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 6,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "damage_received",
+          "consumer": "SkillManager.after_damage (target owner)",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "draw_cards",
+        "gain_event_card"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        "tests/test_plan_b_parity.py::test_jianxiong_dsl_matches_native_gain_damage_card_and_draw"
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "伤害牌仍在弃牌堆时接受发动：获得伤害牌并摸一张，比较牌区、牌堆与移动事件。",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "仅认证所列固定场景；其他接受/拒绝、边界牌区、死亡/中止和交叉技能仍未覆盖。规则版本未核验。",
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "护驾",
+      "native_id": "caocao_护驾",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "委托多名魏势力角色提供闪、席位轮询与接受者身份归属；并含回合外摸牌分支。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "反馈",
+      "native_id": "simayi_反馈",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 7,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "damage_received",
+          "consumer": "SkillManager.after_damage (target owner)",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "interact",
+        "repeat",
+        "transfer_card"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        "tests/test_plan_b_parity.py::test_fankui_dsl_matches_native_card_transfer_per_damage_point_and_decline"
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "两点伤害场景：第一点接受并获得来源一张手牌，第二点拒绝；比较牌区与移动事件。",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "仅认证所列固定场景；其他接受/拒绝、边界牌区、死亡/中止和交叉技能仍未覆盖。规则版本未核验。",
+      "interactions": []
+    },
+    {
+      "skill": "鬼才",
+      "native_id": "simayi_鬼才",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 4,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "judge_before",
+          "consumer": "SkillManager.before_judge",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "replace_judgment"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        "tests/test_plan_b_parity.py::test_guicai_dsl_matches_native_judgment_replacement_and_discard"
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "判定前接受发动：以手牌替换判定牌，旧判定牌弃置；比较牌区与移动事件。",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "仅认证所列固定场景；其他接受/拒绝、边界牌区、死亡/中止和交叉技能仍未覆盖。规则版本未核验。",
+      "interactions": [
+        "ask_choose_cards",
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "刚烈",
+      "native_id": "xiahoudun_刚烈",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 22,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "damage_received",
+          "consumer": "SkillManager.after_damage (target owner)",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "damage",
+        "discard_card",
+        "interact",
+        "judge",
+        "repeat"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "清俭",
+      "native_id": "xiahoudun_清俭",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "摸牌外获得牌后再展示/转交，按卡牌类别累加当前回合手牌上限；需组合时点与动态修正。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "突袭",
+      "native_id": "zhangliao_突袭",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "以少摸牌数量决定从不同角色各取牌，需数量联动的多目标与顺序取牌。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "裸衣",
+      "native_id": "xuchu_裸衣",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "翻开多张牌后按类型分流获得/弃置，并设置持续到下回合的伤害修正。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "天妒",
+      "native_id": "guojia_天妒",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 3,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "judge_after",
+          "consumer": "SkillManager.after_judge",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "gain_judged_card"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        "tests/test_plan_b_parity.py::test_tiandu_dsl_matches_native_claim_of_judgment_card"
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "判定后接受发动：原生与DSL均将展示牌移动到持有者手牌并拦截默认弃置。",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "仅认证所列固定场景；其他接受/拒绝、边界牌区、死亡/中止和交叉技能仍未覆盖。规则版本未核验。",
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "遗计",
+      "native_id": "guojia_遗计",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 12,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "damage_received",
+          "consumer": "SkillManager.after_damage (target owner)",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "draw_cards",
+        "interact",
+        "repeat",
+        "transfer_card"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "洛神",
+      "native_id": "zhenji_洛神",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "条件重复判定直到红色、判定牌获得与手牌上限例外；需受控循环与终止规则。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "倾国",
+      "native_id": "zhenji_倾国",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 2,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "card_responded",
+          "consumer": "SkillManager.on_card_responded",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "仁德",
+      "native_id": "liubei_仁德",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "出牌阶段重复转交、按接受者限次累计，并跨累计阈值视为使用基本牌。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "激将",
+      "native_id": "liubei_激将",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "委托多名蜀势力角色按座位响应杀，并维护实际供牌者/主公的用牌语义；另有回合外摸牌。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "武圣",
+      "native_id": "guanyu_武圣",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 7,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "card_as"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "义绝",
+      "native_id": "guanyu_义绝",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "展示对方暗手牌后分红黑分支，持续封锁/增伤，红色还可获得与回复；需隐藏信息与持续状态。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "咆哮",
+      "native_id": "zhangfei_咆哮",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "将被闪避次数存为标记，在未来伤害时消费并增伤，回合末清理。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "替身",
+      "native_id": "zhangfei_替身",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 7,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "phase_start",
+          "consumer": "SkillManager.before_phase called by MainEngine._execute_phase_with_ui",
+          "source": "game_engine/skill_manager.py; game_engine/main_engine.py"
+        }
+      ],
+      "effect_types": [
+        "announce",
+        "draw_cards",
+        "recover"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        {
+          "test": "tests/test_skill_dsl_parity.py::test_tishen_dsl_matches_native_limited_recover_draw_and_decline",
+          "scope": "limited use; recovery/draw; accept/decline"
+        }
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "limited use; recovery/draw; accept/decline",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": null,
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "观星",
+      "native_id": "zhugeliang_观星",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "查看多张牌、任意重排到牌堆顶/底、按全底条件再发动；需私密排序交互及重复使用。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "空城",
+      "native_id": "zhugeliang_空城",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 5,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "turn_start",
+          "consumer": "SkillManager.on_turn_start",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "龙胆",
+      "native_id": "zhaoyun_龙胆",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 8,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "card_as"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "涯角",
+      "native_id": "zhaoyun_涯角",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "回合外失牌触发翻牌，对比类别后分支为给牌或按动态攻击范围选区弃牌。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "马术",
+      "native_id": "machao_马术",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 2,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "turn_start",
+          "consumer": "SkillManager.on_turn_start",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "铁骑",
+      "native_id": "machao_铁骑",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "每个杀目标独立判定、要求同花色供牌，并在回合内禁非锁定技/禁闪/增伤。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "集智",
+      "native_id": "huangyueying_集智",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 14,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "card_used",
+          "consumer": "SkillManager.after_card_used",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "discard_card",
+        "draw_cards",
+        "interact",
+        "set_state"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "奇才",
+      "native_id": "huangyueying_奇才",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 7,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "turn_start",
+          "consumer": "SkillManager.on_turn_start",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "制衡",
+      "native_id": "sunquan_制衡",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 6,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "discard_card",
+        "draw_cards"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "救援",
+      "native_id": "sunquan_救援",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "吴势力角色回复时可把实际回复对象改为主公并摸牌，需改变已执行恢复的对象与供益归属。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "奇袭",
+      "native_id": "ganning_奇袭",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 4,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "card_as"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "奋威",
+      "native_id": "ganning_奋威",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 6,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "multi_target_trick",
+          "consumer": "SkillManager.before_multi_target_trick",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "exclude_targets"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_players",
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "克己",
+      "native_id": "lvmeng_克己",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 5,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "phase_start",
+          "consumer": "SkillManager.before_phase called by MainEngine._execute_phase_with_ui",
+          "source": "game_engine/skill_manager.py; game_engine/main_engine.py"
+        }
+      ],
+      "effect_types": [
+        "announce"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        {
+          "test": "tests/test_skill_dsl_parity.py::test_keji_dsl_matches_native_prompt_skip_and_sha_condition",
+          "scope": "Sha-used condition; accepted/declined; phase skip result"
+        }
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "Sha-used condition; accepted/declined; phase skip result",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": null,
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "勤学",
+      "native_id": "lvmeng_勤学",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "多阶段觉醒条件、减上限、恢复/摸牌二选一、动态获得另一技能；需技能注册生命周期。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "博图",
+      "native_id": "lvmeng_博图",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "按本回合弃牌花色计数且次数依存存活数，结束时授予额外回合；需回合结算控制。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "苦肉",
+      "native_id": "huanggai_苦肉",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 5,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "announce",
+        "discard_card",
+        "lose_hp"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "诈降",
+      "native_id": "huanggai_诈降",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "体力流失后摸牌，并在特定出牌阶段设置持续到回合结束的组合杀修正。",
+      "extension_cost_estimate": "medium",
+      "interactions": []
+    },
+    {
+      "skill": "英姿",
+      "native_id": "zhouyu_英姿",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 4,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "phase_start",
+          "consumer": "SkillManager.before_phase called by MainEngine._execute_phase_with_ui",
+          "source": "game_engine/skill_manager.py; game_engine/main_engine.py"
+        }
+      ],
+      "effect_types": [
+        "announce",
+        "draw_cards"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        {
+          "test": "tests/test_skill_dsl_parity.py::test_yingzi_dsl_matches_native_draw_and_skip_default_behavior",
+          "scope": "three-card draw, skip_default, hand limit"
+        }
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "three-card draw, skip_default, hand limit",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": null,
+      "interactions": []
+    },
+    {
+      "skill": "反间",
+      "native_id": "zhouyu_反间",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "展示交付牌后由受益/受害者选分支，读取其手牌同花色并弃置或失体力。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "国色",
+      "native_id": "daqiao_国色",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "出牌阶段两种费用路径：方片转乐不思蜀，或弃牌拆判定区乐；完成后摸牌。",
+      "extension_cost_estimate": "medium",
+      "interactions": []
+    },
+    {
+      "skill": "流离",
+      "native_id": "daqiao_流离",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "杀目标响应时弃牌并把既有攻击转移到动态攻击范围合法目标。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "谦逊",
+      "native_id": "luxun_谦逊",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "目标锦囊生效时将所有手牌移到武将牌暂存，结束阶段按状态取回。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "连营",
+      "native_id": "luxun_连营",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 5,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "cards_lost",
+          "consumer": "SkillManager.on_cards_lost",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "announce",
+        "draw_cards"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        {
+          "test": "tests/test_skill_dsl_parity.py::test_lianying_dsl_matches_native_empty_hand_selection_and_draws",
+          "scope": "empty-hand trigger, target selection and draw"
+        }
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "empty-hand trigger, target selection and draw",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": null,
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "急救",
+      "native_id": "huatuo_急救",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 4,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "card_responded",
+          "consumer": "SkillManager.on_card_responded",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "青囊",
+      "native_id": "huatuo_青囊",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 8,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "discard_card",
+        "recover",
+        "set_state"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "无双",
+      "native_id": "lvbu_无双",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 2,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "turn_start",
+          "consumer": "SkillManager.on_turn_start",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "利驭",
+      "native_id": "lvbu_利驭",
+      "implementation_coverage": "native_only",
+      "declaration_complete": false,
+      "compile": {
+        "status": "not_applicable",
+        "evidence": "未列入 data/skill_dsl_coverage.json 的33项定义。"
+      },
+      "triggers": [],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "本轮未做该技能的当前客户端版本核验。",
+      "remaining_gap": "杀伤害后从目标区域选牌，再根据所获牌类型分支触发决斗或令目标摸牌。",
+      "extension_cost_estimate": "high",
+      "interactions": []
+    },
+    {
+      "skill": "离间",
+      "native_id": "diaochan_离间",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 5,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "discard_card",
+        "duel"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "闭月",
+      "native_id": "diaochan_闭月",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 7,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "phase_end",
+          "consumer": "SkillManager.after_phase called by MainEngine._execute_phase_with_ui",
+          "source": "game_engine/skill_manager.py; game_engine/main_engine.py"
+        }
+      ],
+      "effect_types": [
+        "announce",
+        "draw_cards"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        {
+          "test": "tests/test_skill_dsl_parity.py::test_biyue_dsl_matches_native_prompt_branch_draw_and_cost_decline",
+          "scope": "empty/non-empty hand branch; accepted and declined confirm"
+        }
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "empty/non-empty hand branch; accepted and declined confirm",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": null,
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "耀武",
+      "native_id": "huaxiong_耀武",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 5,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "damage_received",
+          "consumer": "SkillManager.after_damage (target owner)",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "draw_cards"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "势斩",
+      "native_id": "huaxiong_势斩",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 3,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "duel"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "乱击",
+      "native_id": "yuanshao_乱击",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 3,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "card_as"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    },
+    {
+      "skill": "血裔",
+      "native_id": "yuanshao_血裔",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 3,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "turn_start",
+          "consumer": "SkillManager.on_turn_start",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": []
+    },
+    {
+      "skill": "雷击",
+      "native_id": "zhangjiao_雷击",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 21,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "card_responded",
+          "consumer": "SkillManager.on_card_responded",
+          "source": "game_engine/skill_manager.py"
+        },
+        {
+          "name": "card_used",
+          "consumer": "SkillManager.after_card_used",
+          "source": "game_engine/skill_manager.py"
+        },
+        {
+          "name": "judge_after",
+          "consumer": "SkillManager.after_judge",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "damage",
+        "interact",
+        "judge",
+        "recover"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "鬼道",
+      "native_id": "zhangjiao_鬼道",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 9,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "judge_before",
+          "consumer": "SkillManager.before_judge",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "draw_cards",
+        "replace_judgment"
+      ],
+      "dsl_behavior_scenario_verified": true,
+      "dsl_behavior_scenario_evidence": [
+        "tests/test_plan_b_parity.py::test_guidao_dsl_matches_native_black_replacement_claim_and_spade_draw"
+      ],
+      "native_dsl_parity_verified": true,
+      "parity_scope": "判定前接受发动：黑桃替换牌、原判定牌获得及黑桃2–9摸牌；比较牌区、牌堆与移动原因。",
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "仅认证所列固定场景；其他接受/拒绝、边界牌区、死亡/中止和交叉技能仍未覆盖。规则版本未核验。",
+      "interactions": [
+        "ask_choose_cards",
+        "ask_confirm"
+      ]
+    },
+    {
+      "skill": "黄天",
+      "native_id": "zhangjiao_黄天",
+      "implementation_coverage": "dsl_declared",
+      "declaration_complete": true,
+      "compile": {
+        "status": "passed",
+        "steps": 3,
+        "evidence": "tests/test_skill_dsl_coverage.py::test_coverage_manifest_contains_compilable_semantic_definitions_not_name_only_claims"
+      },
+      "triggers": [
+        {
+          "name": "play_action",
+          "consumer": "SkillManager.get_available_skills / execute_skill_action",
+          "source": "game_engine/skill_manager.py"
+        }
+      ],
+      "effect_types": [
+        "transfer_card"
+      ],
+      "dsl_behavior_scenario_verified": false,
+      "dsl_behavior_scenario_evidence": [],
+      "native_dsl_parity_verified": false,
+      "parity_scope": null,
+      "rules_version_verified": false,
+      "rules_version_note": "未对项目当前选择的十周年客户端逐技能实机核验；通行规则来源不等于该客户端版本认证。",
+      "remaining_gap": "定义可编译且hook有运行时消费者；无该技能Python与DSL同态场景证据。",
+      "interactions": [
+        "ask_choose_cards"
+      ]
+    }
+  ],
+  "native_only_mechanism_notes": {
+    "护驾": {
+      "missing_mechanism": "委托多名魏势力角色提供闪、席位轮询与接受者身份归属；并含回合外摸牌分支。",
+      "estimated_extension_cost": "high"
+    },
+    "清俭": {
+      "missing_mechanism": "摸牌外获得牌后再展示/转交，按卡牌类别累加当前回合手牌上限；需组合时点与动态修正。",
+      "estimated_extension_cost": "high"
+    },
+    "突袭": {
+      "missing_mechanism": "以少摸牌数量决定从不同角色各取牌，需数量联动的多目标与顺序取牌。",
+      "estimated_extension_cost": "high"
+    },
+    "裸衣": {
+      "missing_mechanism": "翻开多张牌后按类型分流获得/弃置，并设置持续到下回合的伤害修正。",
+      "estimated_extension_cost": "high"
+    },
+    "洛神": {
+      "missing_mechanism": "条件重复判定直到红色、判定牌获得与手牌上限例外；需受控循环与终止规则。",
+      "estimated_extension_cost": "high"
+    },
+    "仁德": {
+      "missing_mechanism": "出牌阶段重复转交、按接受者限次累计，并跨累计阈值视为使用基本牌。",
+      "estimated_extension_cost": "high"
+    },
+    "激将": {
+      "missing_mechanism": "委托多名蜀势力角色按座位响应杀，并维护实际供牌者/主公的用牌语义；另有回合外摸牌。",
+      "estimated_extension_cost": "high"
+    },
+    "义绝": {
+      "missing_mechanism": "展示对方暗手牌后分红黑分支，持续封锁/增伤，红色还可获得与回复；需隐藏信息与持续状态。",
+      "estimated_extension_cost": "high"
+    },
+    "咆哮": {
+      "missing_mechanism": "将被闪避次数存为标记，在未来伤害时消费并增伤，回合末清理。",
+      "estimated_extension_cost": "high"
+    },
+    "观星": {
+      "missing_mechanism": "查看多张牌、任意重排到牌堆顶/底、按全底条件再发动；需私密排序交互及重复使用。",
+      "estimated_extension_cost": "high"
+    },
+    "涯角": {
+      "missing_mechanism": "回合外失牌触发翻牌，对比类别后分支为给牌或按动态攻击范围选区弃牌。",
+      "estimated_extension_cost": "high"
+    },
+    "铁骑": {
+      "missing_mechanism": "每个杀目标独立判定、要求同花色供牌，并在回合内禁非锁定技/禁闪/增伤。",
+      "estimated_extension_cost": "high"
+    },
+    "救援": {
+      "missing_mechanism": "吴势力角色回复时可把实际回复对象改为主公并摸牌，需改变已执行恢复的对象与供益归属。",
+      "estimated_extension_cost": "high"
+    },
+    "勤学": {
+      "missing_mechanism": "多阶段觉醒条件、减上限、恢复/摸牌二选一、动态获得另一技能；需技能注册生命周期。",
+      "estimated_extension_cost": "high"
+    },
+    "博图": {
+      "missing_mechanism": "按本回合弃牌花色计数且次数依存存活数，结束时授予额外回合；需回合结算控制。",
+      "estimated_extension_cost": "high"
+    },
+    "诈降": {
+      "missing_mechanism": "体力流失后摸牌，并在特定出牌阶段设置持续到回合结束的组合杀修正。",
+      "estimated_extension_cost": "medium"
+    },
+    "反间": {
+      "missing_mechanism": "展示交付牌后由受益/受害者选分支，读取其手牌同花色并弃置或失体力。",
+      "estimated_extension_cost": "high"
+    },
+    "国色": {
+      "missing_mechanism": "出牌阶段两种费用路径：方片转乐不思蜀，或弃牌拆判定区乐；完成后摸牌。",
+      "estimated_extension_cost": "medium"
+    },
+    "流离": {
+      "missing_mechanism": "杀目标响应时弃牌并把既有攻击转移到动态攻击范围合法目标。",
+      "estimated_extension_cost": "high"
+    },
+    "谦逊": {
+      "missing_mechanism": "目标锦囊生效时将所有手牌移到武将牌暂存，结束阶段按状态取回。",
+      "estimated_extension_cost": "high"
+    },
+    "利驭": {
+      "missing_mechanism": "杀伤害后从目标区域选牌，再根据所获牌类型分支触发决斗或令目标摸牌。",
+      "estimated_extension_cost": "high"
+    }
+  },
+  "limitations": [
+    "33/54 is definition+compilation coverage, not behavior parity or game-rule correctness.",
+    "Five parity tests cover only 英姿、闭月、克己、替身、连营.",
+    "Other catalog items remain on their current native implementation; a missing DSL declaration is not a missing native skill.",
+    "A DSL/native match can share an engine defect; independent rule oracle remains separate.",
+    "Estimated extension costs are engineering judgments, not committed scope.",
+    "All rules_version_verified values are false until checked against the actual selected game client/version.",
+    "Recompute after Stage8/P5 integration; this draft includes file hashes to expose source drift."
+  ],
+  "integrated_recheck": {
+    "workspace": "/root/sanguosha_ai_person_integrated_20261019",
+    "git_head": "2cfc2b2a143c49fb25d1263f7fecd60f55ec437b",
+    "worktree_state": "A1-A3 patches and first B parity batch integrated in shared working tree; review uncommitted diff before treating as release certification.",
+    "source_sha256": {
+      "data/skill_dsl_coverage.json": "3fbcd2a60da5c8021395e70ee98076fb4e7c581c9bef5bafa740d852fa04b6b1",
+      "SKILL_DSL.md": "b94dee41be4abc952ac2754e56a23b13aa28205f05e7322f6619d62fb3ee66f8",
+      "game_engine/skill_dsl.py": "3dde83b1bd915df5ddc22f979658d13dff6218d63f8be47b7fed7ce3656d462a",
+      "game_engine/skill_manager.py": "43c5fb1fb850dd14bc04d87053d8ca59d29aa5e43a0a6cdd2ef8882001802efb",
+      "game_engine/skill_runtime_core.py": "ab8fe7eb60326c1c2f4c8e7d41070340ac0d0e4ef2a55218957471889e352181",
+      "tests/test_skill_dsl.py": "78665326a4a0fc85e6ee2832b882c06f31cb0221eb9bd024f9733eed0a58514b",
+      "tests/test_skill_dsl_active.py": "ac0b88bdb63ab5465df3b2d41cfad51776fe66165ba99862bf88e52499d30c36",
+      "tests/test_skill_dsl_coverage.py": "cc7743a94f340d8e92993db704b57f9f4e58f4bb50a023004c456690c8d4fa95",
+      "tests/test_skill_dsl_parity.py": "97853e5d2dfb2ca9c4c879c9aa9207af2602e26640d2c0e57b23f810e44995c8",
+      "tests/test_stage8_review.py": "af94397409be80dd89628ba2e47f22b879edc7aa7ab2d450477338a12513b148",
+      "tests/test_plan_a_rules.py": "2372742d1af6bdeb555769b8861c58859d35d8fabb7d785086321fd89ecbffa5",
+      "tests/test_plan_b_parity.py": "30e185ba95ba7e792903ecd0b2b8643bc87512d207efc1362ba266ea70a2089b",
+      "game_engine/phase_controller.py": "9da18ae50f9a3e03f57645229aa8268255907fec87a2e4c01e1f48e47f780a5b",
+      "game_engine/main_engine.py": "e49d1fe6270be8be8af3391c61750121f78279610e8121a3e30b8e2ee7a3055f",
+      "game_engine/card_system.py": "d9816ee1b1f2c961dfcbe53d940f8107e391cd3dbe05c59c1290d57f61958976",
+      "scripts/verify_b7_games.py": "e866772a5bd00c048cf6d21ad89c1076c26b674351d950ec9bec48845ebe9f4c"
+    },
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/root/sanguosha_ai_person_integrated_20261019 /root/sanguosha_ai_person/.venv/bin/python -m pytest -q tests/test_skill_dsl.py tests/test_skill_dsl_active.py tests/test_skill_dsl_coverage.py tests/test_skill_dsl_parity.py tests/test_stage8_review.py tests/test_plan_b_parity.py --tb=short -p no:cacheprovider",
+    "exit_code": 0,
+    "result": "47 passed in 3.90s",
+    "compiled_declarations": "33/33 definitions accepted by tests/test_skill_dsl_coverage.py",
+    "parity_cases": [
+      "英姿: tests/test_skill_dsl_parity.py::test_yingzi_dsl_matches_native_draw_and_skip_default_behavior",
+      "闭月: tests/test_skill_dsl_parity.py::test_biyue_dsl_matches_native_prompt_branch_draw_and_cost_decline",
+      "克己: tests/test_skill_dsl_parity.py::test_keji_dsl_matches_native_prompt_skip_and_sha_condition",
+      "替身: tests/test_skill_dsl_parity.py::test_tishen_dsl_matches_native_limited_recover_draw_and_decline",
+      "连营: tests/test_skill_dsl_parity.py::test_lianying_dsl_matches_native_empty_hand_selection_and_draws",
+      "天妒: tests/test_plan_b_parity.py::test_tiandu_dsl_matches_native_claim_of_judgment_card",
+      "鬼才: tests/test_plan_b_parity.py::test_guicai_dsl_matches_native_judgment_replacement_and_discard",
+      "鬼道: tests/test_plan_b_parity.py::test_guidao_dsl_matches_native_black_replacement_claim_and_spade_draw",
+      "奸雄: tests/test_plan_b_parity.py::test_jianxiong_dsl_matches_native_gain_damage_card_and_draw",
+      "反馈: tests/test_plan_b_parity.py::test_fankui_dsl_matches_native_card_transfer_per_damage_point_and_decline"
+    ],
+    "plan_a_rules": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/root/sanguosha_ai_person_integrated_20261019 /root/sanguosha_ai_person/.venv/bin/python -m pytest -q tests/test_plan_a_rules.py --tb=short -p no:cacheprovider",
+      "result": "14 passed in 0.41s",
+      "evidence_file": "tests/test_plan_a_rules.py"
+    },
+    "full_games": {
+      "script": "scripts/verify_b7_games.py",
+      "report": "logs/reports/20261019_luna_rules_b7_games.json",
+      "result": "30 completed: standard 10, extra 10, combined 10; zero illegal actions, duplicate/missing card entities, abnormal termination or draw; max 53 turns."
+    },
+    "skill_trial_browser": {
+      "script": "scripts/manual/skill_trial_browser_check.py",
+      "report": "logs/reports/20261019_luna_rules_trial_browser.json",
+      "result": "Blocked at HTTP contract: POST /api/heroes/trial returns 404; no four-scenario behavior claim."
+    },
+    "scope": "Compiler/runtime/coverage suite and ten explicitly listed Python/DSL parity scenarios; 14 A rule scenes and 30 complete deterministic games separately recorded. No rule-client certification or production trial endpoint verification."
+  }
+}

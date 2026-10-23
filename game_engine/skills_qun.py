@@ -25,7 +25,7 @@ class QunSkillHandler(FactionSkillHandler):
     def _finished(self):
         return bool(self.engine.game_aborted or self.state.game_over)
 
-    async def _choose_region_card(self, chooser, owner, skill_name, prompt, *, predicate=lambda card: True):
+    async def _choose_region_card(self, chooser, owner, skill_name, prompt, *, predicate=lambda card: True, context=None):
         places = [(owner, "hand", card) for card in list(owner.hand) if predicate(card)]
         places.extend((owner, "equipment", card) for card in list(owner.equipment.values()) if predicate(card))
         if not places:
@@ -36,6 +36,7 @@ class QunSkillHandler(FactionSkillHandler):
             hidden_indices=[i for i, (_p, zone, _c) in enumerate(places)
                             if zone == "hand" and chooser is not owner],
             places=[(p, zone) for p, zone, _c in places],
+            context=context,
         )
         if self._finished() or result.get("status") not in ("resolved", "timeout"):
             return None
@@ -67,6 +68,8 @@ class QunSkillHandler(FactionSkillHandler):
         if self.has(player, "离间") and player.hand and not once_per_turn(player, "离间"):
             males = [p for p in others if is_male(p)]
             for first, second in list(combinations(males, 2))[:12]:
+                if self.manager.target_error(first, second, "决斗"):
+                    continue
                 for index in range(min(len(player.hand), 3)):
                     actions.append(self._action("离间", "duel_pair", [index], text=f"令{first.name}对{second.name}决斗", fixed_targets=[first.id, second.id]))
 
@@ -116,10 +119,13 @@ class QunSkillHandler(FactionSkillHandler):
             second = next((p for p in self.state.players if p.id == fixed[1] and p.alive), None)
             if not first or not second or not is_male(first) or not is_male(second):
                 return False
+            if self.manager.target_error(first, second, "决斗"):
+                return False
             mark_once_per_turn(player, "离间")
             await self.manager.discard_card(player, player.hand[indices[0]], "离间")
             await self.manager.announce(player, "离间", f"{player.name}发动【离间】，令{first.name}对{second.name}使用【决斗】")
-            return await self.manager.duel(first, second, "离间")
+            await self.manager.duel(first, second, "离间")
+            return not self.engine.game_aborted
 
         if name == "势斩" and target:
             flags = ensure_flags(player)
@@ -227,10 +233,13 @@ class QunSkillHandler(FactionSkillHandler):
                       any(card_color(c) == "black" for c in list(p.hand) + list(p.equipment.values()))), None)
         if not owner:
             return card
-        use = await self.manager.ask_confirm(owner, f"是否发动【鬼道】替换{player.name}的判定牌？", skill_name="鬼道", default=False)
+        judge_for = (context or {}).get("delayed_card")
+        judge_context = {"judged_player": player, "judge_type": getattr(judge_for, "name", None) or (context or {}).get("reason"),
+                         "judge_suit": card.suit, "judge_rank": card.rank}
+        use = await self.manager.ask_confirm(owner, f"是否发动【鬼道】替换{player.name}的判定牌？", skill_name="鬼道", context=judge_context, default=False)
         if self._finished() or not use:
             return card
-        selected = await self._choose_region_card(owner, owner, "鬼道", "选择一张黑色手牌或装备牌替换判定牌", predicate=lambda c: card_color(c) == "black")
+        selected = await self._choose_region_card(owner, owner, "鬼道", "选择一张黑色手牌或装备牌替换判定牌", predicate=lambda c: card_color(c) == "black", context=judge_context)
         if self._finished() or not selected:
             return card
         replacement, zone = selected

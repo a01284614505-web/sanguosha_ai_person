@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Set, Tuple
 
-from .state_manager import Card, GameState, Player, Phase, card_to_dict
+from .state_manager import Card, GameState, Player, PlayerStatus, Phase, card_to_dict
 from .phase_controller import PhaseController
 from .skill_manager import SkillManager
 from .card_system import CardSystem, make_pass_option, option_label
@@ -29,6 +29,11 @@ from .game_stats import GameStats, record_stat
 from .effect_context import EffectContext
 from .behavior_ledger import BehaviorLedger
 from .cognitive_notes import CognitiveNotes
+from .seats import seat_of
+from .chat_facts import contradiction
+from .prompt_trace import redact
+from .public_situation import build_public_situation
+from .mode_registry import get_mode, supported_modes
 
 
 logger = logging.getLogger(__name__)
@@ -67,7 +72,8 @@ class MainEngine:
         stats = SkillManager().registration_stats()
         return {
             "engine": "MainEngine-v2",
-            "supported_modes": ["5人身份局"],
+            "supported_modes": [row["id"] for row in supported_modes()],
+            "modes": supported_modes(),
             "hero_count": registry.count(),
             "worldbook_hero_count": registry.count(),
             "generated_skill_count": stats["total_classes"],
@@ -131,6 +137,9 @@ class MainEngine:
         self._request_outcomes: Dict[str, str] = {}
         self.game_id = uuid.uuid4().hex
         self._request_seq = 0
+        # Per-process request namespace.  It is intentionally absent from recovery
+        # snapshots, so a restarted process can never accept an old browser request.
+        self._request_epoch = uuid.uuid4().hex
         self._effect_seq = 0
         self.game_log: List[Dict] = []
         # 按座位与调用类型累计的 token 消耗，结构见 token_usage.py。
@@ -159,9 +168,16 @@ class MainEngine:
         # 临时展示池（五谷丰登亮出的牌）：公开信息，随状态快照下发；结算结束置 None。
         self.shown_pool: Any = None
         self._game_end_emitted = False
+        self.spy_duel_lord = False
+        self._spy_duel_lord_ready = False
         self._started_at: Any = None
+        # Server-supplied async hook.  It persists only completed safe points;
+        # runtime tasks/Futures remain process-local.
+        self.recovery_checkpoint = None
+        self._restored_from_checkpoint = False
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
         chat_cfg = game_config.get("chat")
+        self.ai_spectate = game_config.get("ai_spectate", True) is True
         self.chat_enabled = not (isinstance(chat_cfg, dict) and chat_cfg.get("enabled") is False)
         # 开局锁定的两个选项：对局中途不可改（服务器不提供修改入口）。
         # 作弊模式：真人可看到 AI 的公开理由（不含手牌与隐藏身份）；本局不计连胜与身份卡。
@@ -173,6 +189,8 @@ class MainEngine:
         # 桌面发言（Stage T0）：table_chat 只留最近 50 条，进入出牌决策的 L2；
         # chat_log 是同一批发言的完整记录（局后日志用），两者由 _record_table_chat 同时写入。
         self.chat_log: List[Dict] = []
+        self.blocked_chat: List[Dict] = []
+        self.chat_corrections: Dict[int, str] = {}
         self.table_chat: deque = deque(maxlen=self.TABLE_CHAT_KEEP)
         # 单个 AI 每回合最多发言数（含免费台词）：(player_id, round) → 已发句数。
         self._chat_counts: Dict[Tuple[int, int], int] = {}
@@ -266,6 +284,13 @@ class MainEngine:
             )
         return drawn
 
+    def phase_draw_count(self, player: Player, base: int = 2) -> int:
+        """Apply the current mode's draw-phase allowance to a normal or skill draw."""
+        mode = get_mode(self.game_state.mode)
+        bonus = (mode.draw_bonus_per_phase
+                 if player.identity == mode.draw_bonus_identity else 0)
+        return max(0, int(base) + int(bonus))
+
     async def announce_judge(self, player: Player, card, judge_for: str, effective=None, result_text: str = ""):
         """判定结果通知：前端在牌桌中央展示判定牌与“生效/失效”，并等待动画 ACK 后再继续结算。
 
@@ -304,6 +329,11 @@ class MainEngine:
         if self.game_aborted:
             return
         player = self.game_state.current_player
+        # 判定牌或技能已经决定跳过的阶段不属于“阶段开始/结束”。先消费
+        # 公共 skip 标记，避免英姿、闭月及 DSL phase hooks 在跳过阶段误触发。
+        if phase in self.phase_controller.skip_phases:
+            await self.phase_controller.execute_phase(phase)
+            return
         before_discard = len(self.game_state.discard_pile)
         before_hand = list(player.hand)
         skill_result = await self.skill_manager.before_phase(player, phase)
@@ -347,6 +377,7 @@ class MainEngine:
             players.append(
                 {
                     "id": p.id,
+                    "seat": seat_of(gs, p.id),
                     "name": p.name,
                     "hp": p.hp,
                     "max_hp": p.max_hp,
@@ -356,6 +387,7 @@ class MainEngine:
                     "chained": bool(getattr(p, "chained", False)),
                     "treasure_count": len(p.treasure_cards),
                     "alive": p.alive,
+                    "death_round": p.flags.get("death_round"),
                     "hero_name": self._hero_name(p),
                     "hero": {
                         "id": (p.hero or {}).get("id", ""),
@@ -366,6 +398,8 @@ class MainEngine:
                         "worldbook": (p.hero or {}).get("worldbook", {}),
                     },
                     "is_ai": p.is_ai,
+                    "ai_id": p.ai_config.get("ai_id") if p.is_ai else None,
+                    "title": (p.ai_config.get("title") if p.is_ai else p.title),
                     "ai_config": {
                         # 没填 Key 的座位实际由规则 AI 代打，界面据此显示“规则 AI”而不是模型名。
                         "rule_ai": not self._has_model_key(p),
@@ -374,6 +408,8 @@ class MainEngine:
                         "api_url": p.ai_config.get("api_url", ""),
                         "temperature": p.ai_config.get("temperature", 0.8),
                         "thinking": bool(p.ai_config.get("thinking", False)),
+                        "ai_id": p.ai_config.get("ai_id"),
+                        "title": p.ai_config.get("title"),
                     } if p.is_ai else None,
                     "identity": p.identity if identity_visible else None,
                     "identity_revealed": identity_visible,
@@ -410,6 +446,7 @@ class MainEngine:
             "game_over": gs.game_over,
             "cheat_mode": self.cheat_mode,
             "chat_level": self.chat_director.level,
+            "ai_spectate": self.ai_spectate,
             "hide_dead_identity": self.hide_dead_identity,
             "winner": gs.winner,
             "trustee": self.trustee_status(),
@@ -447,34 +484,40 @@ class MainEngine:
             return self.game_state.winner
         logger.info("\n🎮 游戏开始！\n")
         self._started_at = self.time_source()
-        assigned = self.identity_system.assign_identities(
-            self.game_state.players,
-            self.game_state.mode,
-            self.game_config.get("identity_card") or {},
-        )
-        if not assigned:
-            raise ValueError(f"当前引擎暂不支持该模式或人数不匹配: {self.game_state.mode}/{len(self.game_state.players)}人")
+        if not self._restored_from_checkpoint:
+            assigned = self.identity_system.assign_identities(
+                self.game_state.players,
+                self.game_state.mode,
+                self.game_config.get("identity_card") or {},
+            )
+            if not assigned:
+                raise ValueError(f"当前引擎暂不支持该模式或人数不匹配: {self.game_state.mode}/{len(self.game_state.players)}人")
 
-        lord = assigned["lord"]
-        lord.max_hp += 1
-        lord.hp += 1
-        self.game_state.current_player_index = self.game_state.players.index(lord)
-        self.game_state.current_player = lord
-        self.game_state.round_anchor_index = self.game_state.current_player_index
+            mode = get_mode(self.game_state.mode)
+            first_player = assigned["first_player"]
+            first_player.max_hp += mode.lord_hp_bonus
+            first_player.hp += mode.lord_hp_bonus
+            self.game_state.current_player_index = self.game_state.players.index(first_player)
+            self.game_state.current_player = first_player
+            self.game_state.round_anchor_index = self.game_state.current_player_index
 
-        for p in self.game_state.players:
-            logger.info(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
+            for p in self.game_state.players:
+                logger.info(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
 
-        for p in self.game_state.players:
-            if p.is_ai and self._has_model_key(p):
-                self.notes.ensure(p.id)
-        self._notes_round = self.game_state.round_number
+            for p in self.game_state.players:
+                if p.is_ai and self._has_model_key(p):
+                    self.notes.ensure(p.id)
+            self._notes_round = self.game_state.round_number
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+        if self.recovery_checkpoint is not None:
+            await self.recovery_checkpoint()
 
         self._watchdog_task = asyncio.create_task(self._idle_watchdog())
         self.chat_director.start()
         try:
             while not self.is_game_over():
+                self._observe_spy_duel_lord_state()
                 self._roll_notes_round()
                 if self.completed_turns >= self.max_turns:
                     self.game_state.game_over = True
@@ -487,17 +530,19 @@ class MainEngine:
                     self.game_state.next_turn()
                     continue
 
-                await self.skill_manager.on_turn_start(player)
-                if player.is_ai:
-                    await self._ai_turn(player)
-                else:
-                    await self._human_turn(player)
+                if not await self._consume_turned_over_turn(player):
+                    await self.skill_manager.on_turn_start(player)
+                    if player.is_ai:
+                        await self._ai_turn(player)
+                    else:
+                        await self._human_turn(player)
 
                 if self.game_state.game_over:
                     break
 
                 self.completed_turns += 1
-                victory = self.identity_system.check_victory(self.game_state.players)
+                victory = self.identity_system.check_victory(
+                    self.game_state.players, self.game_state.mode)
                 if victory.get("game_over"):
                     self.game_state.game_over = True
                     self.game_state.winner = victory.get("winner")
@@ -514,6 +559,8 @@ class MainEngine:
                     self.game_state.current_phase = Phase.PREPARE
                 else:
                     self.game_state.next_turn()
+                if self.recovery_checkpoint is not None:
+                    await self.recovery_checkpoint()
                 await asyncio.sleep(float(self.game_config.get("turn_delay", 0.05)))
         finally:
             if self._watchdog_task is not None:
@@ -528,7 +575,24 @@ class MainEngine:
 
     # ---------- 玩家回合 ----------
 
+    async def _consume_turned_over_turn(self, player: Player) -> bool:
+        """翻回正面并跳过整个回合；不派发任一阶段或技能钩子。"""
+        if player.status != PlayerStatus.TURNED:
+            return False
+        player.status = PlayerStatus.NORMAL
+        self.phase_controller.skip_phases.clear()
+        self.skill_manager.reset_turn_scope(player)
+        player.sha_count = 0
+        player.jiu_used_this_turn = False
+        player.jiu_buff = False
+        await self.log_event(f"{player.name}翻回正面并跳过本回合", player_id=player.id)
+        if not self.game_aborted:
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        return True
+
     async def _ai_turn(self, player: Player):
+        if await self._consume_turned_over_turn(player):
+            return
         logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
@@ -549,7 +613,7 @@ class MainEngine:
         value = str(text or "").strip()[:cls.CHAT_TEXT_MAX]
         return cls._CHAT_MARK_RE.sub(lambda m: "〔" + m.group(1) + ("〕" if m.group(2) else ""), value)
 
-    async def _record_table_chat(self, player_id: int, name: str, kind: str, text: Any, *, free: bool = False):
+    async def _record_table_chat(self, player_id: int, name: str, kind: str, text: Any):
         """一条桌面发言的唯一入库点：写 table_chat 与 chat_log，再广播给界面。"""
         clean = self.clean_chat_text(text)
         if not clean:
@@ -558,12 +622,12 @@ class MainEngine:
         round_number = self.game_state.round_number
         ts = self.time_source()
         entry = {"seq": seq, "round": round_number, "from_id": player_id, "name": name,
-                 "kind": kind, "text": clean, "free": bool(free), "ts": ts}
+                 "seat": seat_of(self.game_state, player_id), "kind": kind, "text": clean, "ts": ts}
         self.table_chat.append(entry)
         self.chat_log.append({"seq": seq, "round": round_number, "from": name, "kind": kind,
-                              "message": clean, "from_id": player_id, "free": bool(free), "ts": ts})
+                              "message": clean, "from_id": player_id, "seat": seat_of(self.game_state, player_id), "ts": ts})
         await self.emit(ENGINE_EVENT.CHAT, from_=name, message=clean, from_id=player_id,
-                        kind=kind, free=bool(free), ts=ts)
+                        kind=kind, ts=ts)
         return entry
 
     async def submit_chat(self, player_id: int, text: Any):
@@ -571,30 +635,35 @@ class MainEngine:
         player = next((p for p in self.game_state.players if p.id == player_id), None)
         if player is None:
             return None
-        entry = await self._record_table_chat(player.id, player.name, "human", text, free=False)
+        entry = await self._record_table_chat(player.id, player.name, "human", text)
         if entry is not None:
             self.chat_director.on_human_chat(entry)       # 同步登记，回应在后台生成
         return entry
 
-    async def _emit_response_chat(self, player: Player):
-        """取走响应决策顺带的台词并发出；只有 AI 座位会说话（真人托管时模型台词不冒充真人）。"""
-        pending = getattr(self.ai_decision, "last_chat", None)
-        if not isinstance(pending, dict):
-            return
-        text = pending.pop(player.id, "")
-        if text and player.is_ai and not self.game_aborted and not self.is_game_over():
-            await self._record_ai_chat(player, text, free=True)
-
-    async def _record_ai_chat(self, player: Player, text: Any, *, free: bool):
-        """AI 发言入口（免费台词与开场白共用）：受「单 AI 每回合 5 句」上限约束。"""
-        if not self.chat_enabled:
+    async def _record_ai_chat(self, player: Player, text: Any):
+        """AI 发言入口：保留事实复核；阵亡观战每轮至多一句。"""
+        if not self.chat_enabled or (not player.alive and not self.ai_spectate):
             return None
+        clean = self.clean_chat_text(text)
+        conflict = contradiction(clean, self.game_state, getattr(self, "ledger", None))
+        if conflict:
+            record = redact({"seq": self.next_log_seq(), "round": self.game_state.round_number,
+                             "player_id": player.id, "seat": seat_of(self.game_state, player.id),
+                             "name": player.name, "text": clean, **conflict}, self)
+            self.blocked_chat.append(record)
+            self.chat_corrections[player.id] = "你上一句因与引擎记录矛盾未发出：" + record["text"] + "；" + record["detail"]
+            logger.warning("发言被拦截：%s：%s；%s", record["name"], record["text"], record["detail"])
+            if self.cheat_mode:
+                await self.emit(ENGINE_EVENT.CHAT_REJECTED, **record)
+            return None
+        cap = self.AI_CHAT_PER_ROUND if player.alive else 1
         key = (player.id, self.game_state.round_number)
-        if self._chat_counts.get(key, 0) >= self.AI_CHAT_PER_ROUND:
+        if self._chat_counts.get(key, 0) >= cap:
             logger.info("  💬 %s 本回合发言已达 %d 句上限，丢弃：%s", player.name,
                         self.AI_CHAT_PER_ROUND, str(text)[:20])
             return None
-        entry = await self._record_table_chat(player.id, player.name, "ai", text, free=free)
+        entry = await self._record_table_chat(player.id, player.name,
+                                              "ai" if player.alive else "spectator", clean)
         if entry is not None:
             self._chat_counts[key] = self._chat_counts.get(key, 0) + 1
         return entry
@@ -620,6 +689,8 @@ class MainEngine:
         self.chat_director.on_dying(player)
 
     async def _human_turn(self, player: Player):
+        if await self._consume_turned_over_turn(player):
+            return
         logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
@@ -768,8 +839,6 @@ class MainEngine:
             action = decision.get("action") or {"type": "end_phase"}
             target_ids = decision.get("target_ids", [])
 
-            if decision.get("chat") and self.chat_enabled:
-                await self._record_ai_chat(player, decision["chat"], free=True)
             if action.get("type") == "end_phase":
                 await self._emit_decision_trace(player, "play", len(actions), action,
                                                 "accepted")
@@ -810,8 +879,31 @@ class MainEngine:
 
     def on_player_death(self, player: Player):
         """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
+        player.flags.setdefault("death_round", int(getattr(self.game_state, "round_number", 0) or 0))
+        # Team modes may continue after the original first seat dies.  Move the
+        # round anchor clockwise to the next survivor so round-scoped skills and
+        # notes keep advancing; identity modes normally end when their lord dies.
+        players = self.game_state.players
+        dead_index = players.index(player)
+        round_anchor = getattr(self.game_state, "round_anchor_index", None)
+        if dead_index == round_anchor and any(p.alive for p in players):
+            for offset in range(1, len(players) + 1):
+                candidate = (dead_index + offset) % len(players)
+                if players[candidate].alive:
+                    self.game_state.round_anchor_index = candidate
+                    break
+        if player.identity == "lord":
+            survivors = [p for p in self.game_state.players if p.alive]
+            self.spy_duel_lord = (self._spy_duel_lord_ready and len(survivors) == 1
+                                  and survivors[0].identity == "spy")
         self.notes.on_death(player)
         self.chat_director.on_death(player)
+
+    def _observe_spy_duel_lord_state(self):
+        """Remember a real action-boundary state with only the lord and spy alive."""
+        alive = [p for p in self.game_state.players if p.alive]
+        self._spy_duel_lord_ready = (len(alive) == 2
+                                     and {p.identity for p in alive} == {"lord", "spy"})
 
     async def push_notes_after_death(self):
         """阵亡后（作弊局）立刻推送一次笔记，让"冻结"标记即时可见；非作弊局什么都不发。"""
@@ -824,7 +916,12 @@ class MainEngine:
         if not self.cheat_mode:
             return None
         reasons = getattr(self.ai_decision, "last_reasoning", {}) or {}
-        return self.notes.client_payload(reasons)
+        payload = self.notes.client_payload(reasons)
+        for row in payload["players"]:
+            plan = getattr(self.ai_decision, "plans", {}).get(row["player_id"])
+            if plan:
+                row["plan"] = dict(plan)
+        return payload
 
     async def _emit_cognitive_notes_if_changed(self):
         changed = self.notes.pop_changed()
@@ -853,15 +950,27 @@ class MainEngine:
         reveal = own_decision or (self.cheat_mode and player.is_ai)
         reason = private_reason if reveal else ""
         if isinstance(choice, dict) and hasattr(self.ai_decision, "format_action"):
-            full_choice = self.ai_decision.format_action(choice)
+            full_choice = self.ai_decision.format_action(choice, self.game_state)
         else:
             full_choice = choice.get("type", "") if isinstance(choice, dict) else ("放弃" if choice is None else str(choice)[:100])
+        public_situation = build_public_situation(self)
+        situation_version = public_situation["state_version"]
+        fallback_reason = failure or (None if meta.get("model") else "rules_no_provider")
         # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。
         self.decision_log.append({
             "seq": self.next_log_seq(), "round": self.game_state.round_number, "player_id": player.id, "player_name": player.name,
-            "kind": kind, "model": meta.get("model"), "reason": private_reason[:400],
+            "kind": kind, "model": meta.get("model"), "reason": private_reason[:1000],
             "choice": str(full_choice)[:200], "validation": validation,
             "elapsed_ms": meta.get("elapsed_ms"),
+            "prompt_tokens": meta.get("prompt_tokens"),
+            "cached_tokens": meta.get("cached_tokens"),
+            "completion_tokens": meta.get("completion_tokens"),
+            "situation_version": situation_version,
+            "selection_kind": kind,
+            "candidates_summary": f"{kind}：{int(candidate_count)} 个引擎候选",
+            "chosen_summary": str(full_choice)[:200],
+            "validation_status": validation,
+            "fallback_reason": fallback_reason,
         })
         if not reason:
             reason = "模型结果已由引擎复核" if meta.get("model") and not failure else "按规则选择合法候选"
@@ -874,9 +983,14 @@ class MainEngine:
             player_id=player.id, player_name=player.name, kind=kind,
             source="trustee" if own_decision else "rules" if failure or not meta.get("model") else "model",
             model=meta.get("model"), elapsed_ms=meta.get("elapsed_ms"),
-            prompt_tokens=meta.get("prompt_tokens"), completion_tokens=meta.get("completion_tokens"),
+            prompt_tokens=meta.get("prompt_tokens"), cached_tokens=meta.get("cached_tokens"),
+            completion_tokens=meta.get("completion_tokens"),
             candidate_count=int(candidate_count),
             candidate_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
+            situation_version=situation_version, selection_kind=kind,
+            candidates_summary=f"{kind}：{int(candidate_count)} 个引擎候选",
+            chosen_summary=str(final_choice)[:200], validation_status=validation,
+            fallback_reason=fallback_reason,
             worldbook_hits=meta.get("worldbook_hits") or [], reason=reason[:200],
             final_choice=final_choice, validation=validation,
             cheat=bool(self.cheat_mode and player.is_ai and private_reason),
@@ -978,7 +1092,7 @@ class MainEngine:
 
     def _next_request_id(self) -> str:
         self._request_seq += 1
-        return f"{self.game_id}:resp{self._request_seq}"
+        return f"{self.game_id}:{self._request_epoch}:resp{self._request_seq}"
 
     def _prepare_request(self, player: Player, request: Dict, request_id: str) -> Dict:
         """Freeze the server-side request envelope and candidate version."""
@@ -1013,6 +1127,7 @@ class MainEngine:
             player_id=player.id,
             kind=request.get("kind", "respond"),
             status=status,
+            skill_name=request.get("skill_name"),
         )
 
     def _new_effect_context(self, player: Player, card, *, skill_source=None, card_cost_ids=None, target=None):
@@ -1081,7 +1196,11 @@ class MainEngine:
             return {"bool": False}
         as_name = option.get("as_name") or card.name
         requested = request.get("requested_name")
-        if requested and as_name != requested:
+        allowed_names = request.get("allowed_names")
+        if allowed_names and as_name not in allowed_names:
+            logger.info(f"  ❌ 响应复核失败：候选只允许{allowed_names}，实际给的是【{as_name}】")
+            return {"bool": False}
+        if not allowed_names and requested and as_name != requested:
             logger.info(f"  ❌ 响应复核失败：需要【{requested}】，候选给的是【{as_name}】")
             return {"bool": False}
         return {
@@ -1563,6 +1682,21 @@ class MainEngine:
             "candidate_version": request.get("candidate_version"),
         })
         await self._emit_selection_result(player, request, status)
+        skill_name = request.get("skill_name")
+        if skill_name and not self.game_aborted:
+            accepted = bool(result.get("bool"))
+            await self.log_event(
+                f"{player.name}{'接受' if accepted else '拒绝'}【{skill_name}】的{request.get('kind', '选择')}机会",
+                event_kind="skill_decision",
+                actor_id=player.id,
+                actor_name=player.name,
+                skill_name=skill_name,
+                decision="accepted" if accepted else "declined",
+                reason=("selection_resolved" if accepted else
+                        "selection_cancelled" if status == "cancelled" else
+                        "selection_rejected"),
+                selection_kind=request.get("kind", "confirm"),
+            )
         if (player.is_ai or trustee_request or input_status in {"timeout", "trustee"}) and not self.game_aborted:
             await self._emit_decision_trace(
                 player, request.get("kind", "confirm"), len(request.get("options") or []),
@@ -1689,7 +1823,6 @@ class MainEngine:
                 result = await handler(decision_player, decision_request)
                 if trustee:
                     self._update_trustee_failure(player)
-                await self._emit_response_chat(player)
                 return result
             except Exception as exc:
                 logger.info("  ⚠️ 响应AI失败，切换规则AI: %s", type(exc).__name__)
@@ -2246,6 +2379,7 @@ class MainEngine:
             duration=duration,
             cheat=self.cheat_mode,
             total_rounds=self.game_state.round_number,
+            spy_duel_lord=self.spy_duel_lord,
         )
         return True
     async def request_end_game(self, reason: str = "玩家主动结束游戏"):

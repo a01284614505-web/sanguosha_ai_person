@@ -37,6 +37,11 @@ def make_cs(players, engine=None):
     tm.before_card_target = AsyncMock(side_effect=lambda a, b, c: b)
     tm.before_multi_target_trick = AsyncMock(side_effect=lambda a, b, targets: targets)
     tm.has_skill = MagicMock(return_value=False)
+    # Duel resolution now asks the skill layer for a response count; default to
+    # the engine-provided baseline unless a test explicitly models a modifier.
+    tm.required_response_count = MagicMock(
+        side_effect=lambda player, requested_name, base_count=1, context=None: base_count
+    )
     tm.before_sha = AsyncMock()
     tm.modify_damage = AsyncMock(side_effect=lambda *a, **k: a[2])
     tm.after_damage = AsyncMock()

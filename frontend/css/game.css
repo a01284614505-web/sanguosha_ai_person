@@ -190,6 +190,14 @@
     font-size: 12px; color: #fff4dc; text-shadow: 0 1px 2px #000;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.s-labels { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: center; gap: 1px; }
+.s-labels .s-name { width: 100%; flex: none; }
+.ai-title-badge { position: relative; width: max-content; max-width: 100%; overflow: hidden; padding: 1px 3px; border: 1px solid rgba(224, 188, 111, .75); border-radius: 5px; color: #f5d58e; background: rgba(40, 26, 12, .9); font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; box-shadow: 0 0 5px rgba(223, 185, 99, .25); }
+.ai-title-badge.title-高级, .ai-title-badge.title-稀有 { box-shadow: 0 0 8px rgba(223, 185, 99, .4); }
+.ai-title-badge.title-稀有 { text-shadow: 0 0 5px rgba(255, 230, 166, .8); }
+.ai-title-badge.title-高级::after, .ai-title-badge.title-稀有::after { content: ''; position: absolute; top: -40%; bottom: -40%; left: -70%; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 244, 199, .6), transparent); transform: skewX(-20deg); animation: game-title-sheen 5s ease-in-out infinite; }
+@keyframes game-title-sheen { 0%, 72% { left: -70%; } 100% { left: 140%; } }
+@media (prefers-reduced-motion: reduce) { .ai-title-badge.title-高级::after, .ai-title-badge.title-稀有::after { animation: none; } }
 /* 左侧竖排武将名（书法） */
 .s-hero {
     position: absolute; left: 3px; top: 28px;
@@ -673,6 +681,14 @@
 .msg.system { grid-template-columns: 1fr; text-align: center; font-size: 12px; color: var(--text-faint); }
 /* 观战者的发言（Stage T 后续批次）：同为左侧气泡，但淡一点，提示对方已不在局中 */
 .msg.kind-spectator .text { opacity: .78; font-style: italic; }
+.post-death-dialog { width: min(94vw, 520px); }
+.post-death-dialog .dialog-body { text-align: center; }
+.post-death-status { min-height: 1.5em; color: var(--gold-hi); }
+.post-death-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.game-page.spectator-mode #actionBar,
+.game-page.spectator-mode #myArea,
+.game-page.spectator-mode #trusteeBtn,
+.game-page.spectator-mode #quitBtn { display: none !important; }
 .quick-phrases { display: flex; gap: 6px; overflow-x: auto; padding: 6px 10px; border-top: 1px solid rgba(201, 163, 90, .15); scrollbar-width: none; }
 .quick-phrases::-webkit-scrollbar { display: none; }
 .quick-phrases button {
@@ -694,6 +710,7 @@
 .log-line.bad { color: #e8b4a4; border-left-color: #a8452f; }
 .log-line.think { color: var(--text-faint); font-style: italic; }
 .log-line.important { color: var(--gold-hi); border-left-color: var(--gold-hi); }
+.log-line.skill-decision { color: var(--text-dim); border-left-color: var(--gold); }
 
 /* ======================================================================
    8. 弹窗：结束、武将信息、AI 设置
@@ -930,3 +947,5 @@
     .peek-log { top: auto; bottom: 46%; right: 8px; font-size: 13px; }
     .cheat-peek { width: 15px; height: 24px; top: 30%; font-size: 13px; }
 }
+
+@media (max-width: 760px) { .ai-title-badge { font-size: 8px; } }

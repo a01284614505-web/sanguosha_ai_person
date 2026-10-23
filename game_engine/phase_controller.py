@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from . import card_flow
 from .card_table import CARD_TABLE
-from .state_manager import Phase, PlayerStatus
+from .state_manager import Phase
 
 if TYPE_CHECKING:
     from .state_manager import GameState, Player
@@ -54,15 +54,13 @@ class PhaseController:
 
         player = self.game_state.current_player
         logger.info(f"[准备阶段] {player.name}")
-        if player.status == PlayerStatus.TURNED:
-            player.status = PlayerStatus.NORMAL
-            self.skip_phases.update({Phase.JUDGE, Phase.DRAW, Phase.PLAY, Phase.DISCARD})
-            logger.info(f"  {player.name} 翻回正面并跳过本回合后续主要阶段")
 
     async def judge_phase(self):
         player = self.game_state.current_player
         logger.info(f"[判定阶段] {player.name}")
-        for delayed_card in list(player.judge_area):
+        # 后放入的延时锦囊先判定；结算中新增的牌不进入本次快照，
+        # 已被前一项移走的牌则由 execute_judge 的实体检查跳过。
+        for delayed_card in reversed(list(player.judge_area)):
             if not player.alive or (getattr(self.engine, "game_state", None) is self.game_state
                                     and getattr(self.engine, "game_aborted", False)):
                 break
@@ -186,7 +184,8 @@ class PhaseController:
         logger.info(f"[摸牌阶段] {player.name}")
         engine = getattr(self, "engine", None)
         if engine is not None and getattr(engine, "game_state", None) is self.game_state and hasattr(engine, "draw_cards"):
-            cards = await engine.draw_cards(player, 2, "摸牌阶段")
+            count = engine.phase_draw_count(player, 2) if hasattr(engine, "phase_draw_count") else 2
+            cards = await engine.draw_cards(player, count, "摸牌阶段")
         else:
             cards = self.game_state.draw_card(player, 2)
         if self.skill_manager:

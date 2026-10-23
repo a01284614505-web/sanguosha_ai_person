@@ -1,0 +1,910 @@
+{
+  "experiment": "paired_rule_ai_strategy_ablation_small",
+  "schema_version": 1,
+  "provider_calls": 0,
+  "deck": "standard",
+  "paired_seeds": [
+    20261020,
+    20261123,
+    20261226,
+    20261329
+  ],
+  "games_per_mode": 4,
+  "total_games": 16,
+  "modes": {
+    "baseline": {
+      "skill_strategy": false,
+      "target_strategy": false
+    },
+    "skill_only": {
+      "skill_strategy": true,
+      "target_strategy": false
+    },
+    "target_only": {
+      "skill_strategy": false,
+      "target_strategy": true
+    },
+    "both": {
+      "skill_strategy": true,
+      "target_strategy": true
+    }
+  },
+  "summary": {
+    "baseline": {
+      "games": 4,
+      "wins_by_role": {
+        "lord": 1,
+        "rebel": 2,
+        "spy": 1,
+        "draw": 0,
+        "aborted": 0
+      },
+      "mean_turns": 24.5,
+      "skill_activations": 68,
+      "rescues": 1,
+      "healing": 36,
+      "illegal_actions": 0,
+      "aborts": 0,
+      "draws": 0,
+      "card_conservation_failures": 0,
+      "by_starting_identity": {
+        "lord": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 0,
+            "spy": 1,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "loyalist": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 1,
+            "rebel": 0,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "rebel": {
+          "games": 1,
+          "wins": 1,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "spy": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        }
+      }
+    },
+    "skill_only": {
+      "games": 4,
+      "wins_by_role": {
+        "lord": 2,
+        "rebel": 2,
+        "spy": 0,
+        "draw": 0,
+        "aborted": 0
+      },
+      "mean_turns": 20.75,
+      "skill_activations": 73,
+      "rescues": 0,
+      "healing": 39,
+      "illegal_actions": 0,
+      "aborts": 0,
+      "draws": 0,
+      "card_conservation_failures": 0,
+      "by_starting_identity": {
+        "lord": {
+          "games": 1,
+          "wins": 1,
+          "game_winners": {
+            "lord": 1,
+            "rebel": 0,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "loyalist": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 1,
+            "rebel": 0,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "rebel": {
+          "games": 1,
+          "wins": 1,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "spy": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        }
+      }
+    },
+    "target_only": {
+      "games": 4,
+      "wins_by_role": {
+        "lord": 1,
+        "rebel": 2,
+        "spy": 1,
+        "draw": 0,
+        "aborted": 0
+      },
+      "mean_turns": 24.5,
+      "skill_activations": 68,
+      "rescues": 1,
+      "healing": 36,
+      "illegal_actions": 0,
+      "aborts": 0,
+      "draws": 0,
+      "card_conservation_failures": 0,
+      "by_starting_identity": {
+        "lord": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 0,
+            "spy": 1,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "loyalist": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 1,
+            "rebel": 0,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "rebel": {
+          "games": 1,
+          "wins": 1,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "spy": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        }
+      }
+    },
+    "both": {
+      "games": 4,
+      "wins_by_role": {
+        "lord": 2,
+        "rebel": 2,
+        "spy": 0,
+        "draw": 0,
+        "aborted": 0
+      },
+      "mean_turns": 20.75,
+      "skill_activations": 73,
+      "rescues": 0,
+      "healing": 39,
+      "illegal_actions": 0,
+      "aborts": 0,
+      "draws": 0,
+      "card_conservation_failures": 0,
+      "by_starting_identity": {
+        "lord": {
+          "games": 1,
+          "wins": 1,
+          "game_winners": {
+            "lord": 1,
+            "rebel": 0,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "loyalist": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 1,
+            "rebel": 0,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "rebel": {
+          "games": 1,
+          "wins": 1,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        },
+        "spy": {
+          "games": 1,
+          "wins": 0,
+          "game_winners": {
+            "lord": 0,
+            "rebel": 1,
+            "spy": 0,
+            "draw": 0,
+            "aborted": 0
+          }
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "mode": "baseline",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": false
+      },
+      "seed": 20261020,
+      "starting_identity": "lord",
+      "starting_hero": "liubei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "spy",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 1
+      },
+      "turns": 29,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 17,
+      "rescue_count": 1,
+      "rescue_events": [
+        {
+          "message": "AI1使用【桃】救援AI1",
+          "event_kind": "dying_rescue",
+          "provider_id": 1,
+          "target_id": 1,
+          "card_name": "桃",
+          "round": 1,
+          "seq": 60
+        }
+      ],
+      "healing_total": 6,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "skill_only",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": false
+      },
+      "seed": 20261020,
+      "starting_identity": "lord",
+      "starting_hero": "liubei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "lord",
+      "winner_by_identity": {
+        "lord": 1,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 0
+      },
+      "turns": 13,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 13,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 11,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "target_only",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": true
+      },
+      "seed": 20261020,
+      "starting_identity": "lord",
+      "starting_hero": "liubei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "spy",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 1
+      },
+      "turns": 29,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 17,
+      "rescue_count": 1,
+      "rescue_events": [
+        {
+          "message": "AI1使用【桃】救援AI1",
+          "event_kind": "dying_rescue",
+          "provider_id": 1,
+          "target_id": 1,
+          "card_name": "桃",
+          "round": 1,
+          "seq": 60
+        }
+      ],
+      "healing_total": 6,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "both",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": true
+      },
+      "seed": 20261020,
+      "starting_identity": "lord",
+      "starting_hero": "liubei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "lord",
+      "winner_by_identity": {
+        "lord": 1,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 0
+      },
+      "turns": 13,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 13,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 11,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "baseline",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": false
+      },
+      "seed": 20261123,
+      "starting_identity": "loyalist",
+      "starting_hero": "guanyu",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "lord",
+      "winner_by_identity": {
+        "lord": 1,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 0
+      },
+      "turns": 28,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 22,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 13,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "skill_only",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": false
+      },
+      "seed": 20261123,
+      "starting_identity": "loyalist",
+      "starting_hero": "guanyu",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "lord",
+      "winner_by_identity": {
+        "lord": 1,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 0
+      },
+      "turns": 33,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 32,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 12,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "target_only",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": true
+      },
+      "seed": 20261123,
+      "starting_identity": "loyalist",
+      "starting_hero": "guanyu",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "lord",
+      "winner_by_identity": {
+        "lord": 1,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 0
+      },
+      "turns": 28,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 22,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 13,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "both",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": true
+      },
+      "seed": 20261123,
+      "starting_identity": "loyalist",
+      "starting_hero": "guanyu",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "lord",
+      "winner_by_identity": {
+        "lord": 1,
+        "loyalist": 0,
+        "rebel": 0,
+        "spy": 0
+      },
+      "turns": 33,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 32,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 12,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "baseline",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": false
+      },
+      "seed": 20261226,
+      "starting_identity": "rebel",
+      "starting_hero": "zhangfei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 19,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 14,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 7,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "skill_only",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": false
+      },
+      "seed": 20261226,
+      "starting_identity": "rebel",
+      "starting_hero": "zhangfei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 19,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 15,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 8,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "target_only",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": true
+      },
+      "seed": 20261226,
+      "starting_identity": "rebel",
+      "starting_hero": "zhangfei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 19,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 14,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 7,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "both",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": true
+      },
+      "seed": 20261226,
+      "starting_identity": "rebel",
+      "starting_hero": "zhangfei",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 19,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 15,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 8,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "baseline",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": false
+      },
+      "seed": 20261329,
+      "starting_identity": "spy",
+      "starting_hero": "zhaoyun",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 22,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 15,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 10,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "skill_only",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": false
+      },
+      "seed": 20261329,
+      "starting_identity": "spy",
+      "starting_hero": "zhaoyun",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 18,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 13,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 8,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "target_only",
+      "knobs": {
+        "skill_strategy": false,
+        "target_strategy": true
+      },
+      "seed": 20261329,
+      "starting_identity": "spy",
+      "starting_hero": "zhaoyun",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 22,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 15,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 10,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    },
+    {
+      "mode": "both",
+      "knobs": {
+        "skill_strategy": true,
+        "target_strategy": true
+      },
+      "seed": 20261329,
+      "starting_identity": "spy",
+      "starting_hero": "zhaoyun",
+      "ai_heroes": [
+        "caocao",
+        "sunquan",
+        "huatuo",
+        "zhouyu"
+      ],
+      "winner": "rebel",
+      "winner_by_identity": {
+        "lord": 0,
+        "loyalist": 0,
+        "rebel": 1,
+        "spy": 0
+      },
+      "turns": 18,
+      "draw": false,
+      "aborted": false,
+      "abort_reason": null,
+      "illegal_action_count": 0,
+      "illegal_actions": [],
+      "skill_activation_count": 13,
+      "rescue_count": 0,
+      "rescue_events": [],
+      "healing_total": 8,
+      "card_count": 108,
+      "expected_card_count": 108,
+      "card_conservation_ok": true,
+      "distinct_card_count": 108
+    }
+  ],
+  "notes": [
+    "Each seed shares the same configured heroes, starting identity, deck and initial setup across all four modes.",
+    "A changed decision can change later random draws; exact turn-by-turn draw identity is not claimed.",
+    "Rescue count uses explicit event_kind=dying_rescue records; no hidden hand contents are inferred.",
+    "Small batch exposes regressions; it is not a win-rate significance claim."
+  ]
+}

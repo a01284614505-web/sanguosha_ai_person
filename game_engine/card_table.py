@@ -29,18 +29,19 @@ class CardSpec:
     # group 群体牌（只记一条不归属的群体事件）/ borrow 借刀杀人（两个目标，规则特殊）。
     ledger_kind: str = "none"
     ledger_weight: float = 1.0            # 该牌记入账本时的权重（铁索连环意图不明确，取 0.5）
+    group_benefit: bool = False           # 群体收益：抵消某人的收益为敌对，不应记无懈保护
     recast: bool = False                  # 军争重铸：出牌阶段可置入弃牌堆并摸一张牌（不算使用，铁索连环）
 
 
 def _c(card_type, target_rule, *, wuxie=False, resolver=None, usage="play",
        image=None, keep=20, priority=0, source_key=None,
-       weapon_range=1, equipment_slot=None, ledger="none", ledger_weight=1.0, recast=False):
+       weapon_range=1, equipment_slot=None, ledger="none", ledger_weight=1.0, recast=False, group_benefit=False):
     return CardSpec(
         card_type=card_type, target_rule=target_rule,
         wuxie_targetable=wuxie, resolver=resolver, usage=usage,
         image=image, discard_keep_score=keep, play_priority=priority,
         source_key=source_key, weapon_range=weapon_range, equipment_slot=equipment_slot,
-        ledger_kind=ledger, ledger_weight=ledger_weight, recast=recast,
+        ledger_kind=ledger, ledger_weight=ledger_weight, recast=recast, group_benefit=group_benefit,
     )
 
 
@@ -81,9 +82,9 @@ CARD_TABLE: Dict[str, CardSpec] = {
     "万箭齐发": _c("trick", {"type": "all_others"},
                   wuxie=True, resolver="use_wanjian", image="wanjian", priority=1, source_key="wanjian", ledger="group"),
     "桃园结义": _c("trick", {"type": "all"},
-                  wuxie=True, resolver="use_taoyuan", image="taoyuan", priority=1, source_key="taoyuan", ledger="group"),
+                  wuxie=True, resolver="use_taoyuan", image="taoyuan", priority=1, source_key="taoyuan", ledger="group", group_benefit=True),
     "五谷丰登": _c("trick", {"type": "all"},
-                  wuxie=True, resolver="use_wugu", image="wugu", priority=1, source_key="wugu", ledger="group"),
+                  wuxie=True, resolver="use_wugu", image="wugu", priority=1, source_key="wugu", ledger="group", group_benefit=True),
     "借刀杀人": _c("trick", {"min": 2, "max": 2, "type": "other"},
                   wuxie=True, resolver="use_jiedao", image="jiedao", priority=1, source_key="jiedao", ledger="borrow"),
     "闪电": _c("trick", {"type": "self"},

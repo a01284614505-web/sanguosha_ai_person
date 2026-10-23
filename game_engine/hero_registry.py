@@ -3,6 +3,8 @@
 import json
 from copy import deepcopy
 from pathlib import Path
+from .hero_package_store import HeroPackageStore
+
 class HeroRegistry:
     '''从 data/heroes.json 提供武将运行数据。'''
     def __init__(self, project_root=None):
@@ -19,6 +21,12 @@ class HeroRegistry:
         heroes = data if isinstance(data, list) else data.get("heroes", [])
         if not isinstance(heroes, list) or not heroes:
             raise ValueError(f"武将数据为空或格式错误: {path}")
+        packages_path = self.project_root / "data" / "hero_packages.json"
+        if packages_path.exists():
+            try:
+                heroes.extend(deepcopy(HeroPackageStore(self.project_root).enabled_heroes()))
+            except (OSError, RuntimeError) as exc:
+                raise RuntimeError(f"武将包数据加载失败: {packages_path}") from exc
         ids = [hero.get("id") for hero in heroes]
         if any(not hero_id for hero_id in ids) or len(ids) != len(set(ids)):
             raise ValueError(f"武将数据存在空ID或重复ID: {path}")

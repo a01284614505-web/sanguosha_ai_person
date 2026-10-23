@@ -16,14 +16,23 @@ from game_engine import MainEngine
 from game_engine.config_validator import sanitize_client_config
 from game_engine.game_history import GameHistoryStore, validate_profile_id
 from game_engine.model_catalog import ModelListError, list_models
+from game_engine.hero_package_store import HeroImportError, HeroPackageStore, MAX_IMPORT_BYTES
+from game_engine.hero_trial import HeroTrialError, error_trial, run_hero_trial
+from game_engine.ai_decision import AIGateway
+from game_engine.hero_registry import HeroRegistry
 from game_engine.game_logs import GameLogStore, build_game_log, validate_game_id
 from game_engine.identity_system import IdentitySystem
+from game_engine.mode_registry import get_mode
+from game_engine.seats import seat_of
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
+from game_engine.recovery import RecoveryStore, dump_engine, restore_engine
+from game_engine.skill_parity_certification import REPORT_PATH, report_is_current
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
 HISTORY_PATH = Path(os.environ.get("SANGUOSHA_HISTORY_PATH") or BASE_DIR / "logs/runtime/game_history.json")
 GAME_LOG_DIR = Path(os.environ.get("SANGUOSHA_GAME_LOG_DIR") or BASE_DIR / "logs/runtime/game_logs")
+RECOVERY_DIR = Path(os.environ.get("SANGUOSHA_RECOVERY_DIR") or BASE_DIR / "logs/runtime/recovery")
 # 运行中的 GameServer；HTTP 线程只读取它，用于局内“拉取模型”沿用该 AI 已保存的 Key。
 ACTIVE_SERVER = None
 
@@ -46,8 +55,9 @@ class GameServer:
 
     FINISHED_KEEP = 20          # 无人观看时结束的对局，保留多少条结果供重连领取
     DISCONNECT_GRACE = 300.0    # 断线后保留对局的秒数，与 5 分钟离席铁规则一致
+    ANIMATION_ACK_TIMEOUT = 2.5
 
-    def __init__(self, history_path=None):
+    def __init__(self, history_path=None, recovery_path=None):
         self.engines = {}
         self.tasks = {}
         self.ws_map = {}            # ws -> game_id
@@ -55,9 +65,14 @@ class GameServer:
         self.finished = {}          # game_id -> {"profile_id", "game_end"}：无人观看时结束的结果
         self.history = GameHistoryStore(history_path or HISTORY_PATH)
         self.game_logs = GameLogStore(GAME_LOG_DIR)
+        self.recovery = RecoveryStore(recovery_path or RECOVERY_DIR)
         self.animation_waiters = {}
         self.animation_seq = 0
+        self.animation_metrics = {}
         self.grace_tasks = {}       # game_id -> 断线宽限计时任务
+        self.viewer_modes = {}      # game_id -> player | spectator
+        # 主动选择后台结算的局不走意外断线宽限，也不被同档案新局中止。
+        self.background_games = {}  # game_id -> profile_id
 
     async def handle(self, ws):
         print(f"[连接] {ws.remote_address}")
@@ -83,6 +98,7 @@ class GameServer:
         if gid is None or self.viewers.get(gid) is not ws:
             return
         self.viewers.pop(gid, None)
+        self.viewer_modes.pop(gid, None)
         self._release_animation_waiters(gid)
         engine = self.engines.get(gid)
         task = self.tasks.get(gid)
@@ -108,6 +124,8 @@ class GameServer:
         engine = self.engines.get(gid)
         if engine is None or self.viewers.get(gid) is not None or engine.game_aborted:
             return
+        if gid in self.background_games:
+            return
         try:
             await engine.request_end_game("离线超过 5 分钟，对局中止")
         except Exception as exc:
@@ -126,6 +144,9 @@ class GameServer:
         self.tasks.pop(gid, None)
         self.engines.pop(gid, None)
         self.viewers.pop(gid, None)
+        self.viewer_modes.pop(gid, None)
+        self.background_games.pop(gid, None)
+        self.animation_metrics.pop(gid, None)
         self._release_animation_waiters(gid)
 
     async def dispatch(self, ws, data):
@@ -140,6 +161,7 @@ class GameServer:
             INBOUND.UPDATE_AI_CONFIG: lambda: self.do_update_ai_config(ws, data),
             INBOUND.SET_TRUSTEE: lambda: self.do_set_trustee(ws, data),
             INBOUND.UPDATE_SETTINGS: lambda: self.do_update_settings(ws, data),
+            INBOUND.POST_DEATH_ACTION: lambda: self.do_post_death_action(ws, data),
             INBOUND.PING: lambda: self.send(ws, {"type": OUTBOUND.PONG}),
             INBOUND.SERVER_INFO: lambda: self.send(
                 ws, {"type": OUTBOUND.SERVER_INFO, **MainEngine.server_info()}
@@ -158,10 +180,22 @@ class GameServer:
             return None
         return self.engines.get(gid)
 
+    def controller_engine_for(self, ws):
+        """Return an engine only while this connection still controls the live seat."""
+        engine = self.engine_for(ws)
+        if engine is None:
+            return None
+        gid = getattr(self, "ws_map", {}).get(ws)
+        if getattr(self, "viewer_modes", {}).get(gid) == "spectator":
+            return None
+        return engine
+
     async def _end_orphaned_games(self, profile_id):
         """同一档案开新局时，结束它在后台无人观看、仍在进行的旧局（记为中断）。"""
         for gid, engine in list(self.engines.items()):
             if self.viewers.get(gid) is not None:
+                continue
+            if gid in self.background_games:
                 continue
             if engine.game_config.get("profile_id") != profile_id or engine.game_aborted:
                 continue
@@ -182,13 +216,30 @@ class GameServer:
         cfg = MainEngine.normalize_config(sanitize_client_config(raw_config), BASE_DIR)
         gid = uuid.uuid4().hex
         cfg["profile_id"] = validate_profile_id(cfg.get("profile_id") or f"guest_{gid}")
+        cfg["player"]["title"] = (self.history.profile(cfg["profile_id"]).get("titles") or {}).get("equipped")
+        roster = {row["id"]: row for row in self.history.ai_players(
+            cfg["profile_id"], count=len(cfg["ais"]))}
+        used_ai_ids = set()
+        for index, ai in enumerate(cfg["ais"], start=1):
+            ai_id = self.history._ai_id(ai.get("ai_id")) or f"ai_{index}"
+            if ai_id not in roster:
+                ai_id = f"ai_{index}"
+            if ai_id in used_ai_ids:
+                ai_id = next((f"ai_{candidate}" for candidate in range(1, len(cfg["ais"]) + 1)
+                              if f"ai_{candidate}" not in used_ai_ids), f"ai_{index}")
+            used_ai_ids.add(ai_id)
+            account = roster[ai_id]
+            ai["ai_id"] = ai_id
+            ai["name"] = account["name"]
+            ai["title"] = (account.get("titles") or {}).get("equipped")
         await self._end_orphaned_games(cfg["profile_id"])
         print(f"\n[创建] game_{gid} | 模式: {cfg['mode']} | 玩家: {cfg['player']['name']}")
         engine = MainEngine(cfg)
         engine.game_id = gid
         identity_card = cfg.get("identity_card") or {}
         if identity_card.get("use"):
-            if IdentitySystem.IDENTITY_ALIASES.get(identity_card.get("identity")) not in IdentitySystem.IDENTITY_5:
+            if (IdentitySystem.IDENTITY_ALIASES.get(identity_card.get("identity"))
+                    not in get_mode(cfg["mode"]).identities):
                 await self.send_error(ws, "身份卡指定了无效身份")
                 return
             try:
@@ -197,11 +248,17 @@ class GameServer:
                 await self.send_error(ws, f"身份卡使用失败: {exc}")
                 return
         self.engines[gid] = engine
+        engine.animation_metrics = self.animation_metrics.setdefault(gid, {
+            "awaited": 0, "acked": 0, "timed_out": 0, "no_viewer": 0,
+            "total_ack_ms": 0.0, "max_ack_ms": 0.0,
+        })
         self.ws_map[ws] = gid
         self.viewers[gid] = ws
+        self.viewer_modes[gid] = "player"
         for event in ENGINE_EVENTS:
             engine.on(event, self._forward(gid, event))
         engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(gid))
+        engine.recovery_checkpoint = self._checkpoint_handler(gid, engine)
         await self.send(ws, {"type": OUTBOUND.GAME_CREATED, "game_id": gid,
                              "profile_id": cfg["profile_id"]})
         self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine))
@@ -216,6 +273,30 @@ class GameServer:
                                  "reason": "bad_profile", "message": "档案 ID 无效"})
             return
         engine = self.engines.get(gid)
+        if engine is None and gid not in self.finished:
+            try:
+                snapshot = self.recovery.load(gid)
+            except (FileNotFoundError, ValueError, OSError, json.JSONDecodeError):
+                snapshot = None
+            if snapshot is not None:
+                if snapshot.get("profile_id") != profile_id:
+                    await self.send(ws, {"type": OUTBOUND.RESUME_FAILED, "game_id": gid,
+                                         "reason": "forbidden", "message": "这局不属于当前浏览器档案"})
+                    return
+                try:
+                    engine = restore_engine(snapshot, MainEngine)
+                    self.engines[gid] = engine
+                    engine.animation_metrics = self.animation_metrics.setdefault(gid, {
+                        "awaited": 0, "acked": 0, "timed_out": 0, "no_viewer": 0,
+                        "total_ack_ms": 0.0, "max_ack_ms": 0.0,
+                    })
+                    for event in ENGINE_EVENTS:
+                        engine.on(event, self._forward(gid, event))
+                    engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(gid))
+                    engine.recovery_checkpoint = self._checkpoint_handler(gid, engine)
+                except (KeyError, TypeError, ValueError, OSError) as exc:
+                    logging.getLogger(__name__).error("恢复快照失败 game_%s: %s", gid, type(exc).__name__)
+                    engine = None
         if engine is None or gid in self.finished:
             # 对局已结束（包括引擎还在收尾的瞬间）：直接把结算结果交给重连的页面。
             finished = self.finished.get(gid)
@@ -240,21 +321,38 @@ class GameServer:
             self.viewers.pop(old_gid, None)
         self.ws_map[ws] = gid
         self.viewers[gid] = ws
+        self.background_games.pop(gid, None)
+        human = engine.human_player()
+        self.viewer_modes[gid] = "spectator" if human is not None and not human.alive else "player"
         self._cancel_grace(gid)
         print(f"[重连] game_{gid}")
         await self.send(ws, {"type": OUTBOUND.GAME_RESUMED, "game_id": gid, "profile_id": profile_id,
                              "finished": False, "idle_seconds": int(engine.idle_seconds())})
-        await self.send(ws, {"type": OUTBOUND.GAME_STATE, "state": engine.serialize()})
+        await self.send(ws, {"type": OUTBOUND.GAME_STATE,
+                             "state": self._client_state(gid, engine)})
         status = engine.trustee_status() if hasattr(engine, "trustee_status") else None
         if status:
             await self.send(ws, {"type": OUTBOUND.TRUSTEE_STATUS, **status})
-        for prompt in engine.pending_prompts():
-            await self.send(ws, {"type": ENGINE_EVENT_MAP.get(prompt["event"], prompt["event"]),
-                                 **prompt["payload"]})
+        if self.viewer_modes.get(gid) != "spectator":
+            for prompt in engine.pending_prompts():
+                await self.send(ws, {"type": ENGINE_EVENT_MAP.get(prompt["event"], prompt["event"]),
+                                     **prompt["payload"]})
         # 作弊局重连：补发一次最新笔记（非作弊局 cheat_notes_payload() 为 None，什么都不发）。
         notes_payload = engine.cheat_notes_payload()
         if notes_payload is not None:
             await self.send(ws, {"type": OUTBOUND.COGNITIVE_NOTES, **notes_payload})
+        if gid not in self.tasks:
+            self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine))
+
+    def _checkpoint_handler(self, gid, engine):
+        async def save_checkpoint():
+            if self.engines.get(gid) is not engine or engine._game_end_emitted:
+                return
+            # Freeze engine-owned state on its event loop; only the JSON disk write
+            # runs in a worker, so chat/events cannot mutate objects mid-encode.
+            payload = dump_engine(engine)
+            await asyncio.to_thread(self.recovery.save_payload, gid, payload)
+        return save_checkpoint
 
     async def _run_engine(self, gid, engine):
         try:
@@ -278,9 +376,9 @@ class GameServer:
                 self._drop_game(gid)
 
     async def do_action(self, ws, data):
-        engine = self.engine_for(ws)
+        engine = self.controller_engine_for(ws)
         if not engine:
-            await self.send_error(ws, "当前连接没有游戏")
+            await self.send_error(ws, "当前连接没有可操作的玩家座位")
             return
         receipt = engine.submit_action(data.get("action", {}), data.get("target_ids", []))
         if receipt is not None:
@@ -297,15 +395,15 @@ class GameServer:
             return
         # 没有对局时（例如大厅里误发）只给发送者一条系统回显。
         await self.send(ws, {"type": OUTBOUND.CHAT, "from": "玩家", "message": message,
-                             "is_self": True, "kind": "system", "free": False})
+                             "is_self": True, "kind": "system"})
     async def do_animation_done(self, data):
         waiter = self.animation_waiters.get(str(data.get("animation_id", "")))
         if waiter and not waiter.done():
             waiter.set_result(True)
     async def do_end_game(self, ws, data):
-        engine = self.engine_for(ws)
+        engine = self.controller_engine_for(ws)
         if not engine:
-            await self.send_error(ws, "当前连接没有游戏")
+            await self.send_error(ws, "当前连接没有可操作的玩家座位")
             return
         reason = str(data.get("reason", "玩家主动结束游戏"))[:100]
         accepted = await engine.request_end_game(reason)
@@ -313,10 +411,63 @@ class GameServer:
             await self.send(ws, {"type": OUTBOUND.END_GAME_ACCEPTED})
         else:
             await self.send_error(ws, "对局已结束")
-    async def do_update_ai_config(self, ws, data):
+
+    def _client_state(self, gid, engine):
+        """Add connection lifecycle data to a fresh engine snapshot."""
+        state = engine.serialize()
+        human = engine.human_player()
+        dead = bool(human is not None and not human.alive)
+        state["post_death"] = {
+            "available": bool(dead and not engine.game_state.game_over and not engine.game_aborted),
+            "mode": self.viewer_modes.get(gid, "spectator" if dead else "player"),
+            "actions": ["spectate", "background", "end"] if dead else [],
+        }
+        return state
+
+    async def do_post_death_action(self, ws, data):
+        """Apply the dead human's explicit table lifecycle choice."""
         engine = self.engine_for(ws)
-        if not engine:
+        if engine is None:
             await self.send_error(ws, "当前连接没有游戏")
+            return
+        human = engine.human_player()
+        if human is None or human.alive:
+            await self.send_error(ws, "只有真人阵亡后才能选择观战或后台结算")
+            return
+        action = str(data.get("action") or "")
+        if action not in {"spectate", "background", "end"}:
+            await self.send_error(ws, "阵亡后操作无效")
+            return
+        gid = self.ws_map.get(ws)
+        if action == "spectate":
+            self.viewer_modes[gid] = "spectator"
+            await self.send(ws, {"type": OUTBOUND.POST_DEATH_ACTION_RESULT,
+                                 "game_id": gid, "action": action, "status": "accepted"})
+            await self.send(ws, {"type": OUTBOUND.GAME_STATE,
+                                 "state": self._client_state(gid, engine)})
+            return
+        if action == "end":
+            accepted = await engine.request_end_game("真人阵亡后明确结束本局")
+            await self.send(ws, {"type": OUTBOUND.POST_DEATH_ACTION_RESULT,
+                                 "game_id": gid, "action": action,
+                                 "status": "accepted" if accepted else "already_finished"})
+            return
+
+        # ACK first, then detach without scheduling the disconnect watchdog.
+        self.background_games[gid] = engine.game_config.get("profile_id")
+        await self.send(ws, {"type": OUTBOUND.POST_DEATH_ACTION_RESULT,
+                             "game_id": gid, "action": action, "status": "accepted"})
+        self.ws_map.pop(ws, None)
+        if self.viewers.get(gid) is ws:
+            self.viewers.pop(gid, None)
+        self.viewer_modes.pop(gid, None)
+        self._cancel_grace(gid)
+        self._release_animation_waiters(gid)
+
+    async def do_update_ai_config(self, ws, data):
+        engine = self.controller_engine_for(ws)
+        if not engine:
+            await self.send_error(ws, "当前连接没有可操作的玩家座位")
             return
         try:
             updated = engine.update_ai_config(
@@ -326,9 +477,9 @@ class GameServer:
         except Exception as exc:
             await self.send_error(ws, f"AI配置更新失败: {exc}")
     async def do_update_settings(self, ws, data):
-        engine = self.engine_for(ws)
+        engine = self.controller_engine_for(ws)
         if engine is None:
-            await self.send_error(ws, "当前连接没有游戏")
+            await self.send_error(ws, "当前连接没有可操作的玩家座位")
             return
         try:
             engine.update_settings(data.get("settings"))
@@ -339,9 +490,9 @@ class GameServer:
         await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
 
     async def do_set_trustee(self, ws, data):
-        engine = self.engine_for(ws)
+        engine = self.controller_engine_for(ws)
         if engine is None:
-            await self.send_error(ws, "当前连接没有游戏")
+            await self.send_error(ws, "当前连接没有可操作的玩家座位")
             return
         try:
             status = engine.set_trustee(
@@ -357,23 +508,28 @@ class GameServer:
     def _forward(self, gid, event):
         async def handler(**data):
             engine = self.engines.get(gid)
+            if (self.viewer_modes.get(gid) == "spectator"
+                    and event in {ENGINE_EVENT.YOUR_TURN, ENGINE_EVENT.REQUIRE_RESPONSE,
+                                  ENGINE_EVENT.SELECTION_RESULT}):
+                return
             if event == ENGINE_EVENT.GAME_END and engine is not None:
                 # 战绩写入不依赖是否有人在看：断线期间结束的对局同样入账。
                 try:
+                    data["_title_hidden_players"] = self._title_hidden_players(engine)
                     data.update(self.history.record_result(
-                        engine.game_config["profile_id"], engine.game_id, data
+                        engine.game_config.get("profile_id") or f"guest_{engine.game_id}", engine.game_id, data
                     ))
                 except (OSError, ValueError, RuntimeError) as exc:
                     logging.getLogger(__name__).error("战绩持久化失败: %s", exc)
                     data["history_error"] = "战绩保存失败，请检查服务器日志"
-            if event == ENGINE_EVENT.COGNITIVE_NOTES and (engine is None or not engine.cheat_mode):
+                data.pop("_title_hidden_players", None)
+            if event in (ENGINE_EVENT.COGNITIVE_NOTES, ENGINE_EVENT.CHAT_REJECTED) and (engine is None or not engine.cheat_mode):
                 # 认知笔记只在作弊局下发：第二道闸门，即使引擎误发也不转给前端。
                 return
             if event == OUTBOUND.CHAT and "from_" in data:
                 data["from"] = data.pop("from_")
             if event == OUTBOUND.CHAT and isinstance(data.get("from_id"), int):
-                # 座位号 = 内部 id + 1（界面显示用）；引擎不关心显示规则，在这里补算。
-                data["seat"] = data["from_id"] + 1
+                data["seat"] = seat_of(engine.game_state, data["from_id"]) if engine else None
             if event == OUTBOUND.CHAT and data.get("kind") == "human":
                 # 旧前端靠 is_self 认出“这是我自己说的话”，保持兼容。
                 data["is_self"] = True
@@ -384,6 +540,8 @@ class GameServer:
                 if move.get("visibility") != "public" and owner_id != 0:
                     move["card_id"] = None
                 data["move"] = move
+            if event == ENGINE_EVENT.STATE_CHANGED and engine is not None:
+                data["state"] = self._client_state(gid, engine)
             if event == ENGINE_EVENT.GAME_END and engine is not None:
                 data["log_saved"] = self._save_game_log(engine, data)
             message = {"type": ENGINE_EVENT_MAP.get(event, event), **data}
@@ -392,10 +550,89 @@ class GameServer:
                                       "game_end": message}
                 while len(self.finished) > self.FINISHED_KEEP:
                     self.finished.pop(next(iter(self.finished)))
+                try:
+                    self.recovery.delete(gid)
+                except (OSError, ValueError) as exc:
+                    logging.getLogger(__name__).error("删除恢复快照失败: %s", type(exc).__name__)
             ws = self.viewers.get(gid)
             if ws is not None:
                 await self.send(ws, message)
         return handler
+
+    @staticmethod
+    def _title_hidden_players(engine):
+        """Return player IDs never guessed correctly at high confidence by any AI."""
+        notes = getattr(engine, "notes", None)
+        snapshots = list(getattr(notes, "snapshots", []) or []) if notes is not None else []
+        if not snapshots:
+            return []
+        players = list(engine.game_state.players)
+        by_round = {}
+        for snapshot in snapshots:
+            try:
+                round_number = int(snapshot.get("round") or 0)
+            except (TypeError, ValueError):
+                continue
+            by_round.setdefault(round_number, []).append(snapshot)
+        eligible = []
+        owner_ids = set(getattr(notes, "owners", []) or [])
+        if not owner_ids:
+            owner_ids = {row.get("player_id") for row in snapshots if isinstance(row.get("player_id"), int)}
+        death_rounds = getattr(notes, "_death_round", {}) or {}
+        for player in players:
+            if player.identity not in ("loyalist", "rebel", "spy"):
+                continue  # 主公全局公开，不可能获得“深藏不露”。
+            reveal_round = None
+            guessed_correctly = False
+            seat = seat_of(engine.game_state, player.id)
+            if seat is None:
+                continue
+            guessed_correctly = any(event.get("target_id") == player.id and event.get("guess") == player.identity
+                                    for event in getattr(notes, "high_guess_events", []))
+            for round_number, rows in by_round.items():
+                for snapshot in rows:
+                    notes_by_seat = snapshot.get("notes") or {}
+                    has_public_seats = "seat" in snapshot
+                    key = str(seat) if has_public_seats else str(player.id)
+                    entry = notes_by_seat.get(key, notes_by_seat.get(int(key)))
+                    if not isinstance(entry, dict):
+                        continue
+                    if entry.get("locked"):
+                        reveal_round = round_number if reveal_round is None else min(reveal_round, round_number)
+                        continue
+                    if entry.get("conf") == "高" and entry.get("guess") == player.identity:
+                        guessed_correctly = True
+            final_round = int(getattr(engine.game_state, "round_number", 0) or 0)
+            last_private_round = min(final_round, reveal_round - 1) if reveal_round is not None else final_round
+            required_rounds = set(range(1, last_private_round + 1))
+            complete_coverage = bool(required_rounds and (owner_ids - {player.id}))
+            for round_number in required_rounds:
+                expected_owners = {owner_id for owner_id in owner_ids
+                                   if owner_id != player.id
+                                   and (owner_id not in death_rounds or int(death_rounds[owner_id]) >= round_number)}
+                round_rows = {row.get("player_id"): row for row in by_round.get(round_number, [])}
+                if not expected_owners:
+                    complete_coverage = False
+                    break
+                for owner_id in expected_owners:
+                    snapshot = round_rows.get(owner_id)
+                    if not isinstance(snapshot, dict):
+                        complete_coverage = False
+                        break
+                    notes_by_seat = snapshot.get("notes") or {}
+                    has_public_seats = "seat" in snapshot
+                    key = str(seat) if has_public_seats else str(player.id)
+                    entry = notes_by_seat.get(key, notes_by_seat.get(int(key)))
+                    judged_seats = snapshot.get("judged_seats") or []
+                    was_judged = seat in judged_seats or str(seat) in judged_seats
+                    if not isinstance(entry, dict) or entry.get("locked") or not was_judged:
+                        complete_coverage = False
+                        break
+                if not complete_coverage:
+                    break
+            if complete_coverage and not guessed_correctly:
+                eligible.append(player.id)
+        return eligible
 
     def _save_game_log(self, engine, game_end):
         """对局结束自动保存日志；开局时设了无痕模式则跳过。失败只记服务器日志，不影响结算。"""
@@ -415,8 +652,17 @@ class GameServer:
         async def handler(**data):
             await_ui = bool(data.pop("await_ui", False))
             ws = self.viewers.get(gid)
+            metrics = self.animation_metrics.setdefault(gid, {
+                "awaited": 0, "acked": 0, "timed_out": 0, "no_viewer": 0,
+                "total_ack_ms": 0.0, "max_ack_ms": 0.0,
+            })
+            engine = self.engines.get(gid)
+            if engine is not None:
+                engine.animation_metrics = metrics
             if ws is None:
                 # 没人在看就不等动画 ACK，后台对局全速推进。
+                if await_ui:
+                    metrics["no_viewer"] += 1
                 return
             self.animation_seq += 1
             animation_id = f"{gid}-{self.animation_seq}"
@@ -428,9 +674,17 @@ class GameServer:
             )
             if not await_ui:
                 return
+            metrics["awaited"] += 1
+            started = asyncio.get_running_loop().time()
             try:
-                await asyncio.wait_for(waiter, timeout=2.5)
+                acknowledged = await asyncio.wait_for(waiter, timeout=self.ANIMATION_ACK_TIMEOUT)
+                if acknowledged:
+                    elapsed_ms = (asyncio.get_running_loop().time() - started) * 1000
+                    metrics["acked"] += 1
+                    metrics["total_ack_ms"] += elapsed_ms
+                    metrics["max_ack_ms"] = max(metrics["max_ack_ms"], elapsed_ms)
             except asyncio.TimeoutError:
+                metrics["timed_out"] += 1
                 print(f"[动画ACK超时] {animation_id} {data.get('card_name', '')}")
             except asyncio.CancelledError:
                 return
@@ -459,14 +713,20 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
-    def _read_json_body(self):
+    def _read_json_body(self, *, max_bytes=None, require_object=False):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
+            if max_bytes is not None:
+                raise ValueError("Content-Length 无效")
             length = 0
+        if max_bytes is not None and length > max_bytes:
+            raise ValueError(f"请求体超过 {max_bytes} 字节")
         if length <= 0:
             return {}
         data = json.loads(self.rfile.read(length))
+        if require_object and not isinstance(data, dict):
+            raise ValueError("请求体必须是 JSON 对象")
         return data if isinstance(data, dict) else {}
     def do_GET(self):
         parsed = urlsplit(self.path)
@@ -484,6 +744,19 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 logging.getLogger(__name__).error("读取战绩失败: %s", exc)
                 self._send_json(500, {"success": False, "message": "战绩读取失败，请检查服务器日志"})
             return
+        if request_path == "/api/ai-players":
+            try:
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                query = parse_qs(urlsplit(self.path).query)
+                profile_id = validate_profile_id(query.get("profile_id", [None])[0])
+                count = int((query.get("count") or [4])[0])
+                self._send_json(200, {"success": True, "players": store.ai_players(profile_id, count=count)})
+            except ValueError as exc:
+                self._send_json(400, {"success": False, "message": str(exc)})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("读取 AI 档案失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "AI 档案读取失败"})
+            return
         if request_path == "/api/decks":
             try:
                 info = MainEngine.deck_list(BASE_DIR)
@@ -499,6 +772,35 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
         if request_path == "/api/providers":
             self._send_json(200, {"success": True, "providers": MainEngine.providers()})
+            return
+        if request_path == "/api/hero-packages":
+            try:
+                self._send_json(200, {"success": True, "packages": HeroPackageStore(BASE_DIR).list_packages()})
+            except (OSError, RuntimeError, ValueError):
+                self._send_json(500, {"success": False, "message": "武将包读取失败"})
+            return
+        if request_path == "/api/hero-packages/backups":
+            try:
+                self._send_json(200, {"success": True, "backups": HeroPackageStore(BASE_DIR).list_backups()})
+            except OSError:
+                self._send_json(500, {"success": False, "message": "武将包备份列表读取失败"})
+            return
+        if request_path == "/api/heroes":
+            try:
+                heroes = HeroRegistry(BASE_DIR).all_heroes()
+                self._send_json(200, {"success": True, "heroes": heroes})
+            except (OSError, RuntimeError, ValueError):
+                self._send_json(500, {"success": False, "message": "武将数据读取失败"})
+            return
+        if request_path == "/api/heroes/certification":
+            try:
+                report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+                current = report_is_current(report)
+                self._send_json(200, {"success": True, "current": current,
+                                      "report": report})
+            except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                self._send_json(503, {"success": False, "current": False,
+                                      "message": "技能认证报告暂不可用"})
             return
         if request_path.startswith("/api/"):
             self.send_error(404)
@@ -594,13 +896,110 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self._send_json(200, {"success": True, **result})
 
     def do_POST(self):
-        if self.path.split("?")[0] == "/api/models":
+        request_path = urlsplit(self.path).path
+        if request_path == "/api/ai-players/update":
+            try:
+                body = self._read_json_body(max_bytes=16_000, require_object=True)
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                player = store.update_ai_player(body.get("profile_id"), body.get("ai_id"), name=body.get("name"),
+                                                equipped_title=body.get("equipped_title"))
+                self._send_json(200, {"success": True, "player": player})
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体无效"})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("保存 AI 档案失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "AI 档案保存失败"})
+            return
+        if request_path == "/api/history/title":
+            try:
+                body = self._read_json_body(max_bytes=16_000, require_object=True)
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                profile = store.update_profile_title(body.get("profile_id"), body.get("equipped_title"))
+                self._send_json(200, {"success": True, "profile": profile})
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体无效"})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("保存称号失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "称号保存失败"})
+            return
+        if request_path == "/api/models":
             self._handle_list_models()
             return
-        if self.path.split("?")[0] == "/api/logs/delete":
+        if request_path == "/api/logs/delete":
             self._handle_logs_delete()
             return
-        if self.path.split("?")[0] != "/api/switch_deck":
+        if request_path == "/api/heroes/trial":
+            scenario_id = None
+            seed = None
+            try:
+                body = self._read_json_body(max_bytes=MAX_IMPORT_BYTES, require_object=True)
+                scenario_id = body.get("scenario_id")
+                seed = body.get("seed")
+                trial = run_hero_trial(body, BASE_DIR)
+                self._send_json(200, {"success": True, "trial": trial})
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                error = HeroTrialError("请求体不是合法JSON", scenario_id=scenario_id, seed=seed)
+                self._send_json(400, {"success": False, "message": str(error),
+                                      "trial": error_trial(error)})
+            except (HeroTrialError, HeroImportError, ValueError) as exc:
+                error = exc if isinstance(exc, HeroTrialError) else HeroTrialError(
+                    str(exc) or "请求体无效", scenario_id=scenario_id, seed=seed,
+                )
+                self._send_json(400, {"success": False, "message": str(error),
+                                      "trial": error_trial(error)})
+            except Exception as exc:
+                logging.getLogger(__name__).error("武将技能试运行失败: %s", type(exc).__name__)
+                error = HeroTrialError("武将技能试运行失败；正式数据未变更",
+                                       code="runtime_error", outcome="runtime_error",
+                                       scenario_id=scenario_id, seed=seed)
+                self._send_json(500, {"success": False, "message": str(error),
+                                      "trial": error_trial(error)})
+            return
+        if request_path == "/api/heroes/import":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > MAX_IMPORT_BYTES:
+                    raise HeroImportError("请求体大小必须在 1..1000000 字节")
+                body = json.loads(self.rfile.read(length))
+                if not isinstance(body, dict):
+                    raise HeroImportError("请求体必须是 JSON 对象")
+                result = HeroPackageStore(BASE_DIR).import_hero(body.get("package"), body.get("hero"))
+                self._send_json(200, {"success": True, **result})
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
+            except (HeroImportError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc)})
+            except Exception as exc:
+                logging.getLogger(__name__).error("导入武将失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "武将导入失败；原数据未变更"})
+            return
+        if request_path.startswith("/api/hero-packages/") and request_path.endswith("/enabled"):
+            package_id = request_path[len("/api/hero-packages/"):-len("/enabled")].strip("/")
+            try:
+                body = self._read_json_body(max_bytes=64_000, require_object=True)
+                result = HeroPackageStore(BASE_DIR).set_enabled(package_id, body.get("enabled"))
+                self._send_json(200, {"success": True, **result})
+            except (json.JSONDecodeError, HeroImportError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体不是合法JSON"})
+            except Exception as exc:
+                logging.getLogger(__name__).error("切换武将包失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "武将包更新失败"})
+            return
+        if request_path == "/api/hero-packages/restore":
+            try:
+                body = self._read_json_body(max_bytes=64_000, require_object=True)
+                result = HeroPackageStore(BASE_DIR).restore_backup(body.get("filename"))
+                self._send_json(200, {"success": True, **result})
+            except (json.JSONDecodeError, HeroImportError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体无效"})
+            except Exception as exc:
+                logging.getLogger(__name__).error("恢复武将包备份失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "恢复失败；当前数据未变更"})
+            return
+        if request_path == "/api/heroes/convert":
+            self._handle_hero_convert()
+            return
+        if request_path != "/api/switch_deck":
             self.send_error(404)
             return
         try:
@@ -621,6 +1020,41 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
         except Exception as exc:
             self._send_json(500, {"success": False, "message": f"{type(exc).__name__}: {exc}"})
+
+    def _handle_hero_convert(self):
+        try:
+            body = self._read_json_body(max_bytes=MAX_IMPORT_BYTES, require_object=True)
+            source = str(body.get("text") or "").strip()
+            if not source or len(source) > 20_000:
+                raise ValueError("待转换文本必须为 1..20000 字符")
+            api_key = str(body.get("api_key") or "").strip()
+            provider = str(body.get("provider") or "").strip()
+            model = str(body.get("model") or "").strip()
+            if not api_key or not provider or not model:
+                raise ValueError("请填写 Provider、模型和 API Key")
+            prompt = (
+                "将下面的三国杀武将文字转换为单个 JSON 对象。只输出 JSON，不要代码围栏。"
+                "字段为 id,name,faction,title,max_hp,image,skills,worldbook。每个 skill 使用 name,description,"
+                "implementation_status=data_only；不要生成 DSL，不要声称规则已实现。image 可留空。\n原文：\n" + source
+            )
+            gateway = AIGateway()
+            content = asyncio.run(gateway.call_ai(
+                provider=provider, model=model, api_key=api_key,
+                base_url=body.get("api_url"), temperature=0.1,
+                max_tokens=3000, messages=[{"role": "user", "content": prompt}],
+            ))
+            cleaned = str(content).strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            result = json.loads(cleaned)
+            if not isinstance(result, dict):
+                raise ValueError("模型返回内容不是武将JSON对象")
+            self._send_json(200, {"success": True, "hero": result})
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json(400, {"success": False, "message": str(exc)[:300]})
+        except Exception as exc:
+            logging.getLogger(__name__).warning("AI武将转换失败: %s", type(exc).__name__)
+            self._send_json(502, {"success": False, "message": "AI转换失败，请检查配置或手动编辑JSON"})
 def start_http():
     # 多线程：拉取模型列表要等外部 API，不能卡住静态页面与其他请求。
     httpd = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), CustomHandler)

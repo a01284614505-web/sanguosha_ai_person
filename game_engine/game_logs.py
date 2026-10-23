@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .game_history import validate_profile_id
+from .prompt_trace import redact
+from .public_situation import build_public_situation
 from .token_usage import USAGE_KINDS, empty_bucket
 
 LOG_SCHEMA = 1
@@ -36,6 +38,7 @@ def _player_summary(p: Dict, stats: Dict) -> Dict:
     pid = p.get("id")
     return {
         "id": pid,
+        "seat": p.get("seat"),
         "name": p.get("name"),
         "hero": p.get("hero_name") or (p.get("hero") or {}).get("name"),
         "identity": p.get("identity"),
@@ -66,6 +69,22 @@ def _token_usage_summary(engine) -> List[Dict]:
     return rows
 
 
+def _animation_summary(engine) -> Dict:
+    metrics = dict(getattr(engine, "animation_metrics", None) or {})
+    awaited = int(metrics.get("awaited", 0))
+    acked = int(metrics.get("acked", 0))
+    total = float(metrics.get("total_ack_ms", 0.0))
+    return {
+        "awaited": awaited,
+        "acked": acked,
+        "timed_out": int(metrics.get("timed_out", 0)),
+        "no_viewer": int(metrics.get("no_viewer", 0)),
+        "ack_rate": (acked / awaited) if awaited else None,
+        "mean_ack_ms": round(total / acked, 2) if acked else None,
+        "max_ack_ms": round(float(metrics.get("max_ack_ms", 0.0)), 2) if acked else None,
+    }
+
+
 def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
     """从引擎与 game_end 载荷组装日志。只读，不改引擎状态。"""
     state = game_end.get("state") or {}
@@ -87,7 +106,8 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
     else:
         # 不含思考过程：只保留“谁在第几轮做了什么”，去掉理由。
         decisions = [{k: v for k, v in d.items() if k != "reason"} for d in getattr(engine, "decision_log", [])]
-    return {
+    return redact({
+        "prompt_traces": [trace for traces in getattr(getattr(engine, "ai_decision", None), "prompt_traces", {}).values() for trace in traces] if include_thinking else [],
         "schema": LOG_SCHEMA,
         "game_id": engine.game_id,
         "profile_id": config.get("profile_id"),
@@ -107,14 +127,21 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "players": [_player_summary(p, stats) for p in state.get("players") or []],
         "mvp": game_end.get("mvp"),
         "timeline": timeline,
+        "plan_snapshots": [{"round": s["round"], "player_id": s["player_id"], "seat": s.get("seat"), "plan": s["plan"]}
+                           for s in getattr(getattr(engine, "notes", None), "snapshots", []) if s.get("plan")],
+        "notes_diagnostics": list(getattr(getattr(engine, "ai_decision", None), "notes_diagnostics", [])),
+        "blocked_chat": list(getattr(engine, "blocked_chat", [])),
         "chat": list(getattr(engine, "chat_log", []))[-1000:],
         "decisions": decisions[-2000:],
         "token_usage": _token_usage_summary(engine),
+        "animation_diagnostics": _animation_summary(engine),
+        "public_situation": (build_public_situation(engine)
+                             if getattr(engine, "game_state", None) is not None else None),
         # 行为账本流水（Stage T · T1）：均为公开事实，不含手牌区牌名与任何隐藏信息。
         "ledger": ledger.snapshot() if ledger is not None else [],
         # 认知笔记快照（Stage T · T2）：每个模型 AI 每轮一份，非作弊局也写（对局结束后才落盘，不影响游戏体验）。
         "cognitive_notes": [dict(item) for item in getattr(getattr(engine, "notes", None), "snapshots", [])],
-    }
+    }, engine)
 
 
 class GameLogStore:

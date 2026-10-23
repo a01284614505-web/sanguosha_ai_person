@@ -1,0 +1,22 @@
+D public diagnostics browser acceptance
+Date: 2026-10-20 UTC
+Command: PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright python3 scripts/manual/public_diagnostics_browser_check.py
+Result: PASS against actual /api/logs list and detail handlers on an isolated temporary store.
+Coverage: renders state version/round/phase/event and card-move sequence/discard summary; renders whitelisted per-decision selection facts; confirms legacy log without new fields has no empty diagnostics section; fixture-only private hand/notes/prompt markers do not appear in diagnostics; no pageerror.
+Output:
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /logs.html HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /css/sgs.css?v=20261017e HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /css/pages.css?v=20261020d1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /js/card_info.js?v=20261017e HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /js/local_skins.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /js/global_settings.js?v=20261017e HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /js/sgs_common.js?v=20261020f1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /js/logs_page.js?v=20261020d1 HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /api/logs?profile_id=profile_diagnostics_browser HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /api/logs/diagnostics_browser?profile_id=profile_diagnostics_browser HTTP/1.1" 200 -
+127.0.0.1 - - [20/Oct/2026 00:12:30] "GET /api/logs/legacy_diagnostics?profile_id=profile_diagnostics_browser HTTP/1.1" 200 -
+Error: legacy log rendered an empty diagnostic section
+    at [eval]:23:74
+    at runNextTicks (node:internal/process/task_queues:64:5)
+    at process.processImmediate (node:internal/timers:452:9)
+    at process.callbackTrampoline (node:internal/async_hooks:130:17)

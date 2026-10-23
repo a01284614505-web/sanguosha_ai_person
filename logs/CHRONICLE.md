@@ -1438,3 +1438,16 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - [日志与交接规范](handover/README.md)
 
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。
+
+- 2026-10-18：Stage T · T3b 点名、3 秒合并、有限接话链与 AI 观战施工，见 [交接](handover/20261018_1058_StageT_T3b点名接话观战.md)；743 passed / 50 subtests，VERIFY_OK，30 局正常；独立分支待验收。
+- 2026-10-18：Stage 8 武将 DSL 与导入管线完成，使用 1 个 `gpt-6-luna` 子代理；33/54 表达性定义、五技能 Python 等价测试、导入/启禁/世界书/备份恢复与沙箱接线。最终 784 passed / 50 subtests、VERIFY_OK，真实浏览器导入启禁通过；真实付费 Provider 未验，见 [交接与原始报告](handover/20261018_0424_Stage8完成交接.md)。
+
+- 2026-10-19：按用户选择优先 Stage 8，两个 Luna 分别完成 DSL 门控/交互预算与包存储/注册表校验收尾；主代理集成 795 passed / 50 subtests、VERIFY_OK、浏览器导入启禁通过。并逐项复核玩法审查及评价审查者，确认的玩法缺陷列入下一批而未伪称已修；见 [交接](handover/20261019_Stage8收尾与玩法审查复核.md) 与 [复核报告](reports/20261019_gameplay_audit_review.md)。
+
+- 2026-10-19：补充独立的 [后续开发执行计划](handover/20261019_后续开发执行计划.md)，明确 A–F 顺序、主代理与两个 Luna 分工、Stage 8 试验台/行为认证、逐批验收及下一轮任务单；本次仅写计划，未执行其中功能。
+
+- 2026-10-20：在唯一整合树连续完成 A 规则修复、B 技能试验台与首批行为对照、C 规则 AI 首批策略及公开诊断；统一验证为 883 passed / 50 subtests、协议同步、前端检查和两项 WebSocket smoke 全绿。三牌堆 30 局、试验隔离与浏览器证据均已落 `logs/reports/`；D 统一局势视图、E 生命周期和 F1 本地皮肤继续按同一 A–F 计划施工。真实 Provider 明确留待用户另行验收。
+
+- 2026-10-20：继续完成 D 离线模型局势、E1–E3 阵亡/观战/后台结算与公开事件播放器、F1 本地皮肤、F2 声明式模式基础。D 的三个模型入口共享带版本的公开/私有状态；E 的真实浏览器三路生命周期及文本复盘通过；F1 只存浏览器 IndexedDB；F2 仍只开放验收过的五人身份局。F3 等具体模式规则版本，F5 等真实 Windows/Android 环境，F6 等语音资源和体验预算；真实 Provider 仍由用户另验。
+
+- 2026-10-20：用户要求换新窗口由 GPT-6 Sol 接任。已按当前 HEAD `aa25855`、dirty 文档与实际报告核对并撰写 [新窗口交接报告](handover/20261020_6Sol新窗口交接报告.md)，明确已实现范围、尚缺任务、后半批待独立审核及工作区入口；本窗口停止新增开发，不将交接记为全计划完成。

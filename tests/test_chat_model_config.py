@@ -24,6 +24,8 @@ def engine_with_relay_seat():
     engine = MainEngine({"mode": "5人身份局", "player_name": "P0",
                          "ais": [{"name": f"P{i}"} for i in range(1, 5)],
                          "deck_id": "standard"})
+    # 此组只验证连接与非阻塞；3 秒合并窗口另有假时钟专项测试。
+    engine.chat_director.human_debounce_seconds = 0
     ai = engine.game_state.players[1]
     ai.ai_config = {"provider": "openai", "model": "relay-model",
                     "api_key": KEY, "api_url": RELAY}

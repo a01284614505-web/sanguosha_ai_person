@@ -50,7 +50,7 @@ def test_human_chat_enters_table_chat_and_is_emitted_exactly_once():
 
     assert len(events) == 1
     assert events[0]["from_"] == "小明" and events[0]["from_id"] == 0
-    assert events[0]["kind"] == "human" and events[0]["free"] is False
+    assert events[0]["kind"] == "human" and "free" not in events[0]
     assert events[0]["message"] == "3号你是反贼吧"
     assert "ts" in events[0]
     assert list(engine.table_chat) == [entry]
@@ -118,9 +118,8 @@ def test_ai_free_chat_is_recorded_as_ai_and_free():
     engine.get_available_actions = lambda player: [{"type": "play_card"}, {"type": "end_phase"}]
     run(engine._auto_play_phase(ai))
 
-    assert len(events) == 1
-    assert events[0]["kind"] == "ai" and events[0]["free"] is True and events[0]["from_id"] == ai.id
-    assert engine.table_chat[-1]["name"] == ai.name and engine.table_chat[-1]["free"] is True
+    assert events == [] and not engine.table_chat
+    assert not engine.chat_log, "即使旧模型返回 chat 字段，也不能从决策上桌"
 
 
 def test_director_chat_is_recorded_as_not_free():
@@ -138,7 +137,7 @@ def test_director_chat_is_recorded_as_not_free():
         ChatTask(ai.id, "event", "测试由头", engine.time_source(), engine.game_state.round_number, 20)))
 
     assert engine.table_chat[-1]["text"] == "来战！"
-    assert engine.table_chat[-1]["kind"] == "ai" and engine.table_chat[-1]["free"] is False
+    assert engine.table_chat[-1]["kind"] == "ai" and "free" not in engine.table_chat[-1]
 
 
 def test_server_do_chat_hands_over_to_engine_and_does_not_echo_itself():
@@ -171,15 +170,15 @@ def test_forwarded_chat_carries_kind_seat_free_and_ts():
 
     async def scenario():
         await engine.submit_chat(0, "你们好")
-        await engine._record_ai_chat(ai, "哼", free=True)
+        await engine._record_ai_chat(ai, "哼")
 
     run(scenario())
     human_msg, ai_msg = ws.sent
     assert human_msg["type"] == "chat" and human_msg["kind"] == "human"
     assert human_msg["from"] == "小明" and human_msg["from_id"] == 0 and human_msg["seat"] == 1
-    assert human_msg["free"] is False and human_msg["is_self"] is True and "ts" in human_msg
+    assert "free" not in human_msg and human_msg["is_self"] is True and "ts" in human_msg
     assert ai_msg["kind"] == "ai" and ai_msg["from_id"] == ai.id and ai_msg["seat"] == ai.id + 1
-    assert ai_msg["free"] is True and "is_self" not in ai_msg
+    assert "free" not in ai_msg and "is_self" not in ai_msg
     assert "from_" not in ai_msg
 
 
@@ -200,7 +199,7 @@ def test_new_chat_appears_before_the_action_list_with_quoted_format():
     engine = make_engine()
     ai = engine.game_state.players[1]
     run(engine.submit_chat(0, "3号你别装了"))
-    run(engine._record_ai_chat(engine.game_state.players[2], "我是忠臣", free=True))
+    run(engine._record_ai_chat(engine.game_state.players[2], "我是忠臣"))
 
     message = decision_message(engine, ai)
 
@@ -237,7 +236,7 @@ def test_block_holds_at_most_ten_newest_in_order_and_includes_own_speech():
     async def scenario():
         for i in range(11):
             await engine.submit_chat(0, f"话{i:02d}")
-        await engine._record_ai_chat(ai, "我自己说的", free=True)
+        await engine._record_ai_chat(ai, "我自己说的")
 
     run(scenario())
     message = decision_message(engine, ai)
@@ -290,17 +289,17 @@ def decide(engine, ai, reply):
 def test_response_prompt_asks_for_an_optional_chat_message():
     engine = make_engine()
     prompt = engine.ai_decision.build_response_prompt(engine.game_state.players[1], response_request())
-    assert '"chat_message"' in prompt
+    assert '"chat_message"' not in prompt
 
 
 def test_response_chat_message_is_parsed_and_trimmed():
     engine = make_engine()
     ai = keyed(engine.game_state.players[1])
     index = decide(engine, ai, json.dumps({"option_index": 0, "reasoning": "r", "chat_message": " 想杀我？ "}))
-    assert index == 0 and engine.ai_decision.last_chat[ai.id] == "想杀我？"
+    assert index == 0 and not hasattr(engine.ai_decision, "last_chat")
 
     decide(engine, ai, json.dumps({"option_index": 0, "chat_message": "啊" * 100}))
-    assert len(engine.ai_decision.last_chat[ai.id]) == 40
+    assert not hasattr(engine.ai_decision, "last_chat")
 
 
 def test_illegal_chat_message_never_affects_the_choice():
@@ -309,16 +308,16 @@ def test_illegal_chat_message_never_affects_the_choice():
     for bad in (123, ["闪"], {"a": 1}, None):
         index = decide(engine, ai, json.dumps({"option_index": 1, "chat_message": bad}))
         assert index == 1
-        assert engine.ai_decision.last_chat[ai.id] == ""
+        assert not hasattr(engine.ai_decision, "last_chat")
 
 
 def test_failed_parse_does_not_leave_a_stale_chat_message():
     engine = make_engine()
     ai = keyed(engine.game_state.players[1])
     decide(engine, ai, json.dumps({"option_index": 0, "chat_message": "上一句"}))
-    assert engine.ai_decision.last_chat[ai.id] == "上一句"
+    assert not hasattr(engine.ai_decision, "last_chat")
     decide(engine, ai, "这不是 JSON")
-    assert engine.ai_decision.last_chat[ai.id] == ""
+    assert not hasattr(engine.ai_decision, "last_chat")
 
 
 def test_engine_records_the_response_chat_as_free_ai_speech():
@@ -327,15 +326,14 @@ def test_engine_records_the_response_chat_as_free_ai_speech():
     ai = engine.game_state.players[1]
 
     async def fake_handler(player, request):
-        engine.ai_decision.last_chat[player.id] = "接招"
+        engine.ai_decision.last_chat = {player.id: "接招"}
         return 0
 
     engine.ai_decision.make_response_decision = fake_handler
     index = run(engine._ai_choose_option(ai, response_request()))
 
     assert index == 0
-    assert [(e["message"], e["kind"], e["free"]) for e in events] == [("接招", "ai", True)]
-    assert engine.ai_decision.last_chat.get(ai.id, "") == "", "取走后清空，不会重复发"
+    assert events == [] and not engine.table_chat, "响应决策的旁路字段永远不上桌"
 
 
 def test_human_trustee_response_chat_is_not_spoken_in_the_humans_name():
@@ -344,11 +342,11 @@ def test_human_trustee_response_chat_is_not_spoken_in_the_humans_name():
     human = engine.human_player()
 
     async def fake_handler(player, request):
-        engine.ai_decision.last_chat[human.id] = "托管台词"
+        engine.ai_decision.last_chat = {human.id: "托管台词"}
         return 0
 
     engine.ai_decision.make_response_decision = fake_handler
-    run(engine._emit_response_chat(human))
+    run(engine._ai_choose_option(human, response_request()))
     assert events == [] and not engine.table_chat
 
 
@@ -359,9 +357,9 @@ def test_ai_speech_is_capped_at_five_lines_per_round():
 
     async def scenario():
         for i in range(8):
-            await engine._record_ai_chat(ai, f"第{i}句", free=True)
+            await engine._record_ai_chat(ai, f"第{i}句")
         engine.game_state.round_number += 1
-        await engine._record_ai_chat(ai, "新一轮", free=True)
+        await engine._record_ai_chat(ai, "新一轮")
 
     run(scenario())
     assert [e["message"] for e in events] == [f"第{i}句" for i in range(5)] + ["新一轮"]
@@ -371,7 +369,7 @@ def test_ai_speech_is_capped_at_five_lines_per_round():
 def test_disabled_chat_blocks_ai_speech_but_not_humans():
     engine = make_engine(chat={"enabled": False})
     events = collect_chat(engine)
-    run(engine._record_ai_chat(engine.game_state.players[1], "不会出现", free=True))
+    run(engine._record_ai_chat(engine.game_state.players[1], "不会出现"))
     run(engine.submit_chat(0, "我还能说"))
     assert [e["message"] for e in events] == ["我还能说"]
 

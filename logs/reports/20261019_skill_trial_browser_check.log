@@ -1,0 +1,17 @@
+Skill trial browser verification
+Date: 2026-10-19
+Command: PLAYWRIGHT_MODULE=/tmp/b4-browser-check/node_modules/playwright python3 scripts/manual/skill_trial_browser_check.py
+Exit: 0
+
+Real Chromium drove /hero_manager.html against POST /api/heroes/trial on an isolated ThreadingHTTPServer with a temporary BASE_DIR. Four deterministic scenarios returned:
+
+| Scenario | Outcome | Choices | Card moves |
+|---|---:|---:|---:|
+| active_choose_target | success | 2 | 1 |
+| damage_received | success | 0 | 1 |
+| phase_draw | success | 0 | 3 |
+| cancel_activation | declined | 1 | 0 |
+
+The page rendered diagnostics, trigger/choice trace, choices, card movement, state diff and final public state for each run. The browser check asserted the frozen top-level request keys (`package`, `hero`, `scenario_id`, `seed`) and exact allowed hero keys; no page errors occurred. Trial package data was absent from the temporary data directory after all runs, and the real project `data/hero_packages.json` state/hash was unchanged (the file was absent before and after this isolated check).
+
+The check did not enable or import the draft and did not call a paid model/provider.

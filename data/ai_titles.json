@@ -1,0 +1,16 @@
+[
+  {"id":"streak_2","name":"初露锋芒","tier":"普通","metric":"win_streak","threshold":2},
+  {"id":"streak_5","name":"势如破竹","tier":"高级","metric":"win_streak","threshold":5},
+  {"id":"streak_10","name":"战无不胜","tier":"稀有","metric":"win_streak","threshold":10},
+  {"id":"wins_10","name":"久经沙场","tier":"普通","metric":"wins","threshold":10},
+  {"id":"wins_50","name":"百战老将","tier":"高级","metric":"wins","threshold":50},
+  {"id":"wins_100","name":"一代宗师","tier":"稀有","metric":"wins","threshold":100},
+  {"id":"identity_rebel_10","name":"揭竿而起","tier":"高级","metric":"rebel_wins","threshold":10},
+  {"id":"identity_lord_10","name":"天命所归","tier":"高级","metric":"lord_wins","threshold":10},
+  {"id":"identity_loyalist_10","name":"赤胆忠心","tier":"高级","metric":"loyalist_wins","threshold":10},
+  {"id":"identity_spy_3","name":"坐收渔利","tier":"高级","metric":"spy_wins","threshold":3},
+  {"id":"mvp_10","name":"万军之首","tier":"高级","metric":"mvp","threshold":10},
+  {"id":"spy_lord_1","name":"渔翁得利","tier":"稀有","metric":"spy_lord_wins","threshold":1},
+  {"id":"first_death_5","name":"出师未捷","tier":"普通","metric":"first_death","threshold":5},
+  {"id":"deep_cover_1","name":"深藏不露","tier":"稀有","metric":"deep_cover_wins","threshold":1}
+]

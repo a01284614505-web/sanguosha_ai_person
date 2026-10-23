@@ -6,11 +6,14 @@ Python 侧唯一权威定义；`scripts/gen_protocol_js.py` 据此生成
 断言。任何新消息类型、新 Provider 只改本文件。
 """
 
+# players[].seat / chat.seat 为主公起固定的公开座位号（1..N）；id / target_ids 仍为内部 ID。
+# 只有模型 JSON 的 target_ids 使用座位号，AIDecision 在解析边界转换。
+# CHAT 不再携带 free；CHAT_REJECTED 仅作弊局发送，不能当作桌面发言渲染。
 PROTOCOL_VERSION = "1.0"
 
 
 class INBOUND:
-    """前端 → 服务器（WebSocket 入站消息类型，11 种）。"""
+    """前端 → 服务器（WebSocket 入站消息类型，12 种）。"""
 
     CREATE_GAME = "create_game"
     PLAYER_ACTION = "player_action"
@@ -25,10 +28,12 @@ class INBOUND:
     RESUME_GAME = "resume_game"
     # 对局中修改设置：{"settings": {"chat_level": "quiet" | "normal" | "lively"}}；本批只放行 chat_level。
     UPDATE_SETTINGS = "update_settings"
+    # 真人阵亡后明确选择：留桌观战、回大厅后台结算、结束本局。
+    POST_DEATH_ACTION = "post_death_action"
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，21 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，23 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -54,6 +59,9 @@ class OUTBOUND:
     RESUME_FAILED = "resume_failed"
     # 认知笔记（Stage T · T2）：仅作弊局由服务器构造并下发；非作弊局根本不存在这条消息。
     COGNITIVE_NOTES = "cognitive_notes"
+    # 仅作弊局下发公开事实冲突，不进入桌面聊天。
+    CHAT_REJECTED = "chat_rejected"
+    POST_DEATH_ACTION_RESULT = "post_death_action_result"
 
 
 class ENGINE_EVENT:
@@ -72,6 +80,8 @@ class ENGINE_EVENT:
     TRUSTEE_STATUS = "trustee_status"
     DECISION_TRACE = "decision_trace"
     COGNITIVE_NOTES = "cognitive_notes"
+    # 仅作弊局下发公开事实冲突，不进入桌面聊天。
+    CHAT_REJECTED = "chat_rejected"
     # 特化事件：卡牌动画，经专用 handler 转发（await_ui ACK 机制），不在 ENGINE_EVENTS 循环注册。
     CARD_ANIMATION = "card_animation"
 
@@ -99,6 +109,7 @@ ENGINE_EVENTS = (
     ENGINE_EVENT.TRUSTEE_STATUS,
     ENGINE_EVENT.DECISION_TRACE,
     ENGINE_EVENT.COGNITIVE_NOTES,
+    ENGINE_EVENT.CHAT_REJECTED,
 )
 
 # Provider 清单（8 家）。default_url 均为 OpenAI 兼容端点；

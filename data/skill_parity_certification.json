@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "evidence_type": "python_dsl_behavioral_parity",
+  "generated_from": "data/skill_dsl_coverage.json",
+  "dsl_manifest_sha256": "3fbcd2a60da5c8021395e70ee98076fb4e7c581c9bef5bafa740d852fa04b6b1",
+  "dsl_sha256_by_skill": {
+    "英姿": "4151731cc0b749530d52a49f2e46ec165104ff60f987ad178a3b447829a396ae",
+    "闭月": "0cb22d20371484464fd7d7a91a9c5095ed3420b4359a6c5d25ef7e0051d59909",
+    "克己": "451f54904565465df9ecad9c3a8a9400ec95318bbb032503070b724c3861172d",
+    "替身": "87dffd52017cd65852496ed63c1833aba91adee90ba131343c778a8c77980b12",
+    "连营": "c6391e6ec6707ed1110c036df45c1211d5d0720f554c6d2e08e4068b67b35b26",
+    "天妒": "aa3a84dd41a65d7407611bff3decb50eaa382625668f398fe53a9e086063a661",
+    "鬼才": "2b5cc2726700d8923302dcbeaf8e072d39a7901dec2dd234360164b3c94e48cc",
+    "鬼道": "9f6570811ff888e4041ca76b90d7f9c779f51babd13e03dc5bc2c393b819df41",
+    "奸雄": "4e4cd843450b3a75d56ea99e1eb0ad0f95447aa8d0b1796783bc21a520801b0d",
+    "反馈": "23be52c3cefb00e3925335fa3dec6dccfff6f917f176af96702f6a5faf71cc9b"
+  },
+  "engine_version": "5d9bc3178ee3e0d375d50b1b57f28a6dd097e92163cebf303da87a5b1f339383",
+  "engine_inputs_sha256": {
+    "game_engine/main_engine.py": "6351eed619ee177b91924d7b273cc58d12f5176b59feb4570b56335260ecb601",
+    "game_engine/state_manager.py": "06875b412da9bf0f10778b66d66257652630ceb20deb80067c0af5f67f2fa250",
+    "game_engine/card_flow.py": "26ddd9d424ddc68ef09978258bfd0e442219a27165c25d2e8971ba0289eab3bb",
+    "game_engine/skill_dsl.py": "2568988526d8ee95f1751502ac4d20566fbaf526bbae099282746b79b3a5da63",
+    "game_engine/skill_runtime_core.py": "ab8fe7eb60326c1c2f4c8e7d41070340ac0d0e4ef2a55218957471889e352181",
+    "game_engine/skill_runtime_state.py": "77536a814cb1198e4982a02fba99687b1ebb177bff65eb14c08727d41f877299",
+    "game_engine/skill_manager.py": "0171a9d6b172136223c4c8bb5c67a67ee3f81f9604a2dba8b97362d8938cf743",
+    "game_engine/skills_wei.py": "e105296fc920174ed12bf0e1ecb19e679258a4a6ab4ecc2addcdf8a7040454b8",
+    "game_engine/skills_qun.py": "7e37b0b8f9cfc15ec4610e907ba75fcedcae834adcb29c9904ddb5a3018f6424",
+    "game_engine/skills_wu.py": "58845545f8daceda63d519681345d610c3939a93c11bfe4998b0faba87ddfd8e"
+  },
+  "rules_version_verified": false,
+  "interpretation": "Parity only: agreement does not establish correctness against a client/rules version.",
+  "skills": [
+    {
+      "skill": "英姿",
+      "dsl_sha256": "4151731cc0b749530d52a49f2e46ec165104ff60f987ad178a3b447829a396ae",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_skill_dsl_parity.py::test_yingzi_dsl_matches_native_draw_and_skip_default_behavior"
+      ],
+      "scope": "draw phase; 3-card draw, skip-default and hand-limit modifier",
+      "branch_gaps": [
+        "no explicit dead/abort or multi-skill cross scene"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "闭月",
+      "dsl_sha256": "0cb22d20371484464fd7d7a91a9c5095ed3420b4359a6c5d25ef7e0051d59909",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_skill_dsl_parity.py::test_biyue_dsl_matches_native_prompt_branch_draw_and_cost_decline"
+      ],
+      "scope": "end phase; empty/non-empty hand branch and accepted/declined prompt",
+      "branch_gaps": [
+        "no explicit engine-abort during interaction scene"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "克己",
+      "dsl_sha256": "451f54904565465df9ecad9c3a8a9400ec95318bbb032503070b724c3861172d",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_skill_dsl_parity.py::test_keji_dsl_matches_native_prompt_skip_and_sha_condition"
+      ],
+      "scope": "discard phase; Sha-used condition and accepted/declined prompt",
+      "branch_gaps": [
+        "no explicit cancelled interaction result scene"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "替身",
+      "dsl_sha256": "87dffd52017cd65852496ed63c1833aba91adee90ba131343c778a8c77980b12",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_skill_dsl_parity.py::test_tishen_dsl_matches_native_limited_recover_draw_and_decline"
+      ],
+      "scope": "limited recovery/draw; accepted/declined prompt",
+      "branch_gaps": [
+        "no explicit death during interaction scene"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "连营",
+      "dsl_sha256": "c6391e6ec6707ed1110c036df45c1211d5d0720f554c6d2e08e4068b67b35b26",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_skill_dsl_parity.py::test_lianying_dsl_matches_native_empty_hand_selection_and_draws"
+      ],
+      "scope": "empty-hand trigger; target selection and draw",
+      "branch_gaps": [
+        "no explicit cancelled target selection or multi-skill cross scene"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "天妒",
+      "dsl_sha256": "aa3a84dd41a65d7407611bff3decb50eaa382625668f398fe53a9e086063a661",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_plan_b_parity.py::test_tiandu_dsl_matches_native_claim_of_judgment_card"
+      ],
+      "scope": "post-judgment accepted claim",
+      "branch_gaps": [
+        "decline and dead-owner branches not covered; abort during prompt is covered by supplemental scenario"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "鬼才",
+      "dsl_sha256": "2b5cc2726700d8923302dcbeaf8e072d39a7901dec2dd234360164b3c94e48cc",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_plan_b_parity.py::test_guicai_dsl_matches_native_judgment_replacement_and_discard"
+      ],
+      "scope": "pre-judgment replacement using hand card",
+      "branch_gaps": [
+        "decline, cancelled card selection and dead-owner branches not covered by original test"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "鬼道",
+      "dsl_sha256": "9f6570811ff888e4041ca76b90d7f9c779f51babd13e03dc5bc2c393b819df41",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_plan_b_parity.py::test_guidao_dsl_matches_native_black_replacement_claim_and_spade_draw"
+      ],
+      "scope": "black-card replacement; old-card claim and spade 2-9 draw",
+      "branch_gaps": [
+        "decline, no eligible black card and cancelled selection branches not covered by original test"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "奸雄",
+      "dsl_sha256": "4e4cd843450b3a75d56ea99e1eb0ad0f95447aa8d0b1796783bc21a520801b0d",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_plan_b_parity.py::test_jianxiong_dsl_matches_native_gain_damage_card_and_draw"
+      ],
+      "scope": "damage-card claim and draw",
+      "branch_gaps": [
+        "decline and unavailable event-card branches remain untested; dead-owner dispatch parity is covered by supplemental scenario"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    },
+    {
+      "skill": "反馈",
+      "dsl_sha256": "23be52c3cefb00e3925335fa3dec6dccfff6f917f176af96702f6a5faf71cc9b",
+      "status": "scenario_parity",
+      "scenarios": [
+        "tests/test_plan_b_parity.py::test_fankui_dsl_matches_native_card_transfer_per_damage_point_and_decline"
+      ],
+      "scope": "per-damage-point transfer; accept then decline",
+      "branch_gaps": [
+        "no source card and cancelled selection are covered by supplemental scenarios; zero-damage condition remains untested"
+      ],
+      "test_count": 1,
+      "dsl_present": true
+    }
+  ],
+  "supplemental_scenarios": [
+    {
+      "id": "decline_unmet_cancelled_selection",
+      "status": "parity",
+      "covers": [
+        "declined confirm",
+        "condition unmet without source card",
+        "cancelled card selection"
+      ],
+      "skills_covered": [
+        "反馈"
+      ],
+      "test": "tests/test_plan_b_certification.py::test_decline_unmet_and_cancelled_selection_match_native_and_dsl"
+    },
+    {
+      "id": "engine_abort_during_interaction",
+      "status": "parity",
+      "covers": [
+        "game ends during optional prompt",
+        "pending effect does not commit"
+      ],
+      "skills_covered": [
+        "天妒"
+      ],
+      "test": "tests/test_plan_b_certification.py::test_abort_during_optional_prompt_matches_native_and_dsl"
+    },
+    {
+      "id": "dead_owner_dispatch",
+      "status": "parity",
+      "covers": [
+        "dead owner while match continues",
+        "terminal state after death",
+        "no card movement"
+      ],
+      "skills_covered": [
+        "奸雄"
+      ],
+      "test": "tests/test_plan_b_certification.py::test_dead_owner_and_multi_skill_cross_trigger_match_native_and_dsl"
+    },
+    {
+      "id": "multi_skill_cross_trigger",
+      "status": "parity",
+      "covers": [
+        "奸雄 then 反馈 on one damage event"
+      ],
+      "skills_covered": [
+        "奸雄",
+        "反馈"
+      ],
+      "test": "tests/test_plan_b_certification.py::test_dead_owner_and_multi_skill_cross_trigger_match_native_and_dsl"
+    }
+  ],
+  "observed_divergences": [],
+  "overall_status": "listed_scenarios_parity_with_branch_gaps"
+}
