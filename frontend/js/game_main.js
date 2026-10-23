@@ -235,14 +235,21 @@
         const cheatPeek = G.state && G.state.cheat_mode && p.is_ai && !isMe
             ? '<button class="cheat-peek" type="button" data-peek-seat="' + p.id + '" title="看这名 AI 的思考" aria-label="看 ' + esc(p.name) + ' 的思考">›</button>' : '';
         // 称号牌匾不在这里输出：它在武将框上方，由 titleBadgeHTML() 单独渲染（W4.3）
+        // 框顶只留两枚印章（W 第二轮 R1/R2）；座位号+名字挪到框下方的名签（seatNameHTML）；
+        // 武将名与手牌数放进框底的名牌（.s-plate）。
         return SGS.heroImgHTML(hero.id, hero.name || p.name) +
-            '<div class="s-top">' + SGS.factionSeal(hero.faction) + '<span class="s-labels"><span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span></span>' + idSeal + '</div>' + cheatPeek +
-            '<div class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</div>' +
-            (opts.hideHand ? '' : '<div class="s-hand" title="手牌数">' + p.hand_count + '</div>') +
+            '<div class="s-top">' + SGS.factionSeal(hero.faction) + idSeal + '</div>' + cheatPeek +
+            '<div class="s-plate"><span class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</span>' +
+            (opts.hideHand ? '' : '<span class="s-hand" title="手牌数">' + p.hand_count + '</span>') + '</div>' +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
             (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">' + SGS.chainSVG() + '</div>' : '') +
             '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status +
             SGS.cornersHTML();
+    }
+
+    /** 武将框下方的名签：“N号 名字”。.s-name 的元素与文字格式保持不变（测试依赖）。 */
+    function seatNameHTML(p) {
+        return '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>';
     }
 
     /** 武将框下方的装备栏（只列出已装备的格子）。 */
@@ -251,6 +258,9 @@
         return SGS.EQUIP_ORDER.filter(slot => eq[slot]).map(slot =>
             '<div class="equip-line" ' + SGS.cardDetailAttrs({ name: eq[slot] }) + '><b>' + SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot]) + '</div>').join('');
     }
+
+    /** 技能类型的中文小字（引擎的 skill_type 原始值）。没有对应的写法就留空。 */
+    const SKILL_TYPE_LABEL = { locked: '锁定技', lord: '主公技', limited: '限定技', awaken: '觉醒技', trigger: '触发技', active: '主动技' };
 
     /** 渲染四名对手。座位 DOM 只建一次，之后按签名增量更新，气泡/特效不会被冲掉。 */
     function renderSeats() {
@@ -264,7 +274,7 @@
                 el = document.createElement('div');
                 el.dataset.id = p.id;
                 // 称号牌匾放在武将框上方的 plaque-row 里（W4.3），不在框内，避免被框的 overflow 裁掉
-                el.innerHTML = '<div class="seat-stack"><div class="plaque-row"></div><div class="seat-frame" role="button" tabindex="0"></div></div><div class="seat-equips"></div>';
+                el.innerHTML = '<div class="seat-stack"><div class="plaque-row"></div><div class="seat-frame" role="button" tabindex="0"></div></div><div class="seat-namebar"></div><div class="seat-equips"></div>';
                 const frame = el.querySelector('.seat-frame');
                 frame.addEventListener('click', (e) => {
                     const mark = e.target.closest('[data-mark-seat]');
@@ -291,11 +301,13 @@
             const frameHTML = seatFrameHTML(p);
             const equipHTML = equipLines(p);
             const badgeHTML = titleBadgeHTML(p);
-            const sig = frameHTML + '|' + equipHTML + '|' + badgeHTML;
+            const nameHTML = seatNameHTML(p);
+            const sig = frameHTML + '|' + equipHTML + '|' + badgeHTML + '|' + nameHTML;
             if (G.seatSig[p.id] !== sig) {
                 G.seatSig[p.id] = sig;
                 el.querySelector('.plaque-row').innerHTML = badgeHTML;
                 el.querySelector('.seat-frame').innerHTML = frameHTML;
+                el.querySelector('.seat-namebar').innerHTML = nameHTML;
                 el.querySelector('.seat-equips').innerHTML = equipHTML;
             }
             el.querySelector('.seat-frame').setAttribute('aria-label', p.name + '，' + (p.hero_name || '') + '，体力' + p.hp + '/' + p.max_hp + '，手牌' + p.hand_count);
@@ -344,18 +356,21 @@
         const skillHTML = skills.map(s => {
             const ready = readySkills.has(s.name);
             const on = G.sel && G.sel.kind === 'skill' && G.sel.name === s.name;
-            const state = ready ? '可发动' : on ? '发动中' : (s.type ? esc(s.type) : '');
+            // 右侧小字：可发动 / 发动中；否则写技能类型（R4），引擎里的原始类型值换成中文
+            const state = ready ? '可发动' : on ? '发动中' : esc(SKILL_TYPE_LABEL[s.type] || '');
             return '<button type="button" class="skill-btn' + (ready ? ' ready' : '') + (on ? ' on' : '') + '" data-skill="' + esc(s.name) + '"' +
                 ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' +
                 '<span class="sk-name">' + esc(s.name) + '</span><span class="sk-state">' + state + '</span></button>';
         }).join('');
         const frameHTML = seatFrameHTML(p, { hideHand: true });
         const badgeHTML = titleBadgeHTML(p);
-        const sig = frameHTML + '|' + skillHTML + '|' + badgeHTML;
+        const nameHTML = seatNameHTML(p);
+        const sig = frameHTML + '|' + skillHTML + '|' + badgeHTML + '|' + nameHTML;
         if (G.seatSig.me !== sig) {
             G.seatSig.me = sig;
             heroBox.innerHTML = '<div class="hero-stack"><div class="plaque-row">' + badgeHTML + '</div>' +
-                '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div></div>' +
+                '<div class="hero-frame" role="button" tabindex="0" aria-label="我的武将">' + frameHTML + '</div>' +
+                '<div class="seat-namebar">' + nameHTML + '</div></div>' +
                 '<div class="skill-btns">' + skillHTML + '</div>';
             heroBox.querySelector('.hero-frame').addEventListener('click', () => onSeatClick(p.id));
             heroBox.querySelectorAll('.skill-btn').forEach(b => b.addEventListener('click', () => onSkillClick(b.dataset.skill, b)));
