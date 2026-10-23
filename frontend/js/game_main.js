@@ -512,12 +512,22 @@
         box.style.setProperty('--overlap', Math.max(-w * 0.72, overlap) + 'px');
     }
 
+    /** 不能出的牌被点：轻抖一下（W2），让点击有回应；toast 文字提示照常保留。 */
+    function nudgeCard(i) {
+        const el = document.querySelector('#hand [data-index="' + i + '"]');
+        if (!el) return;
+        el.classList.remove('nudge');
+        void el.offsetWidth; // 强制重排，连续点同一张牌也能重新播放动画
+        el.classList.add('nudge');
+        setTimeout(() => el.classList.remove('nudge'), 320);
+    }
+
     /** 点手牌：响应模式 → 选候选；技能模式 → 增减用牌；普通出牌 → 选中/取消这张牌。 */
     function onCardClick(i) {
         const reqMap = reqHandMap();
         if (reqMap) {
             if (reqMap.has(i)) togglePick(reqMap.get(i));
-            else toast('这张牌不能用于此次响应', { bad: true });
+            else { nudgeCard(i); toast('这张牌不能用于此次响应', { bad: true }); }
             return;
         }
         if (!isMyPlay()) {
@@ -529,7 +539,7 @@
             const at = sel.cards.indexOf(i);
             if (at >= 0) sel.cards.splice(at, 1);
             else if (skillSelectableCards().has(i)) sel.cards.push(i);
-            else { toast('这张牌不能用于【' + sel.name + '】', { bad: true }); return; }
+            else { nudgeCard(i); toast('这张牌不能用于【' + sel.name + '】', { bad: true }); return; }
             refreshSkillAction();
             renderAll();
             return;
@@ -542,6 +552,7 @@
         const action = playActionFor(i) || recastActionFor(i);
         if (!action) {
             const c = G.hand[i] || {};
+            nudgeCard(i);
             toast(c.name === '闪' || c.name === '无懈可击' ? '【' + c.name + '】只能在需要时打出' : '【' + (c.name || '这张牌') + '】现在不能使用', { bad: true });
             return;
         }

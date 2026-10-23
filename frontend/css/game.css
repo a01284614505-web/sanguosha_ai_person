@@ -609,13 +609,27 @@
     overflow: visible;
 }
 /* --overlap 由 JS 按宽度计算，牌多时自动叠起 */
-.hand .card { --w: var(--hand-w); margin-left: var(--overlap, 6px); cursor: pointer; transition: transform .15s var(--ease), filter .15s, box-shadow .15s; }
+/* 选中的牌"出来"：弹性曲线抬起并略放大（W2）。选中态不改 z-index，保持原叠放顺序，
+   抬起的牌不会盖住右边牌的窄条。 */
+.hand .card { --w: var(--hand-w); margin-left: var(--overlap, 6px); cursor: pointer; transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), filter .15s, box-shadow .15s; }
 .hand .card:first-child { margin-left: 0; }
 .hand .card:hover { transform: translateY(-8px); z-index: 2; }
 .hand .card.dim { filter: brightness(.5) saturate(.6); }
 .hand .card.dim:hover { transform: translateY(-3px); }
 .hand .card.can { box-shadow: 0 0 0 1px rgba(105, 224, 122, .7), 0 4px 10px rgba(0, 0, 0, .5); }
-.hand .card.selected { transform: translateY(-20px); z-index: 3; box-shadow: 0 0 0 3px var(--gold-hi), 0 0 18px rgba(241, 216, 152, .7), 0 6px 14px rgba(0, 0, 0, .6); }
+.hand .card.selected { transform: translateY(-26px) scale(1.06); z-index: 3; box-shadow: 0 0 0 3px var(--gold-hi), 0 0 18px rgba(241, 216, 152, .7), 0 6px 14px rgba(0, 0, 0, .6); }
+/* 电脑上可出的牌悬停时轻抬一点（只在有鼠标的设备上生效，触屏不做悬停） */
+@media (hover: hover) and (pointer: fine) {
+    .hand .card.can:hover { transform: translateY(-6px); }
+}
+/* 不能出的牌被点：0.3 秒轻抖，只动水平方向，不打断抬起状态（translate 与 transform 互不冲突） */
+@keyframes card-nudge {
+    25% { translate: -4px 0; }
+    50% { translate: 4px 0; }
+    75% { translate: -2px 0; }
+}
+.hand .card.nudge { animation: card-nudge .3s linear; }
+@media (prefers-reduced-motion: reduce) { .hand .card.nudge { animation: none; } }
 .hand .empty-hand { align-self: center; color: var(--text-faint); font-family: var(--font-kai); }
 
 .my-hero { display: grid; grid-template-rows: auto auto; gap: 6px; align-content: start; position: relative; }
@@ -828,6 +842,8 @@
 /* 手机竖屏：四名对手排成一行，我的区域分两层（装备+武将 / 手牌） */
 @media (max-width: 600px) and (orientation: portrait) {
     .battle { --seat-w: min(21vw, 86px); --hand-w: 60px; --my-h: 226px; }
+    /* 手机竖屏牌小，抬起量也缩小，避免顶到上方的座位 */
+    .hand .card.selected { transform: translateY(-20px) scale(1.06); }
     .hud { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info tools" "track track"; row-gap: 4px; align-items: start; }
     .hud-info { grid-area: info; font-size: 11px; }
     .hud-info { gap: 6px; white-space: nowrap; }
