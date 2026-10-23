@@ -340,6 +340,7 @@
         el: null,
         timer: null,
         swallowClick: false,
+        shownAt: 0,
 
         init() {
             // 按下时先收起旧浮窗。右键按下不收起，由下面的 contextmenu 决定是换一张还是收起。
@@ -370,7 +371,8 @@
                 e.preventDefault();
                 this.show(t);
             });
-            window.addEventListener('scroll', () => this.hide(), true);
+            // 滚动收起；但刚弹出的 300 毫秒内忽略，避免右键时浏览器把获得焦点的牌滚进视野而误收起
+            window.addEventListener('scroll', () => { if (Date.now() - this.shownAt > 300) this.hide(); }, true);
         },
 
         hide() {
@@ -383,6 +385,7 @@
             const html = this.content(target);
             if (!html) return;
             if (this.el) this.el.remove();
+            this.shownAt = Date.now();
             const pop = document.createElement('div');
             pop.className = 'detail-pop';
             pop.setAttribute('role', 'tooltip');

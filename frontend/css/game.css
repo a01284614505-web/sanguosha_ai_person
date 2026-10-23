@@ -28,7 +28,7 @@
     --side-w: 310px;
     --seat-w: 116px;
     --hand-w: 92px;
-    --my-h: 206px;
+    --my-h: 216px;
     display: grid;
     height: 100dvh;
     grid-template-columns: minmax(0, 1fr) var(--side-w);
@@ -749,6 +749,8 @@
     grid-template-columns: 168px minmax(0, 1fr) 156px;
     gap: 12px;
     padding: 10px 12px;
+    /* 一行，行高固定为区域内容高度：武将列再高也不会把手牌行撑出屏幕（W4/W5 布局修正） */
+    grid-template-rows: minmax(0, 1fr);
     background: var(--panel);
     border-top: 1px solid var(--gold-dim);
     box-shadow: inset 0 1px 0 rgba(241, 216, 152, .18), 0 -10px 24px rgba(0, 0, 0, .45);
@@ -823,7 +825,8 @@
 .hand .empty-hand { align-self: center; color: var(--text-faint); font-family: var(--font-kai); }
 
 .my-hero { display: grid; grid-template-rows: auto auto; gap: 6px; align-content: start; position: relative; }
-.my-hero .hero-frame { width: 100%; max-height: calc(var(--my-h) - 62px); aspect-ratio: 3 / 4; margin: 0 auto; }
+/* 武将框高度上限：扣掉牌匾行（28px）、技能行（约 32px）和内边距，剩下的给立绘 */
+.my-hero .hero-frame { width: 100%; max-height: calc(var(--my-h) - 96px); aspect-ratio: 3 / 4; margin: 0 auto; }
 .my-hero .s-hero { font-size: 20px; }
 .my-hero .hero-frame .s-top .seal { width: 22px; height: 22px; }
 /* 技能按钮（W5）：长条，占满武将列宽，高 32px，加重双层边框；左侧小菱形宝石，中间技能名，右侧小字状态。
@@ -864,6 +867,10 @@
     50% { box-shadow: 0 0 0 2px #fff3cf, 0 0 0 4px #0d0805, 0 0 18px 4px rgba(255, 214, 120, .7); }
 }
 @media (prefers-reduced-motion: reduce) { .skill-btn.ready { animation: none; } }
+/* 两个技能并排（每个约半宽），状态小字收起，保证武将列不超出我的区域高度 */
+.my-hero .skill-btn:not(:only-child) { width: calc(50% - 3px); padding: 0 6px; }
+.my-hero .skill-btn:not(:only-child) .sk-name { font-size: 14px; letter-spacing: 1px; }
+.my-hero .skill-btn:not(:only-child) .sk-state { display: none; }
 
 /* ======================================================================
    7. 席间面板：聊天 / 战报
@@ -1055,18 +1062,30 @@
     .hand { padding-top: 14px; }
     .hand-meta { font-size: 10.5px; }
     .hand .card.selected { transform: translateY(-12px); }
-    .my-hero .hero-frame { max-height: 84px; width: auto; height: 84px; }
+    /* 横屏只有约 118px 高：牌匾收起，武将框缩到 64px，技能长条两个纵排，每个 20px 高，保证不超出我的区域 */
+    .my-hero .plaque-row { display: none; }
+    .my-hero .hero-frame { max-height: none; width: auto; height: 64px; aspect-ratio: auto; }
     .my-hero .s-hero { font-size: 13px; }
-    .skill-btn { font-size: 11px; padding: 0 6px; }
+    .skill-btn { font-size: 11px; padding: 0 6px; height: 20px; gap: 4px; }
+    .skill-btn::before { width: 5px; height: 5px; }
+    .skill-btn .sk-state { display: none; }
+    .my-hero .skill-btn:not(:only-child) .sk-name { font-size: 11px; letter-spacing: 0; }
+    .my-hero .skill-btns { flex-direction: column; align-items: stretch; gap: 3px; }
+    .my-hero .skill-btn, .my-hero .skill-btn:not(:only-child) { width: 100%; height: 18px; }
     .skill-shout { font-size: 28px; }
     .bubble { max-width: 150px; font-size: 11.5px; padding: 4px 8px; }
 }
 
 /* 手机竖屏：四名对手排成一行，我的区域分两层（装备+武将 / 手牌） */
 @media (max-width: 600px) and (orientation: portrait) {
-    .battle { --seat-w: min(21vw, 86px); --hand-w: 60px; --my-h: 226px; }
+    /* 竖屏：我的区域加高到 262px，手牌行才放得下阶段栏、手牌数和牌（牌匾行与武将框撑高了第一行） */
+    .battle { --seat-w: min(21vw, 86px); --hand-w: 56px; --my-h: 262px; }
+    .my-hero .plaque-row { height: 18px; margin-bottom: 3px; }
     /* 手机竖屏牌小，抬起量也缩小，避免顶到上方的座位 */
     .hand .card.selected { transform: translateY(-20px) scale(1.06); }
+    /* 手机竖屏武将列窄，技能长条一个一行（列不够宽时两个并排会挤坏名字） */
+    .my-hero .skill-btn:not(:only-child) { width: 100%; padding: 0 6px; }
+    .my-hero .skill-btn:not(:only-child) .sk-name { font-size: 13px; letter-spacing: 2px; }
     .hud { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info tools"; align-items: start; }
     .hud-info { grid-area: info; font-size: 11px; }
     .hud-info { gap: 6px; white-space: nowrap; }
@@ -1105,7 +1124,7 @@
     .my-hero .hero-stack { flex: none; width: 72px; }
     .my-hero .hero-frame { height: 96px; width: 72px; flex: none; }
     .my-hero .skill-btns { flex-direction: column; align-items: stretch; }
-    .hand { padding-top: 16px; justify-content: flex-start; }
+    .hand { padding-top: 10px; justify-content: flex-start; }
 }
 
 /* 断线重连提示条：固定在顶部中央，不挡出牌区 */
