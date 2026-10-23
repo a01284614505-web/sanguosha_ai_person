@@ -1,0 +1,15 @@
+127.0.0.1 - - [18/Oct/2026 04:23:09] "GET /hero_manager.html HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:09] "GET /css/main.css HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:09] "GET /js/global_settings.js?v=20260803c HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:09] "GET /api/providers HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:09] "GET /api/hero-packages/backups HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:09] "GET /api/hero-packages HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:11] "POST /api/heroes/import HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:11] "GET /api/hero-packages HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:11] "POST /api/hero-packages/browser_pack/enabled HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:11] "GET /api/hero-packages HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:11] "GET /api/heroes HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:12] "POST /api/hero-packages/browser_pack/enabled HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:12] "GET /api/hero-packages HTTP/1.1" 200 -
+127.0.0.1 - - [18/Oct/2026 04:23:12] "GET /api/heroes HTTP/1.1" 200 -
+STAGE8_BROWSER_OK: convert, import, enable, pool, disable; no page errors

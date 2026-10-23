@@ -1176,7 +1176,9 @@ class CardSystem:
         effect_context = self._effect_context(source, card, target, effect_context)
         current, other = target, source
         while current.alive and other.alive:
-            required = 2 if self.trigger_manager.has_skill(other, "无双") else 1
+            base_required = 2 if self.trigger_manager.has_skill(other, "无双") else 1
+            required = self.trigger_manager.required_response_count(other, "杀", base_required,
+                                                                    context={"source": other, "target": current, "card_name": card.name})
             for response_number in range(required):
                 result = await self.choose_to_respond(
                     current, (f"【决斗】：请打出【杀】（共需 {required} 张，第 {response_number + 1} 张）"

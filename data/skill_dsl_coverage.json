@@ -1,0 +1,1594 @@
+{
+  "schema_version": 1,
+  "catalog_size": 54,
+  "target_count": 33,
+  "definitions": [
+    {
+      "skill": "英姿",
+      "mapping": "phase_start(draw) replaces the normal two-card draw with three; hand_limit=max(owner.max_hp).",
+      "dsl": {
+        "version": 1,
+        "trigger": "phase_start",
+        "condition": {
+          "op": "eq",
+          "path": "event.phase",
+          "value": "draw"
+        },
+        "skip_default": true,
+        "modifiers": [
+          {
+            "stat": "hand_limit",
+            "op": "max",
+            "value": {
+              "path": "owner.max_hp"
+            }
+          }
+        ],
+        "effects": [
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 3,
+            "reason": "英姿"
+          },
+          {
+            "type": "announce"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "闭月",
+      "mapping": "At end phase, ask once; draw two if initial hand is empty, otherwise one.",
+      "dsl": {
+        "version": 1,
+        "trigger": "phase_end",
+        "condition": {
+          "op": "eq",
+          "path": "event.phase",
+          "value": "end"
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动【闭月】摸牌？"
+          }
+        ],
+        "effects": [
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 2,
+            "reason": "闭月",
+            "when": {
+              "op": "eq",
+              "path": "event.hand_count_before",
+              "value": 0
+            }
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 1,
+            "reason": "闭月",
+            "when": {
+              "op": "gt",
+              "path": "event.hand_count_before",
+              "value": 0
+            }
+          },
+          {
+            "type": "announce"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "克己",
+      "mapping": "At discard phase start, if no Sha was used this turn, confirmation skips the phase.",
+      "dsl": {
+        "version": 1,
+        "trigger": "phase_start",
+        "condition": {
+          "op": "all",
+          "args": [
+            {
+              "op": "eq",
+              "path": "event.phase",
+              "value": "discard"
+            },
+            {
+              "op": "eq",
+              "path": "event.sha_used_this_turn",
+              "value": false
+            }
+          ]
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动【克己】跳过弃牌阶段？"
+          }
+        ],
+        "skip_default": true,
+        "effects": [
+          {
+            "type": "announce",
+            "text": "发动【克己】跳过弃牌阶段"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "替身",
+      "mapping": "Once per game at preparation, confirm, recover the missing HP, then draw the same amount.",
+      "dsl": {
+        "version": 1,
+        "trigger": "phase_start",
+        "condition": {
+          "op": "all",
+          "args": [
+            {
+              "op": "eq",
+              "path": "event.phase",
+              "value": "prepare"
+            },
+            {
+              "op": "lt",
+              "path": "owner.hp",
+              "value": {
+                "path": "owner.max_hp"
+              }
+            }
+          ]
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动限定技【替身】？"
+          }
+        ],
+        "usage": {
+          "scope": "game",
+          "charges": 1
+        },
+        "effects": [
+          {
+            "type": "recover",
+            "target": "owner",
+            "amount": {
+              "path": "event.missing_hp"
+            },
+            "reason": "替身"
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": {
+              "path": "event.missing_hp"
+            },
+            "reason": "替身"
+          },
+          {
+            "type": "announce",
+            "text": "发动【替身】"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "连营",
+      "mapping": "When hand becomes empty after losing cards, confirm, choose up to the lost-card count from living players, each draws one.",
+      "dsl": {
+        "version": 1,
+        "trigger": "cards_lost",
+        "condition": {
+          "op": "eq",
+          "path": "event.hand_empty",
+          "value": true
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动【连营】令角色摸牌？"
+          }
+        ],
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "all_alive",
+          "min": 1,
+          "max": {
+            "path": "event.count"
+          },
+          "prompt": "选择因【连营】摸牌的角色"
+        },
+        "effects": [
+          {
+            "type": "draw_cards",
+            "target": "targets",
+            "count": 1,
+            "reason": "连营"
+          },
+          {
+            "type": "announce",
+            "text": "发动【连营】"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "苦肉",
+      "mapping": "Active play skill: choose one hand card, discard it, then lose one HP; one use per turn.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "usage": {
+          "scope": "current_turn",
+          "limit": 1
+        },
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "zone": "hand"
+          }
+        ],
+        "effects": [
+          {
+            "type": "announce",
+            "text": "发动【苦肉】"
+          },
+          {
+            "type": "discard_card",
+            "reason": "苦肉"
+          },
+          {
+            "type": "lose_hp",
+            "target": "owner",
+            "amount": 1,
+            "reason": "苦肉"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "空城",
+      "mapping": "Protects its owner from Sha and Duel target legality while hand is empty.",
+      "dsl": {
+        "version": 1,
+        "trigger": "turn_start",
+        "modifiers": [
+          {
+            "stat": "target_protection",
+            "op": "deny",
+            "value": 0,
+            "when": {
+              "op": "all",
+              "args": [
+                {
+                  "op": "eq",
+                  "path": "owner.hand_count",
+                  "value": 0
+                },
+                {
+                  "op": "in",
+                  "path": "event.card_name",
+                  "values": [
+                    "杀",
+                    "决斗"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "马术",
+      "mapping": "Subtract one from outgoing distance to every other player.",
+      "dsl": {
+        "version": 1,
+        "trigger": "turn_start",
+        "modifiers": [
+          {
+            "stat": "distance",
+            "op": "subtract",
+            "value": 1
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "血裔",
+      "mapping": "Lord hand limit gains two per other living Qun hero.",
+      "dsl": {
+        "version": 1,
+        "trigger": "turn_start",
+        "modifiers": [
+          {
+            "stat": "hand_limit",
+            "op": "add",
+            "value": {
+              "op": "mul",
+              "args": [
+                2,
+                {
+                  "path": "game.alive_other_faction_count"
+                }
+              ]
+            },
+            "when": {
+              "op": "eq",
+              "path": "owner.identity",
+              "value": "lord"
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "耀武",
+      "mapping": "After card damage, red card makes source draw; otherwise owner draws.",
+      "dsl": {
+        "version": 1,
+        "trigger": "damage_received",
+        "condition": {
+          "op": "exists",
+          "path": "event.card_name"
+        },
+        "effects": [
+          {
+            "type": "draw_cards",
+            "target": "source",
+            "count": 1,
+            "reason": "耀武",
+            "when": {
+              "op": "eq",
+              "path": "event.card_color",
+              "value": "red"
+            }
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 1,
+            "reason": "耀武",
+            "when": {
+              "op": "ne",
+              "path": "event.card_color",
+              "value": "red"
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "倾国",
+      "mapping": "Black hand cards produce a legal 闪 response option through the engine response pipeline.",
+      "dsl": {
+        "version": 1,
+        "trigger": "card_responded",
+        "conversions": [
+          {
+            "color": "black",
+            "as": "闪"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "急救",
+      "mapping": "Out of the owner's turn, a red hand card produces a legal 桃 response option.",
+      "dsl": {
+        "version": 1,
+        "trigger": "card_responded",
+        "conversions": [
+          {
+            "color": "red",
+            "as": "桃",
+            "when": {
+              "op": "not",
+              "args": {
+                "op": "eq",
+                "path": "game.is_owner_turn",
+                "value": true
+              }
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "武圣",
+      "mapping": "Red hand cards can be used as Sha and as Sha responses; diamond virtual Sha ignores distance.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "filter": {
+              "color": "red"
+            }
+          }
+        ],
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "alive_others",
+          "min": 1,
+          "max": 1
+        },
+        "effects": [
+          {
+            "type": "card_as",
+            "card": "杀",
+            "reason": "武圣"
+          }
+        ],
+        "conversions": [
+          {
+            "color": "red",
+            "as": "杀"
+          }
+        ],
+        "modifiers": [
+          {
+            "stat": "ignore_distance",
+            "op": "allow",
+            "value": 1,
+            "when": {
+              "op": "eq",
+              "path": "event.card_suit",
+              "value": "diamond"
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "奇袭",
+      "mapping": "Black hand card can be spent as a legal 过河拆桥 against a chosen living other player.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "filter": {
+              "color": "black"
+            }
+          }
+        ],
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "alive_others",
+          "min": 1,
+          "max": 1
+        },
+        "effects": [
+          {
+            "type": "card_as",
+            "card": "过河拆桥",
+            "reason": "奇袭"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "乱击",
+      "mapping": "Two hand cards of the same suit are consumed as 万箭齐发.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 2,
+            "max": 2,
+            "filter": {
+              "same_suit": true
+            }
+          }
+        ],
+        "effects": [
+          {
+            "type": "card_as",
+            "card": "万箭齐发",
+            "target": "owner",
+            "reason": "乱击"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "制衡",
+      "mapping": "Once during play, choose and discard one or more hand cards; draw the selected count plus one when every hand card was selected.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "usage": {
+          "scope": "current_turn",
+          "limit": 1
+        },
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": {
+              "path": "owner.hand_count"
+            },
+            "zone": "hand"
+          }
+        ],
+        "effects": [
+          {
+            "type": "discard_card",
+            "reason": "制衡"
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": {
+              "path": "event.selected_count"
+            },
+            "reason": "制衡"
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 1,
+            "reason": "制衡",
+            "when": {
+              "op": "eq",
+              "path": "event.selected_all_hand",
+              "value": true
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "龙胆",
+      "mapping": "Currently implemented: active Shan-as-Sha, response Sha/Shan, and Peach/Alcohol response conversions; the active-play Peach/Alcohol branch is not in this engine implementation.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "filter": {
+              "names": [
+                "闪"
+              ]
+            }
+          }
+        ],
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "alive_others",
+          "min": 1,
+          "max": 1
+        },
+        "effects": [
+          {
+            "type": "card_as",
+            "card": "杀",
+            "reason": "龙胆"
+          }
+        ],
+        "conversions": [
+          {
+            "names": [
+              "杀"
+            ],
+            "as": "闪"
+          },
+          {
+            "names": [
+              "闪"
+            ],
+            "as": "杀"
+          },
+          {
+            "names": [
+              "酒"
+            ],
+            "as": "桃"
+          },
+          {
+            "names": [
+              "桃"
+            ],
+            "as": "酒"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "无双",
+      "mapping": "On attack and in Duel, the responder must produce two Sha responses.",
+      "dsl": {
+        "version": 1,
+        "trigger": "turn_start",
+        "modifiers": [
+          {
+            "stat": "response_count",
+            "op": "max",
+            "value": 2
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "天妒",
+      "mapping": "After a judgment, optionally take its shown card.",
+      "dsl": {
+        "version": 1,
+        "trigger": "judge_after",
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否获得判定牌？"
+          }
+        ],
+        "effects": [
+          {
+            "type": "gain_judged_card",
+            "reason": "天妒"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "鬼才",
+      "mapping": "Before a judgment, optionally replace it using an owned hand card.",
+      "dsl": {
+        "version": 1,
+        "trigger": "judge_before",
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否替换判定牌？"
+          },
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "zone": "hand"
+          }
+        ],
+        "effects": [
+          {
+            "type": "replace_judgment",
+            "reason": "鬼才"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "鬼道",
+      "mapping": "Before any judgment, optionally replace with an owned black hand/equipment card, take old card, and draw for spade 2–9.",
+      "dsl": {
+        "version": 1,
+        "trigger": "judge_before",
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动鬼道？"
+          },
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "zone": "hand_or_equipment",
+            "filter": {
+              "color": "black"
+            }
+          }
+        ],
+        "effects": [
+          {
+            "type": "replace_judgment",
+            "reason": "鬼道",
+            "claim_old": true
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 1,
+            "reason": "鬼道",
+            "when": {
+              "op": "all",
+              "args": [
+                {
+                  "op": "eq",
+                  "path": "event.replacement_suit",
+                  "value": "spade"
+                },
+                {
+                  "op": "gte",
+                  "path": "event.replacement_rank",
+                  "value": 2
+                },
+                {
+                  "op": "lte",
+                  "path": "event.replacement_rank",
+                  "value": 9
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "奸雄",
+      "mapping": "After damage from a card still in discard, optionally take it and draw one.",
+      "dsl": {
+        "version": 1,
+        "trigger": "damage_received",
+        "condition": {
+          "op": "all",
+          "args": [
+            {
+              "op": "exists",
+              "path": "event.card_name"
+            },
+            {
+              "op": "eq",
+              "path": "event.card_available",
+              "value": true
+            }
+          ]
+        },
+        "effects": [
+          {
+            "type": "gain_event_card",
+            "reason": "奸雄"
+          },
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 1,
+            "reason": "奸雄"
+          }
+        ],
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动奸雄获得伤害牌并摸牌？"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "反馈",
+      "mapping": "For each point of damage, optionally choose and take one hand/equipment card from the source.",
+      "dsl": {
+        "version": 1,
+        "trigger": "damage_received",
+        "condition": {
+          "op": "gt",
+          "path": "event.amount",
+          "value": 0
+        },
+        "effects": [
+          {
+            "type": "repeat",
+            "count": {
+              "path": "event.amount"
+            },
+            "effects": [
+              {
+                "type": "interact",
+                "interaction": "ask_confirm",
+                "store_as": "accept",
+                "prompt": "是否发动反馈？",
+                "optional": true
+              },
+              {
+                "type": "interact",
+                "interaction": "ask_choose_cards",
+                "store_as": "stolen",
+                "card_owner": "source",
+                "zone": "hand_or_equipment",
+                "min": 1,
+                "max": 1,
+                "optional": true,
+                "when": {
+                  "op": "eq",
+                  "path": "locals.accept",
+                  "value": true
+                }
+              },
+              {
+                "type": "transfer_card",
+                "target": "owner",
+                "card_owner": "source",
+                "zone": "hand_or_equipment",
+                "cards_from": "locals.stolen",
+                "reason": "反馈",
+                "when": {
+                  "op": "eq",
+                  "path": "locals.accept",
+                  "value": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "刚烈",
+      "mapping": "For each damage point, optionally judge; red deals one damage sourced by the skill owner, otherwise the damage source chooses and discards one hand/equipment card if able.",
+      "dsl": {
+        "version": 1,
+        "trigger": "damage_received",
+        "condition": {
+          "op": "all",
+          "args": [
+            {
+              "op": "gt",
+              "path": "event.amount",
+              "value": 0
+            },
+            {
+              "op": "exists",
+              "path": "event.source"
+            }
+          ]
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动刚烈？"
+          }
+        ],
+        "effects": [
+          {
+            "type": "repeat",
+            "count": {
+              "path": "event.amount"
+            },
+            "effects": [
+              {
+                "type": "interact",
+                "interaction": "ask_confirm",
+                "store_as": "accepted",
+                "prompt": "是否发动刚烈？",
+                "optional": true
+              },
+              {
+                "type": "judge",
+                "target": "owner",
+                "reason": "刚烈",
+                "when": {
+                  "op": "eq",
+                  "path": "locals.accepted",
+                  "value": true
+                }
+              },
+              {
+                "type": "damage",
+                "source": "owner",
+                "target": "source",
+                "amount": 1,
+                "reason": "刚烈",
+                "when": {
+                  "op": "all",
+                  "args": [
+                    {
+                      "op": "eq",
+                      "path": "locals.accepted",
+                      "value": true
+                    },
+                    {
+                      "op": "eq",
+                      "path": "event.judged_color",
+                      "value": "red"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "interact",
+                "interaction": "ask_choose_cards",
+                "store_as": "discarded",
+                "actor": "source",
+                "card_owner": "source",
+                "zone": "hand_or_equipment",
+                "min": 1,
+                "max": 1,
+                "when": {
+                  "op": "all",
+                  "args": [
+                    {
+                      "op": "eq",
+                      "path": "locals.accepted",
+                      "value": true
+                    },
+                    {
+                      "op": "ne",
+                      "path": "event.judged_color",
+                      "value": "red"
+                    },
+                    {
+                      "op": "gt",
+                      "path": "event.source_hand_count",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "discard_card",
+                "card_owner": "source",
+                "zone": "hand_or_equipment",
+                "cards_from": "locals.discarded",
+                "reason": "刚烈",
+                "when": {
+                  "op": "all",
+                  "args": [
+                    {
+                      "op": "eq",
+                      "path": "locals.accepted",
+                      "value": true
+                    },
+                    {
+                      "op": "ne",
+                      "path": "event.judged_color",
+                      "value": "red"
+                    },
+                    {
+                      "op": "gt",
+                      "path": "event.source_hand_count",
+                      "value": 0
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "雷击",
+      "mapping": "After responding as Shan, using Lightning, or completing another own judgment, optionally judge; after the result choose a living other, deal two thunder damage for spade, or recover one and deal one thunder damage for club. A 雷击 judgment does not retrigger itself.",
+      "dsl": {
+        "version": 1,
+        "trigger": "card_responded",
+        "triggers": [
+          "card_responded",
+          "card_used",
+          "judge_after"
+        ],
+        "condition": {
+          "op": "any",
+          "args": [
+            {
+              "op": "all",
+              "args": [
+                {
+                  "op": "eq",
+                  "path": "event.trigger",
+                  "value": "card_responded"
+                },
+                {
+                  "op": "eq",
+                  "path": "event.as_name",
+                  "value": "闪"
+                }
+              ]
+            },
+            {
+              "op": "all",
+              "args": [
+                {
+                  "op": "eq",
+                  "path": "event.trigger",
+                  "value": "card_used"
+                },
+                {
+                  "op": "eq",
+                  "path": "event.card_name",
+                  "value": "闪电"
+                }
+              ]
+            },
+            {
+              "op": "all",
+              "args": [
+                {
+                  "op": "eq",
+                  "path": "event.trigger",
+                  "value": "judge_after"
+                },
+                {
+                  "op": "ne",
+                  "path": "event.context.reason",
+                  "value": "雷击"
+                }
+              ]
+            }
+          ]
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动雷击？"
+          }
+        ],
+        "effects": [
+          {
+            "type": "judge",
+            "target": "owner",
+            "reason": "雷击",
+            "when": {
+              "op": "ne",
+              "path": "event.trigger",
+              "value": "judge_after"
+            }
+          },
+          {
+            "type": "interact",
+            "interaction": "ask_choose_players",
+            "store_as": "chosen",
+            "candidates": "alive_others",
+            "min": 1,
+            "max": 1,
+            "prompt": "选择雷击伤害目标",
+            "when": {
+              "op": "in",
+              "path": "event.judged_suit",
+              "values": [
+                "spade",
+                "club"
+              ]
+            }
+          },
+          {
+            "type": "damage",
+            "target": "locals.chosen",
+            "amount": 2,
+            "damage_type": "thunder",
+            "reason": "雷击",
+            "when": {
+              "op": "eq",
+              "path": "event.judged_suit",
+              "value": "spade"
+            }
+          },
+          {
+            "type": "recover",
+            "target": "owner",
+            "amount": 1,
+            "reason": "雷击",
+            "when": {
+              "op": "eq",
+              "path": "event.judged_suit",
+              "value": "club"
+            }
+          },
+          {
+            "type": "damage",
+            "target": "locals.chosen",
+            "amount": 1,
+            "damage_type": "thunder",
+            "reason": "雷击",
+            "when": {
+              "op": "eq",
+              "path": "event.judged_suit",
+              "value": "club"
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "奇才",
+      "mapping": "Listed equipment cannot be discarded by others; trick cards ignore distance.",
+      "dsl": {
+        "version": 1,
+        "trigger": "turn_start",
+        "modifiers": [
+          {
+            "stat": "protect_card",
+            "op": "deny",
+            "value": 0,
+            "when": {
+              "op": "all",
+              "args": [
+                {
+                  "op": "eq",
+                  "path": "event.reason",
+                  "value": "other_discard_equipment"
+                },
+                {
+                  "op": "in",
+                  "path": "event.card_name",
+                  "values": [
+                    "八卦阵",
+                    "仁王盾",
+                    "藤甲",
+                    "白银狮子",
+                    "木牛流马",
+                    "玉玺"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "stat": "ignore_distance",
+            "op": "allow",
+            "value": 1,
+            "when": {
+              "op": "eq",
+              "path": "event.card_type",
+              "value": "trick"
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "奋威",
+      "mapping": "Once per game during a multi-target trick, choose one or more current targets to exclude.",
+      "dsl": {
+        "version": 1,
+        "trigger": "multi_target_trick",
+        "condition": {
+          "op": "all",
+          "args": [
+            {
+              "op": "eq",
+              "path": "event.card_type",
+              "value": "trick"
+            },
+            {
+              "op": "gte",
+              "path": "event.target_count",
+              "value": 2
+            }
+          ]
+        },
+        "usage": {
+          "scope": "game",
+          "charges": 1
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动限定技奋威？"
+          },
+          {
+            "interaction": "ask_choose_players",
+            "candidates": "event.targets",
+            "min": 1,
+            "max": {
+              "path": "event.target_count"
+            },
+            "prompt": "选择免疫此锦囊的目标"
+          }
+        ],
+        "effects": [
+          {
+            "type": "exclude_targets",
+            "reason": "奋威"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "集智",
+      "mapping": "After a successful trick, optionally draw one; if basic, optionally discard it for this-turn hand limit +1.",
+      "dsl": {
+        "version": 1,
+        "trigger": "card_used",
+        "condition": {
+          "op": "all",
+          "args": [
+            {
+              "op": "eq",
+              "path": "event.success",
+              "value": true
+            },
+            {
+              "op": "eq",
+              "path": "event.card_type",
+              "value": "trick"
+            }
+          ]
+        },
+        "cost": [
+          {
+            "interaction": "ask_confirm",
+            "prompt": "是否发动集智？"
+          }
+        ],
+        "effects": [
+          {
+            "type": "draw_cards",
+            "target": "owner",
+            "count": 1,
+            "store_as": "drawn",
+            "reason": "集智"
+          },
+          {
+            "type": "interact",
+            "interaction": "ask_confirm",
+            "store_as": "discard_accept",
+            "prompt": "是否弃置摸到的基本牌并增加手牌上限？",
+            "optional": true,
+            "when": {
+              "op": "eq",
+              "path": "locals.drawn.0.card_type",
+              "value": "basic"
+            }
+          },
+          {
+            "type": "interact",
+            "interaction": "ask_choose_cards",
+            "store_as": "selected",
+            "zone": "local:drawn",
+            "min": 1,
+            "max": 1,
+            "when": {
+              "op": "eq",
+              "path": "locals.discard_accept",
+              "value": true
+            }
+          },
+          {
+            "type": "discard_card",
+            "cards_from": "locals.selected",
+            "zone": "hand",
+            "reason": "集智",
+            "when": {
+              "op": "eq",
+              "path": "locals.discard_accept",
+              "value": true
+            }
+          },
+          {
+            "type": "set_state",
+            "key": "hand_limit_bonus",
+            "value": 1,
+            "op": "add",
+            "scope": "current_turn",
+            "when": {
+              "op": "eq",
+              "path": "locals.discard_accept",
+              "value": true
+            }
+          }
+        ],
+        "modifiers": [
+          {
+            "stat": "hand_limit",
+            "op": "add",
+            "value": {
+              "path": "state.hand_limit_bonus"
+            }
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "遗计",
+      "mapping": "For each damage point, optionally draw two and distribute up to two cards from hand to living players.",
+      "dsl": {
+        "version": 1,
+        "trigger": "damage_received",
+        "condition": {
+          "op": "gt",
+          "path": "event.amount",
+          "value": 0
+        },
+        "effects": [
+          {
+            "type": "repeat",
+            "count": {
+              "path": "event.amount"
+            },
+            "effects": [
+              {
+                "type": "interact",
+                "interaction": "ask_confirm",
+                "store_as": "accept",
+                "prompt": "是否发动遗计摸牌？",
+                "optional": true
+              },
+              {
+                "type": "draw_cards",
+                "target": "owner",
+                "count": 2,
+                "store_as": "drawn",
+                "reason": "遗计",
+                "when": {
+                  "op": "eq",
+                  "path": "locals.accept",
+                  "value": true
+                }
+              },
+              {
+                "type": "repeat",
+                "count": 2,
+                "effects": [
+                  {
+                    "type": "interact",
+                    "interaction": "ask_choose_cards",
+                    "store_as": "picked",
+                    "zone": "hand",
+                    "min": 1,
+                    "max": 1,
+                    "optional": true,
+                    "filter": {}
+                  },
+                  {
+                    "type": "interact",
+                    "interaction": "ask_choose_players",
+                    "store_as": "receiver",
+                    "candidates": "all_alive",
+                    "min": 1,
+                    "max": 1,
+                    "optional": true,
+                    "when": {
+                      "op": "exists",
+                      "path": "locals.picked.0.id"
+                    }
+                  },
+                  {
+                    "type": "transfer_card",
+                    "target": "locals.receiver.0",
+                    "cards_from": "locals.picked",
+                    "zone": "hand",
+                    "reason": "遗计",
+                    "when": {
+                      "op": "exists",
+                      "path": "locals.picked.0.id"
+                    }
+                  }
+                ],
+                "when": {
+                  "op": "eq",
+                  "path": "locals.accept",
+                  "value": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "离间",
+      "mapping": "Once per turn, discard one hand card and make one male target duel a second male target.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "usage": {
+          "scope": "current_turn",
+          "limit": 1
+        },
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "zone": "hand"
+          }
+        ],
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "male_others",
+          "min": 2,
+          "max": 2
+        },
+        "effects": [
+          {
+            "type": "discard_card",
+            "reason": "离间"
+          },
+          {
+            "type": "duel",
+            "duel_source": "targets.0",
+            "duel_target": "targets.1",
+            "reason": "离间"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "势斩",
+      "mapping": "Twice per owner turn, choose a living other to duel the owner.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "usage": {
+          "scope": "current_turn",
+          "limit": 2
+        },
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "alive_others",
+          "min": 1,
+          "max": 1
+        },
+        "effects": [
+          {
+            "type": "duel",
+            "duel_source": "targets.0",
+            "duel_target": "owner",
+            "reason": "势斩"
+          }
+        ]
+      },
+      "supported": true
+    },
+    {
+      "skill": "黄天",
+      "mapping": "On another Qun player turn during play, once for that donor, if the skill owner is the living lord, donate one Shan or spade card to that lord.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "action_actors": "faction:qun",
+        "usage": {
+          "scope": "actor_turn",
+          "limit": 1
+        },
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "filter": {
+              "any": [
+                {
+                  "names": [
+                    "闪"
+                  ]
+                },
+                {
+                  "suits": [
+                    "spade"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "targets": {
+          "selector": "event.target",
+          "min": 1,
+          "max": 1
+        },
+        "effects": [
+          {
+            "type": "transfer_card",
+            "target": "target",
+            "reason": "黄天"
+          }
+        ],
+        "condition": {
+          "op": "eq",
+          "path": "event.target.identity",
+          "value": "lord"
+        }
+      },
+      "supported": true
+    },
+    {
+      "skill": "青囊",
+      "mapping": "Each turn, discard any card and recover one wounded living player; do not heal the same target twice, and black card use locks further activations this turn.",
+      "dsl": {
+        "version": 1,
+        "trigger": "play_action",
+        "condition": {
+          "op": "ne",
+          "path": "state.qingnang_black_lock",
+          "value": true
+        },
+        "cost": [
+          {
+            "interaction": "ask_choose_cards",
+            "min": 1,
+            "max": 1,
+            "zone": "hand",
+            "filter": {
+              "any": [
+                {
+                  "color": "black"
+                },
+                {
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        ],
+        "targets": {
+          "selector": "chosen_players",
+          "candidates": "injured_alive",
+          "min": 1,
+          "max": 1,
+          "exclude_state": "qingnang_targets"
+        },
+        "effects": [
+          {
+            "type": "discard_card",
+            "reason": "青囊"
+          },
+          {
+            "type": "recover",
+            "target": "targets",
+            "amount": 1,
+            "reason": "青囊"
+          },
+          {
+            "type": "set_state",
+            "key": "qingnang_targets",
+            "op": "append",
+            "value": {
+              "path": "locals.targets.0.id"
+            },
+            "scope": "current_turn"
+          },
+          {
+            "type": "set_state",
+            "key": "qingnang_black_lock",
+            "value": true,
+            "scope": "current_turn",
+            "when": {
+              "op": "eq",
+              "path": "event.selected_card_color",
+              "value": "black"
+            }
+          }
+        ]
+      },
+      "supported": true
+    }
+  ],
+  "unsupported": []
+}

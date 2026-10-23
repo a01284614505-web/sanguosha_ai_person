@@ -82,7 +82,7 @@
         render();
     });
 
-    SGS.fetchJSON('/data/heroes.json').then(data => {
+    SGS.fetchJSON('/api/heroes').then(data => {
         heroes = Array.isArray(data) ? data : (data.heroes || []);
         render();
         const cfg = readConfig();

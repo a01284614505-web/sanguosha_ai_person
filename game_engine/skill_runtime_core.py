@@ -122,7 +122,8 @@ class FactionSkillHandler:
 
     def has(self, player, name: str) -> bool:
         # 闪电等无伤害来源的事件仍会广播给技能钩子。
-        return player is not None and self.manager.has_skill(player, name)
+        return (player is not None and self.manager.has_skill(player, name)
+                and not self.manager.dsl_overrides_native(player, name))
 
     def get_actions(self, player) -> List[Dict]:
         return []

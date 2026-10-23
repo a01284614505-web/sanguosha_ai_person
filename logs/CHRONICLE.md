@@ -1440,3 +1440,8 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 当前目录：运行日志在 `runtime/`，测试报告在 `reports/`，过时文档在 `archive/`。专职日志代理配置为 `.claude/agents/log-curator.md`。
 
 - 2026-10-18：Stage T · T3b 点名、3 秒合并、有限接话链与 AI 观战施工，见 [交接](handover/20261018_1058_StageT_T3b点名接话观战.md)；743 passed / 50 subtests，VERIFY_OK，30 局正常；独立分支待验收。
+- 2026-10-18：Stage 8 武将 DSL 与导入管线完成，使用 1 个 `gpt-6-luna` 子代理；33/54 表达性定义、五技能 Python 等价测试、导入/启禁/世界书/备份恢复与沙箱接线。最终 784 passed / 50 subtests、VERIFY_OK，真实浏览器导入启禁通过；真实付费 Provider 未验，见 [交接与原始报告](handover/20261018_0424_Stage8完成交接.md)。
+
+- 2026-10-19：按用户选择优先 Stage 8，两个 Luna 分别完成 DSL 门控/交互预算与包存储/注册表校验收尾；主代理集成 795 passed / 50 subtests、VERIFY_OK、浏览器导入启禁通过。并逐项复核玩法审查及评价审查者，确认的玩法缺陷列入下一批而未伪称已修；见 [交接](handover/20261019_Stage8收尾与玩法审查复核.md) 与 [复核报告](reports/20261019_gameplay_audit_review.md)。
+
+- 2026-10-19：补充独立的 [后续开发执行计划](handover/20261019_后续开发执行计划.md)，明确 A–F 顺序、主代理与两个 Luna 分工、Stage 8 试验台/行为认证、逐批验收及下一轮任务单；本次仅写计划，未执行其中功能。

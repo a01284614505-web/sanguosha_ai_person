@@ -65,9 +65,17 @@ class WorldbookManager:
         hero = next((h for h in self.cache.get("heroes", []) if h.get("id") == hero_id), None)
         if not hero:
             return ""
-        lines = [f"【{hero['name']}】{hero['faction']}势力，{hero['max_hp']}点体力", "你的技能："]
+        worldbook = hero.get("worldbook") if isinstance(hero.get("worldbook"), dict) else {}
+        summary = worldbook.get("summary") or f"【{hero['name']}】{hero['faction']}势力，{hero['max_hp']}点体力"
+        lines = [summary, "你的技能："]
         for skill in hero.get("skills", []):
             lines.append(f"- 【{skill['name']}】{skill.get('worldbook', skill.get('description', ''))}")
+        if worldbook.get("usage_tips"):
+            lines.append("使用提示：" + str(worldbook["usage_tips"]))
+        if worldbook.get("combos"):
+            lines.append("配合：" + "；".join(map(str, worldbook["combos"])))
+        if worldbook.get("counters"):
+            lines.append("应对：" + "；".join(map(str, worldbook["counters"])))
         return "\n".join(lines)
 
     def get_phase_worldbook(self, phase: str) -> str:

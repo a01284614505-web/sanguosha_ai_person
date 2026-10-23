@@ -16,6 +16,9 @@ from game_engine import MainEngine
 from game_engine.config_validator import sanitize_client_config
 from game_engine.game_history import GameHistoryStore, validate_profile_id
 from game_engine.model_catalog import ModelListError, list_models
+from game_engine.hero_package_store import HeroImportError, HeroPackageStore, MAX_IMPORT_BYTES
+from game_engine.ai_decision import AIGateway
+from game_engine.hero_registry import HeroRegistry
 from game_engine.game_logs import GameLogStore, build_game_log, validate_game_id
 from game_engine.identity_system import IdentitySystem
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
@@ -459,14 +462,20 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
-    def _read_json_body(self):
+    def _read_json_body(self, *, max_bytes=None, require_object=False):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
+            if max_bytes is not None:
+                raise ValueError("Content-Length 无效")
             length = 0
+        if max_bytes is not None and length > max_bytes:
+            raise ValueError(f"请求体超过 {max_bytes} 字节")
         if length <= 0:
             return {}
         data = json.loads(self.rfile.read(length))
+        if require_object and not isinstance(data, dict):
+            raise ValueError("请求体必须是 JSON 对象")
         return data if isinstance(data, dict) else {}
     def do_GET(self):
         parsed = urlsplit(self.path)
@@ -484,6 +493,14 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 logging.getLogger(__name__).error("读取战绩失败: %s", exc)
                 self._send_json(500, {"success": False, "message": "战绩读取失败，请检查服务器日志"})
             return
+        if request_path == "/api/ai-players":
+            try:
+                store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
+                self._send_json(200, {"success": True, "players": store.ai_players()})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("读取 AI 档案失败: %s", exc)
+                self._send_json(500, {"success": False, "message": "AI 档案读取失败"})
+            return
         if request_path == "/api/decks":
             try:
                 info = MainEngine.deck_list(BASE_DIR)
@@ -499,6 +516,25 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
         if request_path == "/api/providers":
             self._send_json(200, {"success": True, "providers": MainEngine.providers()})
+            return
+        if request_path == "/api/hero-packages":
+            try:
+                self._send_json(200, {"success": True, "packages": HeroPackageStore(BASE_DIR).list_packages()})
+            except (OSError, RuntimeError, ValueError):
+                self._send_json(500, {"success": False, "message": "武将包读取失败"})
+            return
+        if request_path == "/api/hero-packages/backups":
+            try:
+                self._send_json(200, {"success": True, "backups": HeroPackageStore(BASE_DIR).list_backups()})
+            except OSError:
+                self._send_json(500, {"success": False, "message": "武将包备份列表读取失败"})
+            return
+        if request_path == "/api/heroes":
+            try:
+                heroes = HeroRegistry(BASE_DIR).all_heroes()
+                self._send_json(200, {"success": True, "heroes": heroes})
+            except (OSError, RuntimeError, ValueError):
+                self._send_json(500, {"success": False, "message": "武将数据读取失败"})
             return
         if request_path.startswith("/api/"):
             self.send_error(404)
@@ -594,13 +630,58 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self._send_json(200, {"success": True, **result})
 
     def do_POST(self):
-        if self.path.split("?")[0] == "/api/models":
+        request_path = urlsplit(self.path).path
+        if request_path == "/api/models":
             self._handle_list_models()
             return
-        if self.path.split("?")[0] == "/api/logs/delete":
+        if request_path == "/api/logs/delete":
             self._handle_logs_delete()
             return
-        if self.path.split("?")[0] != "/api/switch_deck":
+        if request_path == "/api/heroes/import":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > MAX_IMPORT_BYTES:
+                    raise HeroImportError("请求体大小必须在 1..1000000 字节")
+                body = json.loads(self.rfile.read(length))
+                if not isinstance(body, dict):
+                    raise HeroImportError("请求体必须是 JSON 对象")
+                result = HeroPackageStore(BASE_DIR).import_hero(body.get("package"), body.get("hero"))
+                self._send_json(200, {"success": True, **result})
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
+            except (HeroImportError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc)})
+            except Exception as exc:
+                logging.getLogger(__name__).error("导入武将失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "武将导入失败；原数据未变更"})
+            return
+        if request_path.startswith("/api/hero-packages/") and request_path.endswith("/enabled"):
+            package_id = request_path[len("/api/hero-packages/"):-len("/enabled")].strip("/")
+            try:
+                body = self._read_json_body(max_bytes=64_000, require_object=True)
+                result = HeroPackageStore(BASE_DIR).set_enabled(package_id, body.get("enabled"))
+                self._send_json(200, {"success": True, **result})
+            except (json.JSONDecodeError, HeroImportError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体不是合法JSON"})
+            except Exception as exc:
+                logging.getLogger(__name__).error("切换武将包失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "武将包更新失败"})
+            return
+        if request_path == "/api/hero-packages/restore":
+            try:
+                body = self._read_json_body(max_bytes=64_000, require_object=True)
+                result = HeroPackageStore(BASE_DIR).restore_backup(body.get("filename"))
+                self._send_json(200, {"success": True, **result})
+            except (json.JSONDecodeError, HeroImportError, ValueError) as exc:
+                self._send_json(400, {"success": False, "message": str(exc) or "请求体无效"})
+            except Exception as exc:
+                logging.getLogger(__name__).error("恢复武将包备份失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "恢复失败；当前数据未变更"})
+            return
+        if request_path == "/api/heroes/convert":
+            self._handle_hero_convert()
+            return
+        if request_path != "/api/switch_deck":
             self.send_error(404)
             return
         try:
@@ -621,6 +702,41 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
         except Exception as exc:
             self._send_json(500, {"success": False, "message": f"{type(exc).__name__}: {exc}"})
+
+    def _handle_hero_convert(self):
+        try:
+            body = self._read_json_body(max_bytes=MAX_IMPORT_BYTES, require_object=True)
+            source = str(body.get("text") or "").strip()
+            if not source or len(source) > 20_000:
+                raise ValueError("待转换文本必须为 1..20000 字符")
+            api_key = str(body.get("api_key") or "").strip()
+            provider = str(body.get("provider") or "").strip()
+            model = str(body.get("model") or "").strip()
+            if not api_key or not provider or not model:
+                raise ValueError("请填写 Provider、模型和 API Key")
+            prompt = (
+                "将下面的三国杀武将文字转换为单个 JSON 对象。只输出 JSON，不要代码围栏。"
+                "字段为 id,name,faction,title,max_hp,image,skills,worldbook。每个 skill 使用 name,description,"
+                "implementation_status=data_only；不要生成 DSL，不要声称规则已实现。image 可留空。\n原文：\n" + source
+            )
+            gateway = AIGateway()
+            content = asyncio.run(gateway.call_ai(
+                provider=provider, model=model, api_key=api_key,
+                base_url=body.get("api_url"), temperature=0.1,
+                max_tokens=3000, messages=[{"role": "user", "content": prompt}],
+            ))
+            cleaned = str(content).strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            result = json.loads(cleaned)
+            if not isinstance(result, dict):
+                raise ValueError("模型返回内容不是武将JSON对象")
+            self._send_json(200, {"success": True, "hero": result})
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json(400, {"success": False, "message": str(exc)[:300]})
+        except Exception as exc:
+            logging.getLogger(__name__).warning("AI武将转换失败: %s", type(exc).__name__)
+            self._send_json(502, {"success": False, "message": "AI转换失败，请检查配置或手动编辑JSON"})
 def start_http():
     # 多线程：拉取模型列表要等外部 API，不能卡住静态页面与其他请求。
     httpd = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), CustomHandler)

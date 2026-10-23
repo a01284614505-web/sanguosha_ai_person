@@ -73,7 +73,7 @@
         document.querySelectorAll('#heroFaction button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
         renderHeroes();
     });
-    SGS.fetchJSON('/data/heroes.json').then(data => {
+    SGS.fetchJSON('/api/heroes').then(data => {
         heroes = Array.isArray(data) ? data : (data.heroes || []);
         renderHeroes();
     }).catch(err => {

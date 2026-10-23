@@ -1,0 +1,81 @@
+$ /root/sanguosha_ai_person/.venv/bin/python -m pytest -q --tb=short -p no:cacheprovider
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+................................................................... [ 35%]
+........................................................................ [ 44%]
+................................................................................................... [ 57%]
+........................................................................ [ 66%]
+........................................................................ [ 75%]
+........................................................................ [ 84%]
+........................................................................ [ 93%]
+.....................................................                    [100%]
+795 passed, 50 subtests passed in 26.03s
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/check_frontend_js.py
+game.html: 无内联脚本
+handbook.html: 无内联脚本
+hero_manager.html: 第200行起的脚本块 语法通过
+history.html: 无内联脚本
+index.html: 无内联脚本
+logs.html: 无内联脚本
+result.html: 无内联脚本
+select_hero.html: 无内联脚本
+settings.html: 无内联脚本
+/root/sanguosha_ai_person/frontend/js/audio.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/card_info.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/chat_panel.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/game_main.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/global_settings.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/handbook.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/history.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/lobby.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/logs_page.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/protocol.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/result.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/select_hero.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/settings_page.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/sgs_common.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/ws_client.js: 语法通过
+全部通过
+$ /root/sanguosha_ai_person/.venv/bin/python -c from scripts.gen_protocol_js import generate_js, OUTPUT_PATH; import sys; ok = OUTPUT_PATH.read_text(encoding='utf-8') == generate_js(); print('protocol sync:', 'OK' if ok else 'MISMATCH'); sys.exit(0 if ok else 1)
+protocol sync: OK
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_diag_smoke.py
+[step 667] winner=rebel 用时=6.6s
+duration=6 mvp=AI1 kills=2 damage_dealt=7 healing=1 cards_played=9
+  player 0: {'damage_dealt': 0, 'damage_taken': 2, 'healing': 0, 'kills': 0, 'cards_played': 2, 'cards_lost': 13, 'skill_activations': 1}
+  player 1: {'damage_dealt': 5, 'damage_taken': 3, 'healing': 0, 'kills': 0, 'cards_played': 12, 'cards_lost': 15, 'skill_activations': 0}
+  player 2: {'damage_dealt': 7, 'damage_taken': 1, 'healing': 1, 'kills': 2, 'cards_played': 9, 'cards_lost': 10, 'skill_activations': 4}
+  player 3: {'damage_dealt': 1, 'damage_taken': 4, 'healing': 0, 'kills': 0, 'cards_played': 5, 'cards_lost': 7, 'skill_activations': 1}
+  player 4: {'damage_dealt': 3, 'damage_taken': 6, 'healing': 0, 'kills': 0, 'cards_played': 11, 'cards_lost': 16, 'skill_activations': 8}
+SMOKE_OK
+
+--- 消息类型统计 ---
+event_notification       202
+card_moved               140
+ai_action                108
+game_state               89
+_ack_sent                74
+decision_trace           61
+selection_result         37
+action_result            14
+require_response         10
+your_turn                4
+game_created             1
+game_end                 1
+
+--- require_response 共 10 次 ---
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp4', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp11', 'n_opts': 7, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp12', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp16', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp19', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp25', 'n_opts': 6, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp27', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp30', 'n_opts': 5, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp36', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': 'f88f9c6e70e042e787667cec6b921df2:resp37', 'n_opts': 4, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_engine_smoke.py
+[msg 1752] game_end: {"type": "game_end", "winner": "spy", "message": "内奸获胜！", "state": {"self_hand": [], "mode": "5人身份局", "round": 16, "completed_turns": 42, "phase": "play", "current_player_id": 3, "current_name": "AI2", "players": [{"id": 0, "name": "真人替身", "hp": -1, "max_hp": 4, "hand_count": 0, "hand_limit": 0, "ch
+[step 1752] winner=spy | remain=None
+SMOKE_OK: 规则AI跑到非aborted胜者
+VERIFY_OK

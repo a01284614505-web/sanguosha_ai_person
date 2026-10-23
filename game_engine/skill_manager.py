@@ -8,8 +8,11 @@ from typing import Dict, List
 
 from . import card_flow
 from .game_stats import clear_damage_source, record_stat
-from .skill_runtime_core import hero_id, reset_turn_flags
+from .skill_runtime_core import card_color, hero_id, reset_turn_flags
 from .skill_runtime_state import SkillStateStore
+from .skill_runtime_core import RuntimeSkill
+from .skill_dsl import (SkillDSLRuntime, compile_skill, evaluate_condition,
+                        _resolve_value, _resolve_bounds, _matches_card_filter)
 from .skills_generated import get_all_skills, get_hero_skills
 
 
@@ -24,19 +27,59 @@ class SkillManager:
         self.activation_log: List[Dict] = []
         self.skill_state = SkillStateStore()
         self._loss_batches = {}
+        self.dsl_runtime = SkillDSLRuntime(self)
+        self.dsl_programs = {}
+        self._dsl_actor_usage = {}
         if engine is not None:
             self.bind_engine(engine)
 
     def bind_engine(self, engine):
         self.engine = engine
+        self.dsl_runtime.engine = engine
         self.registered_skills.clear()
         self.skill_state = SkillStateStore()
         self._loss_batches.clear()
+        self.dsl_programs.clear()
+        self._dsl_actor_usage.clear()
         for player in engine.game_state.players:
-            self.registered_skills[player.id] = get_hero_skills(hero_id(player))
+            skills = get_hero_skills(hero_id(player))
+            by_name = {skill.name: skill for skill in skills}
+            for definition in (player.hero or {}).get("skills", []):
+                if not isinstance(definition, dict) or not isinstance(definition.get("dsl"), dict):
+                    continue
+                try:
+                    compiled = compile_skill(definition["dsl"])
+                except ValueError as exc:
+                    logger.warning("拒绝无效技能 DSL %s/%s: %s", hero_id(player), definition.get("name"), exc)
+                    continue
+                name = str(definition.get("name") or "").strip()
+                status = definition.get("implementation_status", "partial")
+                if not name or status not in ("active", "partial", "data_only"):
+                    continue
+                # Keep metadata-only declarations out of every executable DSL
+                # lookup, including overrides of names backed by native skills.
+                if status == "active":
+                    self.dsl_programs[(player.id, name)] = compiled
+                runtime = by_name.get(name)
+                if runtime is None:
+                    runtime = RuntimeSkill(
+                        skill_id=f"{hero_id(player)}_{name}", name=name,
+                        owner_hero_id=hero_id(player), skill_type=definition.get("type", "trigger"),
+                        trigger_event=compiled.program["trigger"],
+                        description=str(definition.get("description") or ""),
+                        implementation_status=status,
+                    )
+                    skills.append(runtime)
+                    by_name[name] = runtime
+            self.registered_skills[player.id] = skills
             for skill in self.registered_skills[player.id]:
-                scope = "current_turn" if skill.name == "制衡" else "game"
-                charges = 1 if skill.name == "替身" else None
+                dsl_program = self.dsl_programs.get((player.id, skill.name))
+                usage = dsl_program.program.get("usage", {}) if dsl_program is not None else {}
+                scope = usage.get("scope", "current_turn") if usage else ("current_turn" if skill.name == "制衡" else "game")
+                if scope == "actor_turn":
+                    # Delegated actions keep their donor-specific counter separately.
+                    scope = "current_turn"
+                charges = usage.get("charges") if usage else (1 if skill.name == "替身" else None)
                 state = {"awakened": False} if skill.name == "勤学" else None
                 self.skill_state.register(
                     player.id, skill.skill_id, version_id=getattr(skill, "version_id", None),
@@ -45,6 +88,22 @@ class SkillManager:
                 )
         self._load_handlers()
         return self
+
+    async def _run_dsl(self, trigger, owners, event):
+        if self.engine is None or self.engine.game_aborted:
+            return False
+        event["trigger"] = trigger
+        skip_default = False
+        for owner in owners:
+            if owner is None or not owner.alive:
+                continue
+            for skill in self.player_skills(owner, active_only=True):
+                compiled = self.dsl_programs.get((owner.id, skill.name))
+                if (compiled is not None and trigger in compiled.program.get("triggers", [compiled.program["trigger"]])
+                        and self.has_skill(owner, skill.name)):
+                    executed = await self.dsl_runtime.run(compiled, owner, event, skill.name)
+                    skip_default = skip_default or bool(executed and compiled.program.get("skip_default"))
+        return skip_default
 
     def _load_handlers(self):
         self.handlers = []
@@ -92,6 +151,30 @@ class SkillManager:
         ):
             return False
         return any(self.skill_state.has_enabled(player.id, skill.skill_id) for skill in matches)
+
+    def dsl_overrides_native(self, player, name):
+        """An active imported declaration is the single implementation for this named skill."""
+        compiled = self.dsl_programs.get((player.id, name))
+        skill = next((item for item in self.player_skills(player) if item.name == name), None)
+        return bool(compiled is not None and skill is not None and skill.implementation_status == "active"
+                    and self.has_skill(player, name))
+
+    def dsl_actor_skill_available(self, skill_owner, actor, name, limit=1):
+        turn_id = getattr(self.engine, "completed_turns", None)
+        return self._dsl_actor_usage.get((skill_owner.id, actor.id, name, turn_id), 0) < limit
+
+    def consume_dsl_actor_skill_use(self, skill_owner, actor, name, limit=1):
+        if not self.dsl_actor_skill_available(skill_owner, actor, name, limit):
+            return False
+        turn_id = getattr(self.engine, "completed_turns", None)
+        key = (skill_owner.id, actor.id, name, turn_id)
+        self._dsl_actor_usage[key] = self._dsl_actor_usage.get(key, 0) + 1
+        return True
+
+    @staticmethod
+    def _action_actor_allowed(selector, actor):
+        faction = (actor.hero or {}).get("faction")
+        return selector in {"faction:qun", "faction:群"} and faction in {"qun", "群"}
 
     def _skill_instance(self, player, name):
         skill = next((item for item in self.player_skills(player) if item.name == name), None)
@@ -331,9 +414,96 @@ class SkillManager:
         actions = []
         for handler in self.handlers:
             actions.extend(handler.get_actions(player))
+        for skill in self.player_skills(player, active_only=True):
+            compiled = self.dsl_programs.get((player.id, skill.name))
+            if (compiled is not None and not compiled.program.get("action_actors")
+                    and compiled.program["trigger"] == "play_action"
+                    and self.has_skill(player, skill.name)):
+                event = {"action": "play_action", "_skill_name": skill.name, "_locals": {}}
+                if not evaluate_condition(compiled.program.get("condition", True), self.dsl_runtime._scope(player, event)):
+                    continue
+                usage = compiled.program.get("usage")
+                if usage and not self.skill_available(
+                        player, skill.name, phase=self.engine.game_state.current_phase,
+                        limit=usage.get("limit", 1)):
+                    continue
+                can_pay = True
+                scope = self.dsl_runtime._scope(player, event)
+                for cost in compiled.program.get("cost", []):
+                    if cost["interaction"] == "ask_choose_cards":
+                        filt = cost.get("filter", {})
+                        card_owner = self.dsl_runtime._card_owner(player, cost, event)
+                        available = self.dsl_runtime._card_candidates(card_owner, cost, event) if card_owner else []
+                        available = [c for c in available if _matches_card_filter(c, filt)]
+                        bounds = _resolve_bounds(cost, scope)
+                        if bounds is None or len(available) < bounds[0]:
+                            can_pay = False
+                            break
+                        if filt.get("same_suit") and max((sum(1 for c in available if c.suit == suit) for suit in {c.suit for c in available}), default=0) < bounds[0]:
+                            can_pay = False
+                            break
+                targets = compiled.program.get("targets", {"selector": "self", "min": 1, "max": 1})
+                if can_pay and targets.get("selector") == "chosen_players":
+                    candidates = self.dsl_runtime._candidates(targets.get("candidates", "alive_others"), player, event,
+                                                              targets.get("exclude_state"))
+                    bounds = _resolve_bounds(targets, scope)
+                    if bounds is None or len(candidates) < bounds[0]:
+                        can_pay = False
+                if not can_pay:
+                    continue
+                actions.append({"type": "use_skill", "skill_name": skill.name,
+                                "variant": "dsl", "requires_target": False,
+                                "valid_targets": [], "text": f"发动【{skill.name}】"})
+        for skill_owner in self.engine.game_state.players:
+            if skill_owner is player or not skill_owner.alive:
+                continue
+            for skill in self.player_skills(skill_owner, active_only=True):
+                compiled = self.dsl_programs.get((skill_owner.id, skill.name))
+                if (compiled is None or compiled.program["trigger"] != "play_action"
+                        or not self.has_skill(skill_owner, skill.name)
+                        or not self._action_actor_allowed(compiled.program.get("action_actors"), player)):
+                    continue
+                event = {"action": "play_action", "target": skill_owner,
+                         "_skill_name": skill.name, "_dsl_state_owner": skill_owner, "_locals": {}}
+                if not evaluate_condition(compiled.program.get("condition", True), self.dsl_runtime._scope(player, event)):
+                    continue
+                usage = compiled.program.get("usage")
+                if usage and (usage.get("scope") != "actor_turn" or not self.dsl_actor_skill_available(
+                        skill_owner, player, skill.name, usage.get("limit", 1))):
+                    continue
+                can_pay = True
+                for cost in compiled.program.get("cost", []):
+                    if cost["interaction"] == "ask_choose_cards":
+                        bounds = _resolve_bounds(cost, self.dsl_runtime._scope(player, event))
+                        card_owner = self.dsl_runtime._card_owner(player, cost, event)
+                        available = self.dsl_runtime._card_candidates(card_owner, cost, event) if card_owner else []
+                        if bounds is None or len(available) < bounds[0]:
+                            can_pay = False
+                            break
+                if can_pay:
+                    actions.append({"type": "use_skill", "skill_name": skill.name,
+                                    "variant": "dsl", "dsl_owner_id": skill_owner.id,
+                                    "requires_target": False, "valid_targets": [],
+                                    "text": f"响应【{skill.name}】"})
         return actions
 
     async def execute(self, player, action, targets):
+        if action.get("variant") == "dsl":
+            skill_owner = next((p for p in self.engine.game_state.players
+                                if p.id == action.get("dsl_owner_id")), player)
+            skill_name = action.get("skill_name")
+            compiled = self.dsl_programs.get((skill_owner.id, skill_name))
+            delegated = skill_owner is not player
+            if (compiled is None or compiled.program["trigger"] != "play_action"
+                    or not self.has_skill(skill_owner, skill_name)
+                    or (delegated and not self._action_actor_allowed(compiled.program.get("action_actors"), player))
+                    or self.engine is None
+                    or self.engine.game_state.current_phase.value != "play"
+                    or self.engine.game_state.current_player is not player):
+                return False
+            event = {"action": "play_action", "target": skill_owner if delegated else None,
+                     "_dsl_state_owner": skill_owner, "_locals": {}}
+            return await self.dsl_runtime.run(compiled, player, event, skill_name)
         for handler in self.handlers:
             if await handler.execute(player, action, targets):
                 return True
@@ -346,11 +516,16 @@ class SkillManager:
             used.pop("护驾摸牌", None)
             used.pop("激将摸牌", None)
         player.max_sha = 1
+        self._apply_turn_modifiers(player)
+        await self._run_dsl("turn_start", [player], {"player": player})
         for handler in self.handlers:
             await handler.on_turn_start(player)
 
     async def before_phase(self, player, phase):
         result = {"skip_default": False}
+        result["skip_default"] = await self._run_dsl(
+            "phase_start", [player], {"player": player, "phase": getattr(phase, "value", phase)}
+        )
         for handler in self.handlers:
             value = await handler.before_phase(player, phase)
             if isinstance(value, dict):
@@ -358,14 +533,27 @@ class SkillManager:
         return result
 
     async def after_phase(self, player, phase):
+        await self._run_dsl("phase_end", [player], {"player": player, "phase": getattr(phase, "value", phase)})
         for handler in self.handlers:
             await handler.after_phase(player, phase)
 
     async def before_sha(self, source, target, card, event):
+        for skill in self.player_skills(source, active_only=True):
+            compiled = self.dsl_programs.get((source.id, skill.name))
+            if compiled is None or not self.has_skill(source, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(source, {"target": target, "card_name": getattr(card, "name", None), "_skill_name": skill.name})
+            for modifier in compiled.program.get("modifiers", []):
+                if modifier["stat"] == "response_count" and evaluate_condition(modifier.get("when", True), scope):
+                    value = _resolve_value(modifier["value"], scope)
+                    if type(value) is int:
+                        event["shanRequired"] = max(event.get("shanRequired", 1), value)
         for handler in self.handlers:
             await handler.before_sha(source, target, card, event)
 
     async def on_sha_dodged(self, source, target, card, event):
+        await self._run_dsl("sha_dodged", [source], {"source": source, "target": target,
+                                                       "card_name": getattr(card, "name", None)})
         for handler in self.handlers:
             await handler.on_sha_dodged(source, target, card, event)
 
@@ -375,14 +563,25 @@ class SkillManager:
         return max(0, int(amount))
 
     async def after_damage(self, source, target, amount, card=None, context=None):
+        event = {"source": source, "target": target, "amount": amount,
+                 "card": card,
+                 "card_name": getattr(card, "name", None),
+                 "card_color": card_color(card) if card is not None else None,
+                 "card_available": bool(card is not None and card in self.engine.game_state.discard_pile)}
+        await self._run_dsl("damage_received", [target], event)
+        await self._run_dsl("damage_dealt", [source], event)
         for handler in self.handlers:
             await handler.after_damage(source, target, amount, card, context)
 
     async def after_card_used(self, player, card, targets, success):
+        await self._run_dsl("card_used", [player], {"card": card, "card_name": getattr(card, "name", None),
+                                                        "card_type": getattr(card, "card_type", None),
+                                                        "targets": targets, "success": bool(success)})
         for handler in self.handlers:
             await handler.after_card_used(player, card, targets, success)
 
     async def on_card_responded(self, player, card, as_name, context=None):
+        await self._run_dsl("card_responded", [player], {"card_name": getattr(card, "name", None), "as_name": as_name})
         for handler in self.handlers:
             await handler.on_card_responded(player, card, as_name, context)
 
@@ -390,7 +589,43 @@ class SkillManager:
         options = []
         for handler in self.handlers:
             options.extend(handler.response_options(player, requested_name))
+        for skill in self.player_skills(player, active_only=True):
+            compiled = self.dsl_programs.get((player.id, skill.name))
+            if compiled is None or not self.has_skill(player, skill.name):
+                continue
+            for conversion in compiled.program.get("conversions", []):
+                if conversion["as"] != requested_name:
+                    continue
+                scope = self.dsl_runtime._scope(player, {"requested_name": requested_name, "_skill_name": skill.name})
+                if not evaluate_condition(conversion.get("when", True), scope):
+                    continue
+                entries = self.handlers[0].response_card_entries(player) if self.handlers else []
+                for card, index, zone in entries:
+                    color = card_color(card)
+                    if conversion.get("names") and card.name not in conversion["names"]:
+                        continue
+                    if conversion.get("color") and color != conversion["color"]:
+                        continue
+                    if conversion.get("suits") and card.suit not in conversion["suits"]:
+                        continue
+                    options.append({"card": card, "card_index": index, "owner": player,
+                                    "as_name": requested_name, "skill_name": skill.name,
+                                    "source_zone": zone})
         return options
+
+    def required_response_count(self, player, requested_name, base_count=1, context=None):
+        count = base_count
+        for skill in self.player_skills(player, active_only=True):
+            compiled = self.dsl_programs.get((player.id, skill.name))
+            if compiled is None or not self.has_skill(player, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(player, {"requested_name": requested_name, "_skill_name": skill.name, **(context or {})})
+            for modifier in compiled.program.get("modifiers", []):
+                if modifier["stat"] == "response_count" and evaluate_condition(modifier.get("when", True), scope):
+                    value = _resolve_value(modifier["value"], scope)
+                    if type(value) is int:
+                        count = max(count, value)
+        return count
 
     async def request_lord_sha(self, player, first_donor):
         for handler in self.handlers:
@@ -404,31 +639,115 @@ class SkillManager:
             error = handler.can_target(source, target, card_name)
             if error:
                 return error
+        for skill in self.player_skills(target, active_only=True):
+            compiled = self.dsl_programs.get((target.id, skill.name))
+            if compiled is None or not self.has_skill(target, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(target, {"source": source, "card_name": card_name, "_skill_name": skill.name})
+            for modifier in compiled.program.get("modifiers", []):
+                if (modifier["stat"] == "target_protection"
+                        and evaluate_condition(modifier.get("when", True), scope)):
+                    return f"{target.name}的技能【{skill.name}】禁止成为此牌目标"
         return None
 
     def modify_distance(self, source, target, distance):
         for handler in self.handlers:
             distance = handler.modify_distance(source, target, distance)
+        for skill in self.player_skills(source, active_only=True):
+            compiled = self.dsl_programs.get((source.id, skill.name))
+            if compiled is None or not self.has_skill(source, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(source, {"target": target, "_skill_name": skill.name})
+            for modifier in compiled.program.get("modifiers", []):
+                if modifier["stat"] != "distance" or not evaluate_condition(modifier.get("when", True), scope):
+                    continue
+                value = _resolve_value(modifier["value"], scope)
+                if type(value) is int:
+                    distance += value if modifier["op"] == "add" else -value
         return max(1, distance)
 
+    def _apply_turn_modifiers(self, player):
+        for skill in self.player_skills(player, active_only=True):
+            compiled = self.dsl_programs.get((player.id, skill.name))
+            if compiled is None or not self.has_skill(player, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(player, {"_skill_name": skill.name})
+            for modifier in compiled.program.get("modifiers", []):
+                if modifier["stat"] != "max_sha" or not evaluate_condition(modifier.get("when", True), scope):
+                    continue
+                value = _resolve_value(modifier["value"], scope)
+                if type(value) is int:
+                    player.max_sha = max(player.max_sha, value)
+
     def ignore_distance(self, source, card):
-        return any(handler.ignore_distance(source, card) for handler in self.handlers)
+        if any(handler.ignore_distance(source, card) for handler in self.handlers):
+            return True
+        for skill in self.player_skills(source, active_only=True):
+            compiled = self.dsl_programs.get((source.id, skill.name))
+            if compiled is None or not self.has_skill(source, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(source, {"_skill_name": skill.name, "card_name": getattr(card, "name", None),
+                                                     "card_suit": getattr(card, "suit", None),
+                                                     "card_type": getattr(card, "card_type", None)})
+            if any(modifier["stat"] == "ignore_distance"
+                   and evaluate_condition(modifier.get("when", True), scope)
+                   for modifier in compiled.program.get("modifiers", [])):
+                return True
+        return False
 
     def hand_limit(self, player, current):
         for handler in self.handlers:
             current = handler.hand_limit(player, current)
+        for skill in self.player_skills(player, active_only=True):
+            compiled = self.dsl_programs.get((player.id, skill.name))
+            if compiled is None or not self.has_skill(player, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(player, {"_skill_name": skill.name})
+            for modifier in compiled.program.get("modifiers", []):
+                if modifier["stat"] != "hand_limit" or not evaluate_condition(modifier.get("when", True), scope):
+                    continue
+                value = _resolve_value(modifier["value"], scope)
+                if type(value) is not int:
+                    continue
+                if modifier["op"] == "add":
+                    current += value
+                else:
+                    current = max(current, value)
         return max(0, current)
 
     def protect_card(self, owner, card, reason):
-        return any(handler.protect_card(owner, card, reason) for handler in self.handlers)
+        if any(handler.protect_card(owner, card, reason) for handler in self.handlers):
+            return True
+        for skill in self.player_skills(owner, active_only=True):
+            compiled = self.dsl_programs.get((owner.id, skill.name))
+            if compiled is None or not self.has_skill(owner, skill.name):
+                continue
+            scope = self.dsl_runtime._scope(owner, {"card_name": getattr(card, "name", None), "reason": reason})
+            if any(modifier["stat"] == "protect_card"
+                   and evaluate_condition(modifier.get("when", True), scope)
+                   for modifier in compiled.program.get("modifiers", [])):
+                return True
+        return False
 
     async def before_judge(self, player, card, context=None):
+        event = {"card": card, "target": player, "card_name": getattr(card, "name", None),
+                 "card_color": card_color(card), "card_suit": getattr(card, "suit", None),
+                 "card_rank": getattr(card, "rank", None), "judged_color": card_color(card),
+                 "judged_suit": getattr(card, "suit", None), "judged_rank": getattr(card, "rank", None),
+                 "context": context or {}}
+        await self._run_dsl("judge_before", list(self.engine.game_state.players), event)
+        if event.get("_replacement") is not None:
+            return event["_replacement"]
         for handler in self.handlers:
             card = await handler.before_judge(player, card, context)
         return card
 
     async def after_judge(self, player, card, context=None):
-        claimed = False
+        event = {"card": card, "target": player, "card_name": getattr(card, "name", None),
+                 "card_color": card_color(card), "card_suit": getattr(card, "suit", None),
+                 "card_rank": getattr(card, "rank", None), "context": context or {}}
+        await self._run_dsl("judge_after", [player], event)
+        claimed = bool(event.get("_claimed"))
         for handler in self.handlers:
             claimed = bool(await handler.after_judge(player, card, context)) or claimed
         return claimed
@@ -436,6 +755,7 @@ class SkillManager:
     async def on_card_gained(self, player, cards, reason="unknown"):
         if not cards:
             return
+        await self._run_dsl("card_gained", [player], {"count": len(cards), "reason": reason})
         for handler in self.handlers:
             await handler.on_card_gained(player, cards, reason)
 
@@ -494,6 +814,14 @@ class SkillManager:
             return
         if record:
             record_stat(self.engine, player, "cards_lost", len(cards))
+        if self.engine is not None:
+            recipient_count = sum(1 for p in self.engine.game_state.players if p.alive)
+            await self._run_dsl("cards_lost", [player], {
+                "count": min(len(cards), recipient_count), "lost_count": len(cards),
+                "hand_empty": not player.hand, "reason": reason,
+                "from_zone": getattr(event, "from_zone", None),
+                "to_zone": getattr(event, "to_zone", None),
+            })
         for handler in self.handlers:
             await handler.on_cards_lost(player, cards, reason, event=event)
 
@@ -508,10 +836,20 @@ class SkillManager:
             await handler.on_card_discarded(player, card, reason)
 
     async def on_hp_lost(self, player, amount, reason="unknown", source=None):
+        if self.engine is not None and self.engine.game_aborted:
+            return
+        await self._run_dsl("hp_lost", [player], {
+            "amount": amount, "reason": reason, "source": source,
+        })
         for handler in self.handlers:
             await handler.on_hp_lost(player, amount, reason, source)
 
     async def on_recover(self, player, amount, source=None, reason="unknown"):
+        if self.engine is not None and self.engine.game_aborted:
+            return
+        await self._run_dsl("recover", [player], {
+            "amount": amount, "source": source, "reason": reason,
+        })
         for handler in self.handlers:
             await handler.on_recover(player, amount, source, reason)
 
@@ -523,6 +861,11 @@ class SkillManager:
         return target
 
     async def before_multi_target_trick(self, source, card, targets):
+        event = {"source": source, "card": card, "card_name": getattr(card, "name", None),
+                 "card_type": getattr(card, "card_type", None),
+                 "targets": list(targets), "target_count": len(targets)}
+        await self._run_dsl("multi_target_trick", list(self.engine.game_state.players), event)
+        targets = event.get("_targets", targets)
         for handler in self.handlers:
             targets = await handler.before_multi_target_trick(source, card, targets)
         return targets
