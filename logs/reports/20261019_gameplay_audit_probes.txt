@@ -1,0 +1,5 @@
+judgment_actual_order=["乐不思蜀", "兵粮寸断", "闪电"]
+no_key_biyue_confirm=[1]
+turned_skipped_phases=['discard', 'draw', 'judge', 'play']
+with_END_added_hooks_called=(1, 1)
+dying_self_wine_filter=[False] alive=False

@@ -1,0 +1,104 @@
+$ /root/sanguosha_ai_person/.venv/bin/python -m pytest -q --tb=short -p no:cacheprovider
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+................................................................... [ 36%]
+........................................................................ [ 45%]
+................................................................................................... [ 57%]
+........................................................................ [ 67%]
+........................................................................ [ 76%]
+........................................................................ [ 85%]
+........................................................................ [ 94%]
+..........................................                               [100%]
+784 passed, 50 subtests passed in 22.03s
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/check_frontend_js.py
+game.html: 无内联脚本
+handbook.html: 无内联脚本
+hero_manager.html: 第200行起的脚本块 语法通过
+history.html: 无内联脚本
+index.html: 无内联脚本
+logs.html: 无内联脚本
+result.html: 无内联脚本
+select_hero.html: 无内联脚本
+settings.html: 无内联脚本
+/root/sanguosha_ai_person/frontend/js/audio.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/card_info.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/chat_panel.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/game_main.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/global_settings.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/handbook.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/history.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/lobby.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/logs_page.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/protocol.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/result.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/select_hero.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/settings_page.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/sgs_common.js: 语法通过
+/root/sanguosha_ai_person/frontend/js/ws_client.js: 语法通过
+全部通过
+$ /root/sanguosha_ai_person/.venv/bin/python -c from scripts.gen_protocol_js import generate_js, OUTPUT_PATH; import sys; ok = OUTPUT_PATH.read_text(encoding='utf-8') == generate_js(); print('protocol sync:', 'OK' if ok else 'MISMATCH'); sys.exit(0 if ok else 1)
+protocol sync: OK
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_diag_smoke.py
+[step 1851] winner=spy 用时=16.6s
+duration=16 mvp=AI2 kills=2 damage_dealt=18 healing=1 cards_played=56
+  player 0: {'damage_dealt': 2, 'damage_taken': 5, 'healing': 3, 'kills': 0, 'cards_played': 12, 'cards_lost': 42, 'skill_activations': 18}
+  player 1: {'damage_dealt': 2, 'damage_taken': 6, 'healing': 2, 'kills': 0, 'cards_played': 19, 'cards_lost': 25, 'skill_activations': 0}
+  player 2: {'damage_dealt': 0, 'damage_taken': 7, 'healing': 2, 'kills': 0, 'cards_played': 8, 'cards_lost': 10, 'skill_activations': 3}
+  player 3: {'damage_dealt': 18, 'damage_taken': 1, 'healing': 1, 'kills': 2, 'cards_played': 56, 'cards_lost': 63, 'skill_activations': 9}
+  player 4: {'damage_dealt': 3, 'damage_taken': 9, 'healing': 3, 'kills': 1, 'cards_played': 22, 'cards_lost': 35, 'skill_activations': 8}
+SMOKE_OK
+
+--- 消息类型统计 ---
+event_notification       586
+card_moved               414
+ai_action                306
+_ack_sent                256
+game_state               224
+decision_trace           145
+selection_result         84
+action_result            45
+require_response         33
+your_turn                12
+game_created             1
+game_end                 1
+
+--- require_response 共 33 次 ---
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp1', 'n_opts': 6, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp2', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp4', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp6', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp11', 'n_opts': 9, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp12', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp13', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp14', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp21', 'n_opts': 8, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp22', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp23', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp26', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp30', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp38', 'n_opts': 8, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp39', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp42', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp43', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp45', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp46', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp53', 'n_opts': 5, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp54', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp57', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp58', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp59', 'n_opts': 3, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp66', 'n_opts': 5, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp70', 'n_opts': 6, 'mode': 'multi', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp71', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp73', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp76', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp77', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp78', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp80', 'n_opts': 4, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'selection', 'timeout', 'type']}
+{'rid': '9beb8d9fcd394b4b96a4576abb3debc8:resp81', 'n_opts': 2, 'mode': 'single', 'keys': ['candidate_version', 'context', 'game_id', 'kind', 'options', 'player_id', 'prompt', 'request_id', 'requested_name', 'selection', 'timeout', 'type']}
+$ /root/sanguosha_ai_person/.venv/bin/python scripts/manual/ws_engine_smoke.py
+[msg 1070] game_end: {"type": "game_end", "winner": "rebel", "message": "反贼获胜！", "state": {"self_hand": [{"name": "无中生有", "suit": "heart", "rank": 7, "card_type": "trick", "image": "wuzhongshengyou", "id": "standard_wuzhong_heart_7_1", "index": 0, "zone": "hand", "target_rule": {"type": "self"}}, {"name": "八卦阵", "suit":
+[step 1070] winner=rebel | remain=None
+SMOKE_OK: 规则AI跑到非aborted胜者
+VERIFY_OK
