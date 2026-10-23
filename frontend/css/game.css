@@ -868,10 +868,11 @@
     background: #7a5a2a; box-shadow: 0 0 0 1px #d8b26a;
 }
 .skill-btn .sk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: center; letter-spacing: 4px; }
-.skill-btn .sk-state { flex: none; font: 600 11px/1 var(--font-kai); letter-spacing: 1px; color: #a89577; }
+.skill-btn .sk-state { flex: none; font: 600 11px/1 var(--font-kai); letter-spacing: 0; color: #a89577; white-space: nowrap; }
 .skill-btn.ready {
-    background: linear-gradient(180deg, #7a1e12, #4a0f08);
-    border-color: #ffe49a;
+    background: linear-gradient(180deg, #8a2a1a, #4e1208);
+    border: 2px solid #ffe49a;
+    padding: 0 9px;
     box-shadow: 0 0 0 2px #ffe49a, 0 0 0 4px #0d0805, 0 0 12px rgba(255, 214, 120, .55);
     color: #fff3d2;
     animation: skill-breathe 2s ease-in-out infinite;
@@ -884,10 +885,19 @@
     50% { box-shadow: 0 0 0 2px #fff3cf, 0 0 0 4px #0d0805, 0 0 18px 4px rgba(255, 214, 120, .7); }
 }
 @media (prefers-reduced-motion: reduce) { .skill-btn.ready { animation: none; } }
-/* 两个技能并排（每个约半宽），状态小字收起，保证武将列不超出我的区域高度 */
-.my-hero .skill-btn:not(:only-child) { width: calc(50% - 3px); padding: 0 6px; }
+/* 技能条（R4）：宽屏时竖排在我的武将框左侧（见下方 min-width: 901px），窄屏仍在武将框侧边/下方 */
+.my-hero .skill-btn:not(:only-child) { padding: 0 8px; }
 .my-hero .skill-btn:not(:only-child) .sk-name { font-size: 14px; letter-spacing: 1px; }
-.my-hero .skill-btn:not(:only-child) .sk-state { display: none; }
+/* 宽屏布局（R4）：技能条在武将框左侧竖排，每条约 120x32，间距 8；超过 4 个时列表可滚动，不压手牌区 */
+@media (min-width: 901px) {
+    .my-area { grid-template-columns: 168px minmax(0, 1fr) auto; }
+    .my-hero { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+    .my-hero .hero-stack { flex: none; width: calc((var(--my-h) - 80px) * .75); }
+    .my-hero .hero-frame { max-height: none; }
+    .my-hero .skill-btns { order: -1; flex: none; width: 120px; margin-top: 28px; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 8px; max-height: 168px; overflow-y: auto; }
+    .my-hero .skill-btn, .my-hero .skill-btn:not(:only-child) { width: 100%; height: 32px; }
+    .my-hero .skill-btn:not(:only-child) .sk-name { font-size: 15px; letter-spacing: 2px; }
+}
 
 /* ======================================================================
    7. 席间面板：聊天 / 战报
