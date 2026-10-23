@@ -1,0 +1,85 @@
+$ /root/sanguosha_ai_person/.venv/bin/python -m pytest -q --tb=short -p no:cacheprovider
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+.........FFF....................................................... [ 36%]
+........................................................................ [ 45%]
+................................................................................................... [ 57%]
+........................................................................ [ 67%]
+........................................................................ [ 76%]
+........................................................................ [ 85%]
+........................................................................ [ 94%]
+..........................................                               [100%]
+=================================== FAILURES ===================================
+____________________ test_juedou_target_no_sha_takes_damage ____________________
+tests/test_card_effects_6c.py:120: in test_juedou_target_no_sha_takes_damage
+    run(cs.use_juedou(attacker, jd, defender))
+tests/test_card_effects_6c.py:14: in run
+    return asyncio.run(coro)
+           ^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+game_engine/card_system.py:1167: in use_juedou
+    return await self.resolve_duel(player, target, card, effect_context=effect_context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+game_engine/card_system.py:1185: in resolve_duel
+    if required > 1 else "【决斗】：是否打出【杀】？"),
+       ^^^^^^^^^^^^
+E   TypeError: '>' not supported between instances of 'MagicMock' and 'int'
+___________________ test_juedou_attacker_no_sha_takes_damage ___________________
+tests/test_card_effects_6c.py:140: in test_juedou_attacker_no_sha_takes_damage
+    run(cs.use_juedou(attacker, jd, defender))
+tests/test_card_effects_6c.py:14: in run
+    return asyncio.run(coro)
+           ^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+game_engine/card_system.py:1167: in use_juedou
+    return await self.resolve_duel(player, target, card, effect_context=effect_context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+game_engine/card_system.py:1185: in resolve_duel
+    if required > 1 else "【决斗】：是否打出【杀】？"),
+       ^^^^^^^^^^^^
+E   TypeError: '>' not supported between instances of 'MagicMock' and 'int'
+________________ test_juedou_wushuang_requires_two_distinct_sha ________________
+tests/test_card_effects_6c.py:158: in test_juedou_wushuang_requires_two_distinct_sha
+    assert run(cs.use_juedou(attacker, make_card("决斗"), defender)) is True
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_card_effects_6c.py:14: in run
+    return asyncio.run(coro)
+           ^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+game_engine/card_system.py:1167: in use_juedou
+    return await self.resolve_duel(player, target, card, effect_context=effect_context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+game_engine/card_system.py:1185: in resolve_duel
+    if required > 1 else "【决斗】：是否打出【杀】？"),
+       ^^^^^^^^^^^^
+E   TypeError: '>' not supported between instances of 'MagicMock' and 'int'
+=========================== short test summary info ============================
+FAILED tests/test_card_effects_6c.py::test_juedou_target_no_sha_takes_damage
+FAILED tests/test_card_effects_6c.py::test_juedou_attacker_no_sha_takes_damage
+FAILED tests/test_card_effects_6c.py::test_juedou_wushuang_requires_two_distinct_sha
+3 failed, 781 passed, 50 subtests passed in 22.29s

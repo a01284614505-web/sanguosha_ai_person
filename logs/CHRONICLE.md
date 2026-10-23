@@ -1451,3 +1451,6 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - 2026-10-20：继续完成 D 离线模型局势、E1–E3 阵亡/观战/后台结算与公开事件播放器、F1 本地皮肤、F2 声明式模式基础。D 的三个模型入口共享带版本的公开/私有状态；E 的真实浏览器三路生命周期及文本复盘通过；F1 只存浏览器 IndexedDB；F2 仍只开放验收过的五人身份局。F3 等具体模式规则版本，F5 等真实 Windows/Android 环境，F6 等语音资源和体验预算；真实 Provider 仍由用户另验。
 
 - 2026-10-20：用户要求换新窗口由 GPT-6 Sol 接任。已按当前 HEAD `aa25855`、dirty 文档与实际报告核对并撰写 [新窗口交接报告](handover/20261020_6Sol新窗口交接报告.md)，明确已实现范围、尚缺任务、后半批待独立审核及工作区入口；本窗口停止新增开发，不将交接记为全计划完成。
+
+- 2026-10-23：GPT 整合分支 `integrate/p5-t3b-stage8-20261019`（`9e49009`）经 Claude 审核后以 PR #30 合入 main（`e0f402c`）；合并前复验 981 passed / 50 subtests、前端 JS 通过、30 局 normal=30。#21、#23–#28 因内容已包含而关闭，#11 关闭（有效部分并入模式感知提示词批次）。
+- 2026-10-23：两边交接文档同步入库：补回旧工作区未进主线的 Stage 8 交接、[Stage 8 计划](handover/20261018_Stage8_plan.md)、[8B 备份原子性修复](handover/20261019_Stage8_8B_备份原子性修复.md)、[新窗口 6 Sol 入口](handover/20261020_新窗口6Sol入口.md)、[玩法审查探针](reports/20261019_gameplay_audit_probes.txt) 及 Stage 8 验证日志（修复上文两处断链）。新增 [全局评估与下一阶段路线图](handover/20261023_全局评估与下一阶段路线图.md)、[GPT-6 Astra 上下文与记忆方案（原文）](handover/20261023_GPT6Astra上下文与记忆方案.md)、[用户决定与 UI 反馈记录](handover/20261023_用户决定与UI反馈记录.md)；后者为已拍板事项，与其他计划冲突时以其为准。
