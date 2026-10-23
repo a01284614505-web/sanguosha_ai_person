@@ -2080,8 +2080,17 @@
             '<span class="pt-step" title="' + SGS.PHASE[k] + '">' + SGS.PHASE_SHORT[k] + '</span>').join('');
     }
 
+    /** 牌桌配色（W8）：夜幕江山（默认）或江山暮色，写到 .battle 的 data-palette 上，CSS 变量随之切换。 */
+    function applyTablePalette() {
+        const battle = document.getElementById('battle');
+        if (battle) battle.dataset.palette = settings().table_palette === 'jade' ? 'jade' : 'night';
+    }
+
     function bindUI() {
         buildPhaseTrack();
+        applyTablePalette();
+        // 全局设置保存后立即生效（W8）
+        window.addEventListener('global-settings-changed', applyTablePalette);
         document.getElementById('decisionTracePanel').hidden = settings().show_decision_trace === false;
         document.getElementById('okBtn').addEventListener('click', onOk);
         document.getElementById('cancelBtn').addEventListener('click', onCancel);

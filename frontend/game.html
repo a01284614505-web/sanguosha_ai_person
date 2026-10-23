@@ -10,8 +10,24 @@
     <link rel="stylesheet" href="css/game.css?v=20261020e1">
 </head>
 <body class="game-page">
-<div class="battle" id="battle">
+<div class="battle" id="battle" data-palette="night">
     <div class="field" id="field">
+        <!-- 背景层（W8）：远山、雾带、月晕、中央聚光。颜色走 CSS 变量，随牌桌配色切换；只烘托，不抢戏 -->
+        <svg class="field-bg" aria-hidden="true" viewBox="0 0 1140 900" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                <filter id="fbSoft" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
+                <filter id="fbSofter" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="22"/></filter>
+                <radialGradient id="fbSpot" cx="0.5" cy="0.47" r="0.5">
+                    <stop offset="0" style="stop-color:var(--glow)"/>
+                    <stop offset="1" style="stop-color:var(--glow);stop-opacity:0"/>
+                </radialGradient>
+            </defs>
+            <ellipse class="fb-moon" cx="880" cy="90" rx="220" ry="120" filter="url(#fbSofter)"/>
+            <path class="fb-m1" d="M-40 330 C 60 250, 140 230, 230 270 S 390 190, 500 250 S 690 200, 800 260 S 1000 210, 1180 270 L1180 560 L-40 560 Z" filter="url(#fbSoft)"/>
+            <path class="fb-m2" d="M-40 420 C 90 360, 200 350, 320 390 S 540 330, 660 380 S 880 340, 1000 380 S 1120 360, 1180 380 L1180 640 L-40 640 Z" filter="url(#fbSoft)"/>
+            <rect class="fb-mist" x="-40" y="360" width="1220" height="90" filter="url(#fbSofter)"/>
+            <ellipse cx="560" cy="410" rx="460" ry="250" fill="url(#fbSpot)"/>
+        </svg>
         <header class="hud" aria-label="对局信息">
             <div class="hud-info">
                 <span class="hud-round">第 <b id="rn">-</b> 轮</span>

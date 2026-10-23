@@ -57,20 +57,45 @@
     grid-area: field;
     position: relative;
     overflow: hidden;
-    background:
-        radial-gradient(ellipse 46% 40% at 50% 52%, rgba(201, 163, 90, .10), transparent 70%),
-        radial-gradient(ellipse 58% 50% at 50% 52%, rgba(92, 54, 26, .55), transparent 72%),
-        radial-gradient(ellipse at 50% 120%, rgba(0, 0, 0, .65), transparent 55%);
+    background: var(--bg);
 }
-/* 桌沿：一圈淡金椭圆 */
-#field::before {
+/* 千里江山（W8）：远处月晕、两层高斯模糊的远山、一条雾带、中央暖色聚光。
+   全部用 CSS 变量着色，没有描边和硬边，只烘托牌局，不抢戏。 */
+.field-bg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.field-bg .fb-moon { fill: var(--moon); }
+.field-bg .fb-m1 { fill: var(--m1); }
+.field-bg .fb-m2 { fill: var(--m2); }
+.field-bg .fb-mist { fill: var(--mist); }
+/* 四周压暗的径向渐变，让视线落在牌桌中央 */
+#field::after {
     content: "";
-    position: absolute;
-    left: 14%; right: 14%; top: 22%; bottom: 4%;
-    border-radius: 50%;
-    border: 1px solid rgba(201, 163, 90, .16);
-    box-shadow: inset 0 0 60px rgba(0, 0, 0, .35);
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 46%, transparent 52%, rgba(0, 0, 0, .42) 100%);
     pointer-events: none;
+    z-index: 1;
+}
+/* 两套配色（W8，参照原型 PALETTES）：night 夜幕江山（默认），jade 江山暮色。
+   切换靠 .battle 上的 data-palette；底部我的区域与右侧席间面板的底色也跟着变。 */
+.battle,
+.battle[data-palette="night"] {
+    --bg: linear-gradient(180deg, #110b07 0%, #1b120b 40%, #24170e 62%, #120c07 100%);
+    --m1: rgba(78, 56, 38, .42);
+    --m2: rgba(52, 36, 24, .62);
+    --mist: rgba(255, 205, 150, .05);
+    --glow: rgba(255, 190, 120, .15);
+    --moon: rgba(255, 226, 180, .12);
+    --panel: linear-gradient(180deg, rgba(34, 22, 14, .96), rgba(20, 13, 8, .98));
+    --side-bg: linear-gradient(180deg, #21160e, #150e09);
+}
+.battle[data-palette="jade"] {
+    --bg: linear-gradient(180deg, #0a171b 0%, #0f242a 38%, #132e35 60%, #0c1f23 100%);
+    --m1: rgba(58, 108, 106, .40);
+    --m2: rgba(36, 78, 78, .55);
+    --mist: rgba(190, 225, 215, .07);
+    --glow: rgba(255, 224, 168, .16);
+    --moon: rgba(200, 230, 220, .06);
+    --panel: linear-gradient(180deg, rgba(14, 32, 36, .95), rgba(8, 18, 21, .98));
+    --side-bg: linear-gradient(180deg, #0f2428, #09171a);
 }
 
 .hud {
@@ -700,7 +725,7 @@
     grid-template-columns: 168px minmax(0, 1fr) 156px;
     gap: 12px;
     padding: 10px 12px;
-    background: linear-gradient(180deg, #2a1d14, #17100b);
+    background: var(--panel);
     border-top: 1px solid var(--gold-dim);
     box-shadow: inset 0 1px 0 rgba(241, 216, 152, .18), 0 -10px 24px rgba(0, 0, 0, .45);
 }
@@ -825,7 +850,7 @@
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
-    background: linear-gradient(180deg, #2a1b10, #150d07);
+    background: var(--side-bg);
     border-left: 2px solid #b8904c;
     box-shadow: inset 1px 0 0 rgba(241, 216, 152, .25);
     z-index: 50;
