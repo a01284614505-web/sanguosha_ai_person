@@ -78,7 +78,8 @@
     top: 0; left: 0; right: 0;
     z-index: 30;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    /* 阶段栏已移到自己的区域（W5），顶部只剩信息与工具两项 */
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
@@ -141,6 +142,14 @@
 .pt-step.skip { color: #8c6a5a; text-decoration: line-through; text-decoration-thickness: 2px; }
 .pt-step.skip.on { background: radial-gradient(circle at 45% 35%, #6e4a3c, #3f2a20); color: #e3c6b0; box-shadow: inset 0 0 0 1px #a07a62; }
 .pt-step.pop { animation: pt-pop .42s var(--ease); }
+/* 一条金线串起六颗圆珠（W5，参照原型 .phline）：已过的段暗金，未到的段暗棕 */
+.pt-step { position: relative; }
+.pt-step + .pt-step::before {
+    content: ""; position: absolute; right: 100%; top: 50%;
+    width: 4px; height: 2px; margin-top: -1px;
+    background: #4a3a28;
+}
+.pt-step.done + .pt-step::before, .pt-step.on::before { background: var(--gold); }
 @keyframes pt-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.35); } 100% { transform: scale(1.18); } }
 
 /* ======================================================================
@@ -667,14 +676,31 @@
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .zone-slot[data-card-name] { cursor: help; }
-.zone-slot b { flex: none; width: 18px; color: var(--gold); font-size: 11px; font-weight: 600; text-align: center; }
+/* 装备槽（W5）：左侧金色小方块写槽位简称，然后是 22px 插画缩略图，最后是牌名；空槽半透明写"空" */
+.zone-slot b {
+    flex: none; width: 22px; height: 22px;
+    display: grid; place-items: center;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #f1cf78, #a8761f);
+    box-shadow: 0 0 0 1px #4a2e08;
+    color: #2a1a0b; font: 700 12px/1 var(--font-kai); text-align: center;
+}
+.zone-slot .zs-art {
+    flex: none; width: 22px; height: 22px;
+    border: 1px solid #8a6b3a; border-radius: 2px;
+    background-color: #efe0bb; background-blend-mode: multiply;
+    background-size: contain; background-position: center; background-repeat: no-repeat;
+}
+.zone-slot .zs-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zone-slot.empty { color: var(--text-faint); }
+.zone-slot.empty b, .zone-slot.empty .zs-name { opacity: .5; }
 .zone-judge { display: flex; gap: 5px; margin-top: 2px; min-height: 24px; align-items: center; font-size: 12px; color: var(--text-dim); }
 .zone-judge .judge-tile { width: 24px; height: 24px; }
 
 .hand-wrap { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.hand-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--text-dim); padding: 0 4px 2px; }
-#actionHint { color: var(--gold); font-family: var(--font-kai); font-size: 13px; }
+/* 手牌行：左边阶段栏（W5），然后手牌数，提示文字靠右 */
+.hand-meta { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; color: var(--text-dim); padding: 0 4px 2px; min-width: 0; }
+#actionHint { margin-left: auto; color: var(--gold); font-family: var(--font-kai); font-size: 13px; }
 .hand {
     display: flex;
     align-items: flex-end;
@@ -711,16 +737,44 @@
 .my-hero .hero-frame { width: 100%; max-height: calc(var(--my-h) - 62px); aspect-ratio: 3 / 4; margin: 0 auto; }
 .my-hero .s-hero { font-size: 20px; }
 .my-hero .hero-frame .s-top .seal { width: 22px; height: 22px; }
-/* 技能按钮：可发动时亮金，正在发动时暗朱漆 */
-.skill-btns { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+/* 技能按钮（W5）：长条，占满武将列宽，高 32px，加重双层边框；左侧小菱形宝石，中间技能名，右侧小字状态。
+   颜色只用金色一套：可发动 = 暗朱底 + 亮金边 + 金色呼吸光；发动中 = 金底深字；平常 = 深棕底 + 暗金边。
+   data-skill / data-skill-name / data-skill-desc / data-skill-type 属性保持不变。 */
+.skill-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .skill-btn {
-    white-space: nowrap;
-    padding: 2px 9px; border-radius: 12px;
-    border: 1px solid #6d5636; background: rgba(0, 0, 0, .4);
-    font: 600 13px/1.6 var(--font-kai); color: var(--text-dim);
+    position: relative;
+    display: flex; align-items: center; gap: 6px;
+    width: 100%; height: 32px;
+    padding: 0 10px;
+    border: 1px solid #8a6b3a; border-radius: 4px;
+    background: linear-gradient(180deg, #2c1d12, #1a110a);
+    box-shadow: 0 0 0 2px #7a5a2a, 0 0 0 4px #0d0805;
+    font: 700 16px/1 var(--font-kai); color: #d8c48f;
+    white-space: nowrap; cursor: pointer;
 }
-.skill-btn.ready { border-color: var(--gold); color: var(--gold-hi); background: linear-gradient(180deg, #4a3220, #2a1b10); box-shadow: 0 0 8px rgba(241, 216, 152, .3); }
-.skill-btn.on { background: linear-gradient(180deg, var(--lacquer-1), var(--lacquer-2)); color: #f3dca0; border-color: var(--gold); }
+.skill-btn::before {
+    content: ""; flex: none;
+    width: 7px; height: 7px;
+    transform: rotate(45deg);
+    background: #7a5a2a; box-shadow: 0 0 0 1px #d8b26a;
+}
+.skill-btn .sk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: center; letter-spacing: 4px; }
+.skill-btn .sk-state { flex: none; font: 600 11px/1 var(--font-kai); letter-spacing: 1px; color: #a89577; }
+.skill-btn.ready {
+    background: linear-gradient(180deg, #7a1e12, #4a0f08);
+    border-color: #ffe49a;
+    box-shadow: 0 0 0 2px #ffe49a, 0 0 0 4px #0d0805, 0 0 12px rgba(255, 214, 120, .55);
+    color: #fff3d2;
+    animation: skill-breathe 2s ease-in-out infinite;
+}
+.skill-btn.ready::before { background: #ffe49a; box-shadow: 0 0 6px #ffe49a; }
+.skill-btn.ready .sk-state { color: #ffe49a; }
+.skill-btn.on { background: linear-gradient(180deg, #fbe9b4, #c9a35a); color: #2a1a0b; border-color: #fff3cf; box-shadow: 0 0 0 2px #fff3cf, 0 0 0 4px #0d0805; }
+.skill-btn.on .sk-state { color: #4a2e10; }
+@keyframes skill-breathe {
+    50% { box-shadow: 0 0 0 2px #fff3cf, 0 0 0 4px #0d0805, 0 0 18px 4px rgba(255, 214, 120, .7); }
+}
+@media (prefers-reduced-motion: reduce) { .skill-btn.ready { animation: none; } }
 
 /* ======================================================================
    7. 席间面板：聊天 / 战报
@@ -919,11 +973,10 @@
     .battle { --seat-w: min(21vw, 86px); --hand-w: 60px; --my-h: 226px; }
     /* 手机竖屏牌小，抬起量也缩小，避免顶到上方的座位 */
     .hand .card.selected { transform: translateY(-20px) scale(1.06); }
-    .hud { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info tools" "track track"; row-gap: 4px; align-items: start; }
+    .hud { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info tools"; align-items: start; }
     .hud-info { grid-area: info; font-size: 11px; }
     .hud-info { gap: 6px; white-space: nowrap; }
     .hud-tools { grid-area: tools; }
-    .phase-track { grid-area: track; justify-self: center; }
     .pt-step { width: 22px; height: 22px; font-size: 12px; }
     .seat.pos-4 { left: 2%; top: 84px; }
     .seat.pos-3 { left: 26.5%; top: 84px; }

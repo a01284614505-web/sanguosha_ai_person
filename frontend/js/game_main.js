@@ -311,9 +311,16 @@
         if (!p) return;
         const eq = p.equipment || {};
         const judge = p.judge_area || [];
-        zones.innerHTML = '<h3>装备区</h3>' + SGS.EQUIP_ORDER.map(slot =>
-            '<div class="zone-slot' + (eq[slot] ? '' : ' empty') + '" ' + (eq[slot] ? SGS.cardDetailAttrs({ name: eq[slot] }) : '') + '><b>' +
-            SGS.EQUIP_SLOT[slot].short + '</b>' + esc(eq[slot] || SGS.EQUIP_SLOT[slot].name) + '</div>').join('') +
+        // 装备槽（W5）：简称方块 + 插画缩略图 + 牌名；空槽半透明写"空"
+        zones.innerHTML = '<h3>装备区</h3>' + SGS.EQUIP_ORDER.map(slot => {
+            const name = eq[slot];
+            const art = name ? SGS.cardArtURL(name) : '';
+            const body = name
+                ? (art ? '<i class="zs-art" style="background-image:url(' + art + ')"></i>' : '') + '<span class="zs-name">' + esc(name) + '</span>'
+                : '<span class="zs-name">空</span>';
+            return '<div class="zone-slot' + (name ? '' : ' empty') + '" ' + (name ? SGS.cardDetailAttrs({ name: name }) : '') + '><b>' +
+                esc(SGS.EQUIP_SLOT[slot].short) + '</b>' + body + '</div>';
+        }).join('') +
             (p.treasure_count ? '<div class="zone-slot treasure-zone" title="木牛流马扣置的牌不计入手牌"><b>木</b>扣置 ' + p.treasure_count + ' 张</div>' : '') +
             '<div class="zone-judge"><span>判定区</span>' + (judge.length ? judgeTilesHTML(judge) : '<span class="faint">空</span>') + '</div>';
 
@@ -333,11 +340,14 @@
         // 每个按钮都带说明数据，悬停/长按可看技能全文。
         const readySkills = new Set(isMyPlay() ? (G.turn.actions || []).filter(a => a.type === 'use_skill').map(a => a.skill_name) : []);
         const skills = (hero.skills || []).map(s => typeof s === 'string' ? { name: s } : s);
+        // 长条按钮（W5）：左侧宝石、中间技能名、右侧状态（可发动 / 发动中 / 技能类型）
         const skillHTML = skills.map(s => {
             const ready = readySkills.has(s.name);
             const on = G.sel && G.sel.kind === 'skill' && G.sel.name === s.name;
+            const state = ready ? '可发动' : on ? '发动中' : (s.type ? esc(s.type) : '');
             return '<button type="button" class="skill-btn' + (ready ? ' ready' : '') + (on ? ' on' : '') + '" data-skill="' + esc(s.name) + '"' +
-                ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' + esc(s.name) + '</button>';
+                ' data-skill-name="' + esc(s.name) + '" data-skill-desc="' + esc(s.description || '') + '" data-skill-type="' + esc(s.type || '') + '">' +
+                '<span class="sk-name">' + esc(s.name) + '</span><span class="sk-state">' + state + '</span></button>';
         }).join('');
         const frameHTML = seatFrameHTML(p, { hideHand: true });
         const badgeHTML = titleBadgeHTML(p);
