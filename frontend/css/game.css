@@ -584,8 +584,32 @@
     color: var(--gold-hi);
     white-space: nowrap;
     text-shadow: 0 0 10px rgba(110, 30, 20, .95), 0 3px 0 #000, 0 0 2px #000;
-    animation: shout 1.3s ease-out forwards;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    animation: shout 1.6s ease-out forwards;
 }
+/* 头像菱形徽章（W9）：立绘放在旋转 45 度的框里，图片再反向转回正 */
+.skill-shout .ss-badge {
+    position: relative; flex: none;
+    width: 44px; height: 44px;
+    transform: rotate(45deg);
+    overflow: hidden;
+    background: #1a120c;
+    box-shadow: 0 0 0 3px var(--gold), 0 0 0 5px #0d0805, 0 0 24px 6px rgba(255, 200, 90, .7);
+}
+.skill-shout .ss-badge img {
+    position: absolute; left: 50%; top: 50%;
+    width: 62px; height: 62px; max-width: none;
+    object-fit: cover; object-position: 50% 12%;
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+.skill-shout .ss-badge span {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    transform: rotate(-45deg);
+    font: 400 20px/1 var(--font-brush); color: var(--gold-hi);
+}
+.skill-shout .ss-word { line-height: 1; }
+@media (prefers-reduced-motion: reduce) { .skill-shout .ss-badge { display: none; } }
 @keyframes shout { from { opacity: 0; transform: translate(-50%, -50%) scale(1.8); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 75% { opacity: 1; } to { opacity: 0; transform: translate(-50%, -80%); } }
 
 /* ---------- 判定框 ----------

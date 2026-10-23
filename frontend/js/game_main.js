@@ -1007,11 +1007,30 @@
         const c = el ? centerOf(el) : { x: innerWidth / 2, y: innerHeight / 2 };
         const s = document.createElement('div');
         s.className = 'skill-shout';
-        s.textContent = text;
+        // 菱形头像徽章（W9，参照原型 .badge）：用该座位武将的立绘，没有立绘就用首字
+        const badge = document.createElement('div');
+        badge.className = 'ss-badge';
+        const img = el && el.querySelector('img');
+        const fallback = el && el.querySelector('.hero-fallback');
+        if (img && img.getAttribute('src')) {
+            const pic = document.createElement('img');
+            pic.src = img.getAttribute('src');
+            pic.alt = '';
+            badge.appendChild(pic);
+        } else {
+            const mark = document.createElement('span');
+            mark.textContent = fallback ? fallback.textContent : '';
+            badge.appendChild(mark);
+        }
+        const word = document.createElement('div');
+        word.className = 'ss-word';
+        word.textContent = text;
+        s.appendChild(badge);
+        s.appendChild(word);
         s.style.left = c.x + 'px';
         s.style.top = c.y + 'px';
         document.body.appendChild(s);
-        setTimeout(() => s.remove(), 1400);
+        setTimeout(() => s.remove(), 1600);
     }
 
     /** 聊天气泡：对手座位按方位朝向牌桌中央，我的气泡在头像上方。 */
