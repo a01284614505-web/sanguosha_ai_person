@@ -1081,6 +1081,8 @@
     /* 竖屏：我的区域加高到 262px，手牌行才放得下阶段栏、手牌数和牌（牌匾行与武将框撑高了第一行） */
     .battle { --seat-w: min(21vw, 86px); --hand-w: 56px; --my-h: 262px; }
     .my-hero .plaque-row { height: 18px; margin-bottom: 3px; }
+    /* 竖屏自己的武将框窄，缎带挪到立绘底部，免得压住竖排的武将名 */
+    .my-hero.current .hero-frame::before { top: auto; bottom: 12px; transform: translateX(-50%); }
     /* 手机竖屏牌小，抬起量也缩小，避免顶到上方的座位 */
     .hand .card.selected { transform: translateY(-20px) scale(1.06); }
     /* 手机竖屏武将列窄，技能长条一个一行（列不够宽时两个并排会挤坏名字） */
