@@ -734,6 +734,15 @@
             ok.disabled = true; cancel.disabled = true;
             return;
         }
+        // 多次响应（无双、决斗）：引擎逐张请求，提示语形如“共需 2 张，第 1 张”。界面照常逐次显示，
+        // 这里只在提示旁画 N 个圆点，前 K-1 个实心，让人知道还要出几张。不合并成一次选两张。
+        const multi = /共需\s*(\d+)\s*张\s*[，,]\s*第\s*(\d+)\s*张/.exec(r.prompt || '');
+        if (multi) {
+            const count = Math.min(6, Number(multi[1]));
+            const done = Number(multi[2]) - 1;
+            const pips = Array.from({ length: count }, (_, i) => '<i class="pip' + (i < done ? ' on' : '') + '"></i>').join('');
+            prompt.insertAdjacentHTML('beforeend', '<span class="ab-pips" aria-hidden="true">' + pips + '</span>');
+        }
         const options = r.options || [];
         const isLegacy = !r.selection;
         if (r.kind === 'confirm') {
@@ -914,17 +923,24 @@
     }
 
     /** 响应倒计时条；时间到了显示“托管代选”，引擎那边会自动按规则托管。 */
+    /** 倒计时圆盘（W6）：--p 写入剩余比例（金色弧长），中间写剩余秒数；少于 5 秒由 .urgent 变红。 */
+    function paintTimer(wrap, left, total) {
+        const frac = Math.max(0, Math.min(1, left / total));
+        wrap.style.setProperty('--p', (frac * 100).toFixed(2) + '%');
+        const sec = wrap.querySelector('.ab-sec');
+        if (sec) sec.textContent = String(Math.max(0, Math.ceil(left / 1000)));
+        wrap.classList.toggle('urgent', left < 5000);
+    }
+
     function startRequestTimer(seconds) {
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
-        const bar = document.querySelector('#abTimer i');
         const wrap = document.getElementById('abTimer');
         const tick = () => {
             if (!G.req) { clearInterval(G.reqTimer); return; }
             const left = G.reqDeadline - Date.now();
-            bar.style.transform = 'scaleX(' + Math.max(0, left / total) + ')';
-            wrap.classList.toggle('urgent', left < 5000);
+            paintTimer(wrap, left, total);
             if (left <= 0) {
                 clearInterval(G.reqTimer);
                 G.req.expired = true;
@@ -1978,13 +1994,11 @@
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
-        const bar = document.querySelector('#abTimer i');
         const wrap = document.getElementById('abTimer');
         const tick = () => {
             if (!G.turn || G.req || G.ended) { clearInterval(G.reqTimer); return; }
             const left = G.reqDeadline - Date.now();
-            bar.style.transform = 'scaleX(' + Math.max(0, left / total) + ')';
-            wrap.classList.toggle('urgent', left < 5000);
+            paintTimer(wrap, left, total);
             if (left <= 0) clearInterval(G.reqTimer);
         };
         tick();

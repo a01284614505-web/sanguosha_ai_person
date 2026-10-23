@@ -48,8 +48,11 @@
 
         <!-- 操作条：提示语 + 候选 + 按钮 -->
         <div class="action-bar" id="actionBar" aria-live="assertive">
-            <div class="ab-timer" id="abTimer"><i></i></div>
-            <div class="ab-prompt" id="abPrompt">正在连接游戏服务…</div>
+            <!-- 提示语与倒计时圆盘同一行（W6）：圆盘中间写剩余秒数，#abTimer 的 id 保留 -->
+            <div class="ab-head">
+                <div class="ab-prompt" id="abPrompt">正在连接游戏服务…</div>
+                <div class="ab-timer" id="abTimer"><span class="ab-sec">0</span></div>
+            </div>
             <div class="ab-options" id="abOptions"></div>
             <div class="ab-buttons">
                 <button class="btn confirm" id="okBtn" type="button" disabled>确定</button>

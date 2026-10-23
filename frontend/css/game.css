@@ -617,20 +617,59 @@
     display: grid; justify-items: center; gap: 8px;
     padding: 10px 14px 12px;
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(36, 25, 17, .94), rgba(18, 12, 8, .96));
-    border: 1px solid var(--gold-dim);
-    box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .3), inset 0 0 0 4px rgba(201, 163, 90, .2), 0 10px 30px rgba(0, 0, 0, .6);
+    /* 玻璃面板（W6，参照原型 .prompt）：暖色半透明 + 背景模糊 + 金色内描边。
+       不支持 backdrop-filter 的设备退回到更不透明的纯色，保证文字可读。 */
+    background: linear-gradient(180deg, rgba(255, 236, 190, .14), rgba(255, 236, 190, .05)), rgba(20, 12, 6, .78);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 0 0 1px #0d0805, inset 0 0 0 1px rgba(241, 207, 120, .55), inset 0 1px 0 rgba(255, 255, 255, .18), 0 12px 28px rgba(0, 0, 0, .55);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .action-bar { background: rgba(20, 12, 6, .94); }
 }
 /* 等待中：只剩一行字，不挡牌桌 */
-.action-bar.idle { background: transparent; border-color: transparent; box-shadow: none; padding-top: 0; }
+.action-bar.idle { background: transparent; border-color: transparent; box-shadow: none; padding-top: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .action-bar.idle .ab-buttons { display: none; }
 .action-bar.idle .ab-prompt { color: var(--text-dim); font-size: 15px; }
 /* 响应倒计时：从金到暗朱渐变，最后 5 秒变成纯朱 */
-.ab-timer { width: 100%; height: 4px; border-radius: 4px; background: rgba(0, 0, 0, .45); overflow: hidden; visibility: hidden; }
+/* 倒计时圆盘（W6，参照原型 .dial）：--p 是剩余比例，由 JS 的 paintTimer() 写入；
+   圆盘中间是剩余秒数。少于 5 秒（.urgent）时圆盘变成纯朱红。 */
+.ab-head { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-width: 0; }
+.ab-timer {
+    --p: 100%;
+    flex: none;
+    width: 46px; height: 46px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: conic-gradient(#f0b84a 0 var(--p), rgba(241, 207, 120, .15) var(--p) 100%);
+    box-shadow: 0 0 0 1px #0d0805, 0 0 0 2px rgba(241, 207, 120, .35);
+    visibility: hidden;
+}
 .ab-timer.on { visibility: visible; }
-.ab-timer i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #a8452f, #f1d898); transform-origin: left; }
-.ab-timer.urgent i { background: #a8452f; }
-.ab-prompt { font-family: var(--font-kai); font-size: 17px; color: var(--paper); text-align: center; line-height: 1.4; text-shadow: 0 1px 2px #000; }
+.ab-timer .ab-sec {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: #1a0f06;
+    font: 900 17px/1 var(--font-ui); color: var(--gold-hi); font-variant-numeric: tabular-nums;
+}
+.ab-timer.urgent { background: conic-gradient(#e0523a 0 var(--p), rgba(224, 82, 58, .2) var(--p) 100%); box-shadow: 0 0 0 1px #0d0805, 0 0 10px 2px rgba(224, 82, 58, .6); }
+.ab-timer.urgent .ab-sec { color: #ff9a85; }
+.ab-prompt { flex: 0 1 auto; min-width: 0; font-family: var(--font-kai); font-size: 17px; color: var(--paper); text-align: center; line-height: 1.4; text-shadow: 0 1px 2px #000; }
+/* 多次响应（无双、决斗）的进度圆点：共 N 个，前 K-1 个实心（W6，参照原型 .pip） */
+.ab-pips { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.ab-pips .pip { display: inline-block; width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold); }
+.ab-pips .pip.on { background: radial-gradient(circle at 40% 35%, #fff4c6, #f0b84a); }
+/* 确定金色，取消深色，禁用变灰（W6，参照原型 .btn-ok / .btn-no） */
+.ab-buttons .btn.confirm {
+    font-weight: 900; color: #2a1906;
+    background: linear-gradient(180deg, #fff0b6, #e0aa44 55%, #a8711c);
+    box-shadow: 0 0 0 1px #4a2e08, inset 0 1px 0 rgba(255, 255, 255, .7), 0 6px 14px rgba(0, 0, 0, .45);
+}
+.ab-buttons .btn.confirm:disabled { filter: grayscale(.8) brightness(.6); cursor: not-allowed; }
+.ab-buttons .btn.cancel {
+    color: #ecdcb8;
+    background: linear-gradient(180deg, #4a3420, #24170c);
+    box-shadow: 0 0 0 1px #0d0805, inset 0 0 0 1px rgba(241, 207, 120, .45);
+}
 .ab-prompt em { font-style: normal; color: var(--gold-hi); }
 .ab-options { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-height: 42vh; overflow: auto; padding: 4px; }
 .ab-options:empty { display: none; }
