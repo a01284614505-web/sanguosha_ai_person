@@ -15,7 +15,7 @@ class WeiSkillHandler(FactionSkillHandler):
         return bool(self.engine.game_aborted or self.state.game_over)
 
     async def _choose_owned_card(self, chooser, owner, skill_name, prompt, *, cancelable=True,
-                                 zones=("hand", "equipment")):
+                                 zones=("hand", "equipment"), context=None):
         """Ask against a frozen hand/equipment snapshot and return its real zone.
 
         zones 限定可选的牌区（突袭只能拿手牌）。
@@ -34,6 +34,7 @@ class WeiSkillHandler(FactionSkillHandler):
             hidden_indices=[i for i, (_player, zone, _card) in enumerate(places)
                             if zone == "hand" and chooser is not owner],
             places=[(player, zone) for player, zone, _card in places],
+            context=context,
         )
         if self._finished() or result.get("status") not in ("resolved", "timeout"):
             return None
@@ -121,7 +122,8 @@ class WeiSkillHandler(FactionSkillHandler):
                         victim_names.append(victim.name)
                     if gained:
                         await self.manager.on_card_gained(player, gained, "突袭")
-                    remaining = max(0, 2 - len(gained))
+                    allowance = self.engine.phase_draw_count(player, 2)
+                    remaining = max(0, allowance - len(gained))
                     if remaining:
                         await self.manager.draw_cards(player, remaining, "突袭补摸")
                     await self.manager.announce(player, "突袭", (
@@ -144,6 +146,9 @@ class WeiSkillHandler(FactionSkillHandler):
                                               reason="裸衣", actor_id=player.id)
             ensure_flags(player)["luoyi_active"] = True
             await self.manager.on_card_gained(player, gained, "裸衣")
+            mode_bonus = self.engine.phase_draw_count(player, 0)
+            if mode_bonus:
+                await self.manager.draw_cards(player, mode_bonus, "斗地主摸牌加成")
             for card in rejected:
                 await self.manager.on_card_discarded(player, card, "裸衣")
             await self.manager.announce(player, "裸衣", f"{player.name}发动【裸衣】，获得{len(gained)}张牌，本回合杀伤害+1")
@@ -192,10 +197,13 @@ class WeiSkillHandler(FactionSkillHandler):
             owner = next((p for p in self.state.players if p.alive and self.has(p, "鬼才") and p.equipment), None)
         if not owner:
             return card
-        use = await self.manager.ask_confirm(owner, f"是否发动【鬼才】替换{player.name}的判定牌？", skill_name="鬼才", default=False)
+        judge_for = (context or {}).get("delayed_card")
+        judge_context = {"judged_player": player, "judge_type": getattr(judge_for, "name", None) or (context or {}).get("reason"),
+                         "judge_suit": card.suit, "judge_rank": card.rank}
+        use = await self.manager.ask_confirm(owner, f"是否发动【鬼才】替换{player.name}的判定牌？", skill_name="鬼才", context=judge_context, default=False)
         if self._finished() or not use:
             return card
-        selected = await self._choose_owned_card(owner, owner, "鬼才", "【鬼才】：选择一张牌替换判定牌")
+        selected = await self._choose_owned_card(owner, owner, "鬼才", "【鬼才】：选择一张牌替换判定牌", context=judge_context)
         if self._finished() or not selected:
             return card
         replacement, zone = selected
@@ -230,7 +238,7 @@ class WeiSkillHandler(FactionSkillHandler):
         return amount
 
     async def after_damage(self, source, target, amount, card=None, context=None):
-        if amount <= 0 or self._finished():
+        if amount <= 0 or self._finished() or not target.alive:
             return
 
         # These are optional triggers: each asks its owner first, then commits effects.

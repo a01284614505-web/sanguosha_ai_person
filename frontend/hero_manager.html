@@ -122,6 +122,21 @@
         .trial-result-card pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-light); margin: 0; font-size: 12px; }
         .trial-status[data-kind="error"] { color: #ff9b8e !important; }
         .trial-status[data-kind="success"] { color: #a8d6a0 !important; }
+        .certification-status { margin: 0; color: var(--text-muted); }
+        .certification-status[data-kind="stale"], .certification-status[data-kind="error"] { color: #ff9b8e; }
+        .certification-status[data-kind="current"] { color: #a8d6a0; }
+        .certification-warning { border: 1px solid rgba(201,163,90,.35); border-radius: 7px; padding: 11px 13px; color: var(--text-light); background: rgba(10,10,10,.25); }
+        .certification-list { display: grid; gap: 9px; margin-top: 12px; }
+        .certification-item { border: 1px solid var(--border-dark); border-radius: 8px; background: rgba(10,10,10,.3); }
+        .certification-item summary { cursor: pointer; padding: 11px 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; color: var(--text-light); }
+        .certification-item summary strong { color: var(--text-gold); }
+        .certification-item .cert-detail { padding: 0 13px 13px; display: grid; gap: 8px; color: var(--text-light); overflow-wrap: anywhere; }
+        .certification-item .cert-detail p { margin: 0; }
+        .cert-evidence-group { margin-top: 10px; color: var(--text-light); overflow-wrap: anywhere; }
+        .cert-evidence-list { margin: 5px 0 0; padding-left: 20px; color: var(--text-muted); }
+        .cert-evidence-list li + li { margin-top: 4px; }
+        .cert-stale-badge { color: #ff9b8e; border: 1px solid currentColor; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+        .cert-current-badge { color: #a8d6a0; border: 1px solid currentColor; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 
         @media (max-width: 768px) {
             .converter-area {
@@ -194,6 +209,15 @@
                 <span id="trialStatus" class="trial-status" role="status" aria-live="polite" style="color:var(--text-muted)">尚未运行</span>
             </div>
             <div id="trialOutput" class="trial-output" aria-live="polite"></div>
+        </section>
+
+        <section class="section" id="skillCertification" aria-labelledby="certificationTitle">
+            <div class="log-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                <div class="section-title" id="certificationTitle">📋 技能行为证据</div>
+                <button class="btn small" id="refreshCertification" type="button">刷新证据</button>
+            </div>
+            <p id="certificationStatus" class="certification-status" role="status" aria-live="polite">正在读取认证证据…</p>
+            <div id="certificationOutput" aria-live="polite"></div>
         </section>
 
         <!-- 武将包列表 -->
@@ -488,6 +512,7 @@
         refreshBackups();
     </script>
     <script src="js/skill_trial.js?v=20261019a"></script>
-    <script src="js/global_settings.js?v=20260803c"></script>
+    <script src="js/skill_certification.js?v=20261020b2"></script>
+    <script src="js/global_settings.js?v=20261020f6"></script>
 </body>
 </html>

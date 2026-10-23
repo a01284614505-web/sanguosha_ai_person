@@ -47,7 +47,9 @@ class GameClient {
 
     connect() {
         const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:8889`;
+        const httpPort = Number(window.location.port || (window.location.protocol === 'https:' ? 443 : 80));
+        const wsPort = httpPort === 80 || httpPort === 443 ? 8889 : httpPort + 1;
+        const wsUrl = `${scheme}://${window.location.hostname || '127.0.0.1'}:${wsPort}`;
         console.log('[WS] 连接:', wsUrl);
         this.ws = new WebSocket(wsUrl);
         

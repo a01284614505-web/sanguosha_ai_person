@@ -17,7 +17,20 @@ $ErrorActionPreference = 'Stop'
 $env:PYTHONIOENCODING = 'utf-8'
 
 $ProjectDir = $PSScriptRoot
-$PythonExe = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+$PythonExe = $null
+$PythonCandidates = @(
+    (Join-Path $ProjectDir '.venv\Scripts\python.exe'),
+    (Join-Path $ProjectDir 'venv\Scripts\python.exe'),
+    "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+)
+$OnPath = Get-Command python -ErrorAction SilentlyContinue
+if ($OnPath) { $PythonCandidates += $OnPath.Source }
+foreach ($Candidate in $PythonCandidates) {
+    if ($Candidate -and (Test-Path $Candidate)) {
+        $PythonExe = $Candidate
+        break
+    }
+}
 $LogFile = Join-Path $ProjectDir 'logs\runtime\server_windows.log'
 $PidFile = Join-Path $ProjectDir 'logs\game_server_windows.pid'
 
@@ -68,8 +81,8 @@ function Stop-Server {
 }
 
 function Test-Dependencies {
-    if (-not (Test-Path $PythonExe)) {
-        Write-Host "[ERR] 未找到Python：$PythonExe"
+    if (-not $PythonExe) {
+        Write-Host '[ERR] 未找到Python：请安装Python或在项目目录创建 .venv'
         exit 1
     }
     & $PythonExe -c 'import websockets, httpx' 2>$null

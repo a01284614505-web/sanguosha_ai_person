@@ -246,7 +246,8 @@ class WuSkillHandler(FactionSkillHandler):
             await self._try_qinxue(player)
 
         if phase == Phase.DRAW and self.has(player, "英姿"):
-            cards = await self.manager.draw_cards(player, 3, "英姿")
+            count = self.engine.phase_draw_count(player, 3)
+            cards = await self.manager.draw_cards(player, count, "英姿")
             await self.manager.announce(player, "英姿", f"{player.name}发动【英姿】摸{len(cards)}张牌")
             return {"skip_default": True}
 

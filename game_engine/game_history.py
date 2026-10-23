@@ -1,4 +1,4 @@
-"""Atomic, idempotent server-side match history for the five-player game."""
+"""Atomic, idempotent server-side match history across supported modes."""
 
 from __future__ import annotations
 
@@ -36,6 +36,20 @@ def _empty_profile():
 
 # 见面礼：每个档案第一次出现时送一张身份卡（老档案在下次读取时补发一次）。
 WELCOME_CARDS = 1
+MAX_AI_PLAYERS = 7
+
+
+def _default_ai_name(index):
+    return DEFAULT_AI_NAMES[index - 1] if index <= len(DEFAULT_AI_NAMES) else f"AI选手{index}"
+
+
+def _identity_won(winner, identity):
+    """Return None for non-results; team identities share one winner value."""
+    if winner == "lord":
+        return identity in ("lord", "loyalist")
+    if winner in ("rebel", "spy", "team_a", "team_b", "landlord", "farmer"):
+        return winner == identity
+    return None
 
 
 def _grant_welcome(profile):
@@ -116,17 +130,21 @@ class GameHistoryStore:
 
     @staticmethod
     def _ai_id(value):
-        return value if isinstance(value, str) and value in {f"ai_{i}" for i in range(1, 5)} else None
+        return value if isinstance(value, str) and value in {f"ai_{i}" for i in range(1, MAX_AI_PLAYERS + 1)} else None
 
-    def ai_players(self, profile_id):
-        """Return the four stable AI accounts belonging to one browser profile."""
+    def ai_players(self, profile_id, count=4):
+        """Return the stable AI accounts needed by the selected mode."""
         profile_id = validate_profile_id(profile_id)
+        count = int(count)
+        if not 1 <= count <= MAX_AI_PLAYERS:
+            raise ValueError("AI 档案数量无效")
         with self._lock:
             data = self._load()
             profile = _profile_entry(data, profile_id)
             changed = False
             result = []
-            for index, name in enumerate(DEFAULT_AI_NAMES, start=1):
+            for index in range(1, count + 1):
+                name = _default_ai_name(index)
                 key = f"ai_{index}"
                 row = profile["ai_players"].get(key)
                 if not isinstance(row, dict):
@@ -147,7 +165,7 @@ class GameHistoryStore:
             data = self._load()
             profile = _profile_entry(data, profile_id)
             if not isinstance(profile.get("ai_players", {}).get(ai_id), dict):
-                self.ai_players(profile_id)
+                self.ai_players(profile_id, count=max(4, int(ai_id.split("_")[1])))
                 data = self._load()
                 profile = data["profiles"][profile_id]
             row = profile["ai_players"][ai_id]
@@ -229,9 +247,7 @@ class GameHistoryStore:
             players = (payload.get("state") or {}).get("players") or []
             human = next((p for p in players if p.get("is_ai") is False), None)
             identity = human.get("identity") if human else None
-            player_won = None
-            if winner in ("lord", "rebel", "spy"):
-                player_won = (winner == "lord" and identity in ("lord", "loyalist")) or winner == identity
+            player_won = _identity_won(winner, identity)
             profile = _profile_entry(data, profile_id)
             profile["total_games"] += 1
             reward = None
@@ -282,14 +298,12 @@ class GameHistoryStore:
             if not cheat:
                 ai_players = profile.setdefault("ai_players", {})
                 for fallback_id, player in enumerate((p for p in players if p.get("is_ai")), start=1):
-                    if fallback_id > 4 and self._ai_id(player.get("ai_id")) is None:
-                        continue
                     ai_id = self._ai_id(player.get("ai_id")) or f"ai_{fallback_id}"
                     ai = ai_players.setdefault(ai_id, {"id": ai_id,
-                                                       "name": str(player.get("name") or DEFAULT_AI_NAMES[int(ai_id[-1]) - 1])[:16],
+                                                       "name": str(player.get("name") or _default_ai_name(fallback_id))[:16],
                                                        "stats": {}, "history": [], "equipped_title": None})
                     # 对局开始后的档案改名不能被终局的旧名字覆盖。
-                    ai_won = winner in ("lord", "rebel", "spy") and ((winner == "lord" and player.get("identity") in ("lord", "loyalist")) or winner == player.get("identity"))
+                    ai_won = _identity_won(winner, player.get("identity")) is True
                     old_title_ids = {item["id"] for item in title_view(ai.get("stats"), ai.get("equipped_title"))["earned"]}
                     ai["stats"] = update_player_stats(ai.get("stats"), player, payload, ai_won,
                                                        previous_streak=(ai.get("stats") or {}).get("win_streak", 0),

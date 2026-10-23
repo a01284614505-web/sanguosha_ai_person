@@ -91,6 +91,7 @@ def test_variable_history_budget_compresses_without_counting_stable_prefix():
     ai.session_max_l2 = 10_000
     ai.session_max_chars = 10_000_000
     ai.session_variable_max_chars = 24
+    engine._log_seq = 17
 
     ai.push_user(viewer, "甲" * 20)
     ai.push_user(viewer, "乙" * 20)
@@ -100,4 +101,6 @@ def test_variable_history_budget_compresses_without_counting_stable_prefix():
     assert session["compressions"] == 1
     assert session["messages"][:session["prefix_len"]][0]["role"] == "system"
     assert any(message["content"].startswith(ai.SUMMARY_MARK)
+               for message in session["messages"][session["prefix_len"]:])
+    assert any("截至事件序号17" in message["content"]
                for message in session["messages"][session["prefix_len"]:])

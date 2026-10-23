@@ -25,11 +25,14 @@ from game_engine.identity_system import IdentitySystem
 from game_engine.mode_registry import get_mode
 from game_engine.seats import seat_of
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
+from game_engine.recovery import RecoveryStore, dump_engine, restore_engine
+from game_engine.skill_parity_certification import REPORT_PATH, report_is_current
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
 HISTORY_PATH = Path(os.environ.get("SANGUOSHA_HISTORY_PATH") or BASE_DIR / "logs/runtime/game_history.json")
 GAME_LOG_DIR = Path(os.environ.get("SANGUOSHA_GAME_LOG_DIR") or BASE_DIR / "logs/runtime/game_logs")
+RECOVERY_DIR = Path(os.environ.get("SANGUOSHA_RECOVERY_DIR") or BASE_DIR / "logs/runtime/recovery")
 # 运行中的 GameServer；HTTP 线程只读取它，用于局内“拉取模型”沿用该 AI 已保存的 Key。
 ACTIVE_SERVER = None
 
@@ -54,7 +57,7 @@ class GameServer:
     DISCONNECT_GRACE = 300.0    # 断线后保留对局的秒数，与 5 分钟离席铁规则一致
     ANIMATION_ACK_TIMEOUT = 2.5
 
-    def __init__(self, history_path=None):
+    def __init__(self, history_path=None, recovery_path=None):
         self.engines = {}
         self.tasks = {}
         self.ws_map = {}            # ws -> game_id
@@ -62,6 +65,7 @@ class GameServer:
         self.finished = {}          # game_id -> {"profile_id", "game_end"}：无人观看时结束的结果
         self.history = GameHistoryStore(history_path or HISTORY_PATH)
         self.game_logs = GameLogStore(GAME_LOG_DIR)
+        self.recovery = RecoveryStore(recovery_path or RECOVERY_DIR)
         self.animation_waiters = {}
         self.animation_seq = 0
         self.animation_metrics = {}
@@ -213,10 +217,13 @@ class GameServer:
         gid = uuid.uuid4().hex
         cfg["profile_id"] = validate_profile_id(cfg.get("profile_id") or f"guest_{gid}")
         cfg["player"]["title"] = (self.history.profile(cfg["profile_id"]).get("titles") or {}).get("equipped")
-        roster = {row["id"]: row for row in self.history.ai_players(cfg["profile_id"])}
+        roster = {row["id"]: row for row in self.history.ai_players(
+            cfg["profile_id"], count=len(cfg["ais"]))}
         used_ai_ids = set()
         for index, ai in enumerate(cfg["ais"], start=1):
             ai_id = self.history._ai_id(ai.get("ai_id")) or f"ai_{index}"
+            if ai_id not in roster:
+                ai_id = f"ai_{index}"
             if ai_id in used_ai_ids:
                 ai_id = next((f"ai_{candidate}" for candidate in range(1, len(cfg["ais"]) + 1)
                               if f"ai_{candidate}" not in used_ai_ids), f"ai_{index}")
@@ -251,6 +258,7 @@ class GameServer:
         for event in ENGINE_EVENTS:
             engine.on(event, self._forward(gid, event))
         engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(gid))
+        engine.recovery_checkpoint = self._checkpoint_handler(gid, engine)
         await self.send(ws, {"type": OUTBOUND.GAME_CREATED, "game_id": gid,
                              "profile_id": cfg["profile_id"]})
         self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine))
@@ -265,6 +273,30 @@ class GameServer:
                                  "reason": "bad_profile", "message": "档案 ID 无效"})
             return
         engine = self.engines.get(gid)
+        if engine is None and gid not in self.finished:
+            try:
+                snapshot = self.recovery.load(gid)
+            except (FileNotFoundError, ValueError, OSError, json.JSONDecodeError):
+                snapshot = None
+            if snapshot is not None:
+                if snapshot.get("profile_id") != profile_id:
+                    await self.send(ws, {"type": OUTBOUND.RESUME_FAILED, "game_id": gid,
+                                         "reason": "forbidden", "message": "这局不属于当前浏览器档案"})
+                    return
+                try:
+                    engine = restore_engine(snapshot, MainEngine)
+                    self.engines[gid] = engine
+                    engine.animation_metrics = self.animation_metrics.setdefault(gid, {
+                        "awaited": 0, "acked": 0, "timed_out": 0, "no_viewer": 0,
+                        "total_ack_ms": 0.0, "max_ack_ms": 0.0,
+                    })
+                    for event in ENGINE_EVENTS:
+                        engine.on(event, self._forward(gid, event))
+                    engine.on(ENGINE_EVENT.CARD_ANIMATION, self._animation_handler(gid))
+                    engine.recovery_checkpoint = self._checkpoint_handler(gid, engine)
+                except (KeyError, TypeError, ValueError, OSError) as exc:
+                    logging.getLogger(__name__).error("恢复快照失败 game_%s: %s", gid, type(exc).__name__)
+                    engine = None
         if engine is None or gid in self.finished:
             # 对局已结束（包括引擎还在收尾的瞬间）：直接把结算结果交给重连的页面。
             finished = self.finished.get(gid)
@@ -309,6 +341,18 @@ class GameServer:
         notes_payload = engine.cheat_notes_payload()
         if notes_payload is not None:
             await self.send(ws, {"type": OUTBOUND.COGNITIVE_NOTES, **notes_payload})
+        if gid not in self.tasks:
+            self.tasks[gid] = asyncio.create_task(self._run_engine(gid, engine))
+
+    def _checkpoint_handler(self, gid, engine):
+        async def save_checkpoint():
+            if self.engines.get(gid) is not engine or engine._game_end_emitted:
+                return
+            # Freeze engine-owned state on its event loop; only the JSON disk write
+            # runs in a worker, so chat/events cannot mutate objects mid-encode.
+            payload = dump_engine(engine)
+            await asyncio.to_thread(self.recovery.save_payload, gid, payload)
+        return save_checkpoint
 
     async def _run_engine(self, gid, engine):
         try:
@@ -506,6 +550,10 @@ class GameServer:
                                       "game_end": message}
                 while len(self.finished) > self.FINISHED_KEEP:
                     self.finished.pop(next(iter(self.finished)))
+                try:
+                    self.recovery.delete(gid)
+                except (OSError, ValueError) as exc:
+                    logging.getLogger(__name__).error("删除恢复快照失败: %s", type(exc).__name__)
             ws = self.viewers.get(gid)
             if ws is not None:
                 await self.send(ws, message)
@@ -699,8 +747,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
         if request_path == "/api/ai-players":
             try:
                 store = ACTIVE_SERVER.history if ACTIVE_SERVER is not None else GameHistoryStore(HISTORY_PATH)
-                profile_id = validate_profile_id(parse_qs(urlsplit(self.path).query).get("profile_id", [None])[0])
-                self._send_json(200, {"success": True, "players": store.ai_players(profile_id)})
+                query = parse_qs(urlsplit(self.path).query)
+                profile_id = validate_profile_id(query.get("profile_id", [None])[0])
+                count = int((query.get("count") or [4])[0])
+                self._send_json(200, {"success": True, "players": store.ai_players(profile_id, count=count)})
             except ValueError as exc:
                 self._send_json(400, {"success": False, "message": str(exc)})
             except (OSError, RuntimeError) as exc:
@@ -741,6 +791,16 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 self._send_json(200, {"success": True, "heroes": heroes})
             except (OSError, RuntimeError, ValueError):
                 self._send_json(500, {"success": False, "message": "武将数据读取失败"})
+            return
+        if request_path == "/api/heroes/certification":
+            try:
+                report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+                current = report_is_current(report)
+                self._send_json(200, {"success": True, "current": current,
+                                      "report": report})
+            except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                self._send_json(503, {"success": False, "current": False,
+                                      "message": "技能认证报告暂不可用"})
             return
         if request_path.startswith("/api/"):
             self.send_error(404)

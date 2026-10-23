@@ -6,9 +6,9 @@
     'use strict';
     const { esc, store, toast } = SGS;
 
-    const SEAT_NAMES = ['二', '三', '四', '五'];
-    const DEFAULT_NAMES = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '酒馆常客'];
-    const MODE = '5人身份局';
+    const SEAT_NAMES = ['二', '三', '四', '五', '六', '七', '八'];
+    const DEFAULT_NAMES = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '酒馆常客', '长坂坡听书人', '江东来客', '洛阳棋友'];
+    const DEFAULT_MODE = '5人身份局';
 
     class LobbyController {
         // 大厅控制器：一个页面只有一个实例（window.lobby）。
@@ -18,6 +18,8 @@
             this.aiRoster = DEFAULT_NAMES.map((name, i) => ({ id: 'ai_' + (i + 1), name, titles: { earned: [], equipped: null } }));
             this.assignments = this.aiRoster.map(p => p.id);
             this.pendingProfileSaves = [];
+            this.modes = [];
+            this.selectedMode = DEFAULT_MODE;
             this.current = 0;
             this.prefs = Object.assign({ playerName: '', chatEnabled: true, aiSpectate: true, chatLevel: 'normal', rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
             this.dialog = document.getElementById('aiDialog');
@@ -87,6 +89,117 @@
             this.loadUserData();
             this.loadProviders();
             this.loadDecks();
+            this.loadModes();
+        }
+
+        // 模式能力只取当前 WebSocket 服务端的 server_info，不在客户端硬编码开放状态。
+        loadModes() {
+            const start = document.getElementById('startGameBtn');
+            start.disabled = true;
+            const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+            const httpPort = Number(location.port || (location.protocol === 'https:' ? 443 : 80));
+            const wsPort = httpPort === 80 || httpPort === 443 ? 8889 : httpPort + 1;
+            const socket = new WebSocket(`${scheme}://${location.hostname || '127.0.0.1'}:${wsPort}`);
+            const timeout = setTimeout(() => socket.close(), 4000);
+            socket.addEventListener('open', () => socket.send(JSON.stringify({type: 'server_info'})), {once: true});
+            socket.addEventListener('message', event => {
+                let data;
+                try { data = JSON.parse(event.data); } catch (_) { return; }
+                if (data.type !== 'server_info' || !Array.isArray(data.modes)) return;
+                clearTimeout(timeout);
+                socket.close();
+                const supported = new Set(Array.isArray(data.supported_modes) ? data.supported_modes : data.modes.map(mode => mode && mode.id));
+                this.modes = data.modes.filter(mode => mode && supported.has(mode.id) && typeof mode.id === 'string' &&
+                    Number.isInteger(mode.ai_count) && mode.ai_count >= 1 && mode.ai_count <= SEAT_NAMES.length);
+                if (!this.modes.length) return;
+                start.disabled = false;
+                if (!this.modes.some(mode => mode.id === this.selectedMode)) this.selectedMode = this.modes[0].id;
+                const required = Math.max(...this.modes.map(mode => mode.ai_count));
+                SGS.fetchJSON('/api/ai-players?profile_id=' + encodeURIComponent(this.getProfileId()) + '&count=' + required)
+                    .then(roster => {
+                        if (roster && roster.success && Array.isArray(roster.players) && roster.players.length >= required) {
+                            this.aiRoster = roster.players;
+                            this.aiConfigs = [];
+                            this.restoreAIConfigs();
+                        } else this.ensureAIRosterCapacity(required);
+                    }).catch(() => this.ensureAIRosterCapacity(required))
+                    .finally(() => { this.renderModes(); this.renderGuests(); });
+            });
+            socket.addEventListener('error', () => {
+                clearTimeout(timeout); socket.close();
+                document.getElementById('connText').textContent = '无法读取游戏模式，请检查游戏服务';
+            }, {once: true});
+        }
+
+        ensureAIRosterCapacity(count) {
+            const oldLength = this.aiRoster.length;
+            for (let i = oldLength; i < count; i++) {
+                this.aiRoster.push({id: 'ai_' + (i + 1), name: DEFAULT_NAMES[i] || ('AI' + (i + 1)),
+                    titles: {earned: [], equipped: null}, localOnly: true});
+            }
+            for (let i = this.aiConfigs.length; i < count; i++) this.aiConfigs.push(this.defaultAI(i));
+            if (!Array.isArray(this.assignments)) this.assignments = [];
+            for (let i = this.assignments.length; i < count; i++) this.assignments.push(this.aiRoster[i].id);
+        }
+
+        activeMode() { return this.modes.find(mode => mode.id === this.selectedMode) || null; }
+
+        renderModes() {
+            const box = document.getElementById('modeCards');
+            const descriptions = {
+                '5人身份局': '五人入席，主公、忠臣、反贼与内奸身份暗置。',
+                '8人身份局': '八人军争，身份暗置，七席 AI 与你同桌。',
+                '2v2': '四人公开队伍对抗，你与 AI 队友迎战对方。',
+                '斗地主': '地主坐首席、体力 +1；每个摸牌阶段多摸 1 张。两名农民公开同队对抗地主。'
+            };
+            box.replaceChildren();
+            this.modes.forEach(mode => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'frame locked-mode mode-choice' + (mode.id === this.selectedMode ? ' selected' : '');
+                button.setAttribute('aria-pressed', String(mode.id === this.selectedMode));
+                button.dataset.mode = mode.id;
+                const title = document.createElement('span');
+                title.className = 'brush';
+                title.textContent = mode.id;
+                const note = document.createElement('small');
+                note.textContent = (mode.player_count || mode.ai_count + 1) + ' 人 · ' + mode.ai_count + ' 个 AI';
+                const desc = document.createElement('small');
+                desc.textContent = descriptions[mode.id] || (mode.identities_public ? '公开队伍对抗。' : '身份信息按服务端规则处理。');
+                button.append(title, note, desc);
+                button.addEventListener('click', () => {
+                    this.selectedMode = mode.id;
+                    this.renderModes();
+                    this.renderGuests();
+                });
+                box.appendChild(button);
+            });
+            const mode = this.activeMode();
+            if (mode) {
+                document.getElementById('modeName').textContent = mode.id;
+                document.getElementById('modeDescription').textContent = descriptions[mode.id] ||
+                    `${mode.player_count} 人入席，身份与队伍信息按服务端规则显示。`;
+                const identityMode = mode.identities_public === false && mode.victory === 'identity';
+                const lineup = document.getElementById('identityLineup');
+                lineup.hidden = !identityMode && mode.identities_public !== true;
+                lineup.setAttribute('aria-label', mode.identities_public ? '公开队伍组成' : '身份构成');
+                lineup.replaceChildren();
+                const pool = Array.isArray(mode.identity_pool) ? mode.identity_pool : [];
+                pool.forEach(identity => {
+                    const badge = document.createElement('span');
+                    const info = SGS.IDENTITY[identity];
+                    badge.className = 'seal ' + (info ? 'id-' + identity : 'id-unknown');
+                    badge.textContent = info ? info.short : '?';
+                    badge.title = info ? info.name : identity;
+                    lineup.appendChild(badge);
+                });
+                document.getElementById('identityCardSection').hidden = !identityMode || this.cardCount < 1;
+                if (!identityMode) {
+                    document.getElementById('useIdentityCard').checked = false;
+                    document.getElementById('identitySelect').disabled = true;
+                }
+                this.renderIdentityCard();
+            }
         }
 
         // 保存“称呼 / 席间聊天 / 记住 Key”等偏好到 localStorage['lobbyPrefs']。
@@ -171,10 +284,13 @@
             const profileSaved = store.get('lobbyAIProfiles', {});
             const migrateLegacy = !store.get('lobbyAIMigrated', false) && Array.isArray(saved);
             const migrations = [];
+            const required = Math.max(4, this.modes.reduce((n, mode) => Math.max(n, mode.ai_count), 0));
+            this.ensureAIRosterCapacity(required);
             this.assignments = store.get('lobbyAISeats', this.aiRoster.map(p => p.id));
-            if (!Array.isArray(this.assignments) || this.assignments.length !== 4 || this.assignments.some(id => !this.aiRoster.some(p => p.id === id))) {
+            if (!Array.isArray(this.assignments) || this.assignments.length < 4 || this.assignments.some(id => !this.aiRoster.some(p => p.id === id))) {
                 this.assignments = this.aiRoster.map(p => p.id);
             }
+            for (let i = this.assignments.length; i < required; i++) this.assignments.push(this.aiRoster[i].id);
             this.aiConfigs = this.aiRoster.map((profile, i) => {
                 const base = this.defaultAI(i);
                 const old = (profileSaved && profileSaved[profile.id]) || (Array.isArray(saved) && saved[i]) || {};
@@ -183,7 +299,7 @@
                 if (!this.providers.some(p => p.value === merged.provider)) merged.provider = base.provider;
                 if (migrateLegacy && old.name) {
                     profile.name = String(old.name).slice(0, 16);
-                    const migration = SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) }).then(() => true).catch(() => false);
+                    const migration = profile.localOnly ? Promise.resolve(true) : SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) }).then(() => true).catch(() => false);
                     migrations.push(migration);
                     this.pendingProfileSaves.push(migration);
                 }
@@ -214,12 +330,15 @@
         // 渲染“座上宾”四张卡片：显示称呼、提供方/模型，以及是“模型对弈”还是“规则 AI”。
         renderGuests() {
             const row = document.getElementById('guestRow');
-            row.innerHTML = this.assignments.map((aiId, i) => {
+            const active = this.activeMode();
+            const aiCount = active ? active.ai_count : 4;
+            this.ensureAIRosterCapacity(aiCount);
+            row.innerHTML = this.assignments.slice(0, aiCount).map((aiId, i) => {
                 const a = this.aiConfigs.find(item => item.aiId === aiId) || this.aiConfigs[i];
                 const provider = this.providers.find(p => p.value === a.provider);
                 const hasKey = !!(a.apiKey && a.apiKey.trim());
                 return '<div class="frame guest"><select class="ai-player-select" data-seat="' + i + '" aria-label="选择' + SEAT_NAMES[i] + '号位 AI 选手">' + this.aiRoster.map(player => '<option value="' + esc(player.id) + '"' + (player.id === aiId ? ' selected' : '') + '>' + esc(player.name) + '</option>').join('') + '</select><button type="button" class="guest-config" data-ai="' + i + '" aria-label="配置' + esc(a.name) + '">' +
-                    '<span class="seat-no">' + SEAT_NAMES[i] + '</span>' +
+                '<span class="seat-no">' + SEAT_NAMES[i] + '</span>' +
                     '<span><strong>' + esc(a.name) + '</strong>' +
                     '<small>' + esc(provider ? provider.name : a.provider) + ' · ' + esc(a.model || '默认模型') + '</small>' +
                     '<span class="brain' + (hasKey ? ' model' : '') + '"><i></i>' + (hasKey ? '模型对弈' : '规则 AI') + '</span>' + (a.title ? '<span class="title-badge title-' + esc(a.title.tier || '普通') + '">' + esc(a.title.name) + '</span>' : '') + '</span>' +
@@ -248,7 +367,8 @@
         // 弹窗顶部的席位标签，以及“同步给”勾选框（不包括当前席）。
         renderTabs() {
             const tabs = document.getElementById('aiTabs');
-            tabs.innerHTML = this.aiConfigs.map((a, i) =>
+            const activeCount = this.activeMode() ? this.activeMode().ai_count : 4;
+            tabs.innerHTML = this.aiConfigs.slice(0, activeCount).map((a, i) =>
                 '<button type="button" role="tab" aria-selected="' + (i === this.current) + '" data-tab="' + i + '">' + SEAT_NAMES[i] + '号位 · ' + esc(a.name) + '</button>').join('');
             tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
                 this.saveCurrent();
@@ -257,7 +377,7 @@
                 this.fillForm();
             }));
             const targets = document.getElementById('syncTargets');
-            targets.innerHTML = this.aiConfigs.map((a, i) => i === this.current ? '' :
+            targets.innerHTML = this.aiConfigs.slice(0, activeCount).map((a, i) => i === this.current ? '' :
                 '<label class="check"><input type="checkbox" data-sync-to="' + i + '"> ' + SEAT_NAMES[i] + '号位</label>').join('');
         }
 
@@ -291,7 +411,7 @@
                 title: this.aiConfigs[this.current].title
             };
             const profile = this.aiRoster.find(p => p.id === this.aiConfigs[this.current].aiId);
-            if (profile && profile.name !== this.aiConfigs[this.current].name) {
+            if (profile && profile.name !== this.aiConfigs[this.current].name && !profile.localOnly) {
                 profile.name = this.aiConfigs[this.current].name;
                 const pendingSave = SGS.fetchJSON('/api/ai-players/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: this.getProfileId(), ai_id: profile.id, name: profile.name }) })
                     .then(() => true)
@@ -328,7 +448,9 @@
 
         // 整理成服务器 normalize_config 认识的格式（apiUrl / apiKey 会在引擎侧规范化）。
         collectAIConfigs() {
-            return this.assignments.map(aiId => {
+            const active = this.activeMode();
+            const aiCount = active ? active.ai_count : 4;
+            return this.assignments.slice(0, aiCount).map(aiId => {
                 const a = this.aiConfigs.find(item => item.aiId === aiId) || {};
                 return {
                 name: a.name,
@@ -358,7 +480,7 @@
             const deckId = document.getElementById('deckSelect').value;
             const first = this.providers.find(p => p.value === (ais[0] && ais[0].provider));
             const config = {
-                mode: MODE,
+                mode: this.selectedMode,
                 player_name: document.getElementById('playerName').value.trim() || '无名客',
                 ais: ais,
                 hero_pool: document.getElementById('heroPool').value,
@@ -381,7 +503,9 @@
                 config.deck_id = deckId;
                 try { localStorage.setItem('active_deck', deckId); } catch (_) {}
             }
-            if (document.getElementById('useIdentityCard').checked) {
+            const active = this.activeMode();
+            const identityMode = !active || (active.identities_public === false && active.victory === 'identity');
+            if (identityMode && document.getElementById('useIdentityCard').checked) {
                 const identity = document.getElementById('identitySelect').value;
                 if (!identity) { toast('请选择要使用的身份', { bad: true }); return; }
                 config.identity_card = { use: true, identity: identity };

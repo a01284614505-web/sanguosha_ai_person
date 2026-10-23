@@ -52,6 +52,8 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
     cfg = copy.deepcopy(raw_config)
     cfg.setdefault("mode", "5人身份局")
     mode = get_mode(cfg["mode"])
+    if mode.assignment == "fixed" and (cfg.get("identity_card") or {}).get("use"):
+        raise ValueError(f"{mode.mode_id}不支持身份卡")
     ais = cfg.get("ais") or []
     if len(ais) != mode.ai_count:
         raise ValueError(f"{mode.mode_id}需要{mode.ai_count}个AI，当前收到{len(ais)}个")

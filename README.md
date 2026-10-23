@@ -4,7 +4,7 @@
 
 ## 项目状态
 
-最近批次（2026-10-18）：Stage 8 武将 DSL 与导入管线已实现，验收记录见 `logs/handover/`。
+当前整合分支正在完成 Stage 8 后续 A–F 计划；已实现范围、证据和剩余项见 [最新台账](logs/reports/20261020_remaining_work_ledger.md)。真实模型接口及 Windows/Android 实机验收另行进行。
 
 - ✅ 引擎与规则：5 人身份局完整流程；27 将 / 54 技能；标准牌堆 108 张 / 军争 53 张 / 合并 161 张可切换
 - ✅ 真人交互：弃牌阶段自己选；过河拆桥 / 顺手牵羊 / 五谷丰登由你选牌（他人手牌隐藏、装备与判定区明牌，被拆的牌明牌展示）
@@ -31,7 +31,8 @@ powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action stop
 
 ```bash
 pip install -r requirements.txt
-python -u game_server.py
+./start.sh --check  # 仅核对依赖，不启动服务
+./start.sh
 ```
 
 浏览器打开 `http://localhost:8888`（HTTP 8888 提供页面，WebSocket 8889 负责对局）。

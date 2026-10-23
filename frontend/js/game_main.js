@@ -59,7 +59,7 @@
     /** 读取开局配置；缺武将或 AI 数量不对时返回 null（页面会提示回大厅）。 */
     function loadConfig() {
         const cfg = store.sget('gameConfig', null) || store.get('gameConfig', null);
-        if (!cfg || !cfg.selected_hero || !cfg.selected_hero.id || !Array.isArray(cfg.ais) || cfg.ais.length !== 4) return null;
+        if (!cfg || !cfg.selected_hero || !cfg.selected_hero.id || !Array.isArray(cfg.ais) || cfg.ais.length < 1) return null;
         return cfg;
     }
 
@@ -1549,6 +1549,9 @@
 
     /** 各类事件分发。 */
     gameClient.onEventNotification = function (data) {
+        // Optional TTS receives only the event kinds and public message text approved by
+        // SpeechAnnouncer. It is deliberately fire-and-forget and never delays UI/gameplay.
+        if (window.SpeechAnnouncer) window.SpeechAnnouncer.speakPublicEvent(data);
         switch (data.event_kind) {
             case 'card_to_discard':
                 ChatPanel.addLog(data.message || ((data.actor_name || '角色') + '使用' + SGS.bracketName(data.card || { name: data.card_name })));
@@ -1709,9 +1712,10 @@
         const state = data.state || G.state || {};
         if (data.state) { G.state = data.state; G.players = data.state.players || G.players; syncShownPool(data.state); }
         const winner = data.winner;
-        const decided = ['lord', 'rebel', 'spy'].includes(winner);
+        const decided = ['lord', 'rebel', 'spy', 'team_a', 'team_b', 'landlord', 'farmer'].includes(winner);
         const result = {
             winner: winner,
+            mode: state.mode || '',
             message: data.message,
             total_rounds: state.round || 0,
             duration: data.duration || 0,
@@ -1739,7 +1743,9 @@
         verdict.textContent = decided ? (result.player_won ? '胜' : '败') : '终';
         document.getElementById('endTitle').textContent = decided ? (result.player_won ? '旗开得胜' : '惜败一局') : '对局结束';
         const winText = SGS.WINNER[winner] ? (decided ? SGS.WINNER[winner] + '获胜' : '') : '';
-        document.getElementById('endMessage').textContent = [winText, winner === 'aborted' || winner === 'draw' ? data.message : ''].filter(Boolean).join('。') || data.message || '';
+        const publicTeamLabel = ['2v2', '斗地主'].includes(state.mode) ? state.mode + ' · ' : '';
+        document.getElementById('endMessage').textContent = [publicTeamLabel + winText,
+            winner === 'aborted' || winner === 'draw' ? data.message : ''].filter(Boolean).join('。') || data.message || '';
         document.getElementById('endResult').hidden = false;
         ChatPanel.addLog(data.message || '对局结束', 'important');
         sfx(decided ? (result.player_won ? 'win' : 'lose') : 'click');

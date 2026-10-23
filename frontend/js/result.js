@@ -16,13 +16,13 @@
 
     // 胜负印 + 标题 + 轮数/用时/身份 + MVP + 统计表 + 身份卡奖励。
     function render(r) {
-        const decided = ['lord', 'rebel', 'spy'].includes(r.winner);
+        const decided = ['lord', 'rebel', 'spy', 'team_a', 'team_b', 'landlord', 'farmer'].includes(r.winner);
         const verdict = document.getElementById('resultVerdict');
         verdict.className = 'verdict ' + (decided ? (r.player_won ? 'win' : 'lose') : 'neutral');
         verdict.textContent = decided ? (r.player_won ? '胜' : '败') : (r.winner === 'draw' ? '和' : '终');
         document.getElementById('resultTitle').textContent = decided ? (r.player_won ? '旗开得胜' : '惜败一局') : (r.winner === 'draw' ? '握手言和' : '对局终止');
         document.getElementById('resultSubtitle').textContent = decided
-            ? SGS.WINNER[r.winner] + '获胜'
+            ? SGS.WINNER[r.winner] + '获胜' + (r.mode === '2v2' || r.mode === '斗地主' ? '（' + r.mode + '公开队伍）' : '')
             : (r.message || '本局已结束');
         if (r.cheat) document.getElementById('resultSubtitle').textContent += '（作弊局，不计连胜与身份卡）';
         const awardNames = (r.ai_title_awards || []).map(item => item.title && item.title.name).filter(Boolean);
@@ -31,6 +31,7 @@
         document.getElementById('totalRounds').textContent = r.total_rounds || 0;
         document.getElementById('gameDuration').textContent = formatDuration(r.duration);
         document.getElementById('yourIdentity').textContent = identityName(r.player_identity);
+        document.getElementById('yourIdentityLabel').textContent = ['2v2', '斗地主'].includes(r.mode) ? '你的队伍' : '你的身份';
         if (r.profile) {
             const profile = document.getElementById('profileSummary');
             profile.hidden = false;

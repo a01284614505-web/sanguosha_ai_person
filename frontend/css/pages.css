@@ -132,7 +132,12 @@
 
 /* 其他模式 */
 .more-modes { margin-top: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.mode-choice { appearance: none; width: 100%; text-align: left; color: var(--text-light); cursor: pointer; padding: 16px; min-height: 118px; display: grid; align-content: start; gap: 6px; opacity: 1; }
+.mode-choice.selected { border-color: var(--text-gold); box-shadow: 0 0 0 1px var(--text-gold), 0 8px 24px rgba(0,0,0,.22); }
+.mode-choice small { color: var(--text-dim); line-height: 1.45; }
 .locked-mode { padding: 14px 16px; display: flex; align-items: center; gap: 12px; opacity: .62; }
+#modeCards .mode-choice { opacity: 1; }
+#modeCards .mode-choice .brush { color: var(--text-gold); }
 .locked-mode .brush { font-size: 26px; color: var(--text-dim); }
 .locked-mode small { margin-left: auto; font-size: 12px; color: var(--text-faint); border: 1px solid var(--field-line); padding: 1px 8px; border-radius: 10px; }
 
@@ -341,6 +346,7 @@ pre.preview { margin: 0; padding: 10px; border-radius: 6px; background: var(--in
     .guest .edit { display: none; }
     .ai-player-list { grid-template-columns: 1fr; }
     .more-modes { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    #modeCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .locked-mode { flex-direction: column; gap: 4px; padding: 10px 6px; }
     .locked-mode .brush { font-size: 18px; }
     .locked-mode small { margin-left: 0; }

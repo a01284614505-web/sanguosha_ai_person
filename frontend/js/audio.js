@@ -73,6 +73,62 @@ if (typeof window !== 'undefined') {
     window.audioManager = audioManager;
 }
 
+// Optional, device-local narration of explicitly public game events. This never
+// receives chat, prompts, private cards, AI thoughts, or decision traces.
+(function (global) {
+    'use strict';
+    const PUBLIC_EVENT_KINDS = new Set([
+        'card_to_discard', 'judge', 'draw', 'phase', 'skill_activation', 'skill_decision', 'dying_rescue'
+    ]);
+    const PHASE_NAMES = {prepare: '准备阶段', judge: '判定阶段', draw: '摸牌阶段', play: '出牌阶段', discard: '弃牌阶段', end: '结束阶段'};
+
+    function enabled() {
+        try {
+            const settings = global.getGlobalSettings ? global.getGlobalSettings() :
+                JSON.parse(localStorage.getItem('globalSettings') || '{}');
+            return settings.speech_enabled === true;
+        } catch (_) { return false; }
+    }
+
+    function stop() {
+        try {
+            if (global.speechSynthesis && typeof global.speechSynthesis.cancel === 'function') global.speechSynthesis.cancel();
+        } catch (_) { /* Speech is an optional enhancement. */ }
+    }
+
+    function speakPublicEvent(event) {
+        if (!enabled() || !event || !PUBLIC_EVENT_KINDS.has(event.event_kind)) return false;
+        let sourceText = event.message || '';
+        if (!sourceText && event.event_kind === 'phase') {
+            const phase = PHASE_NAMES[event.phase];
+            if (phase && event.player_name) sourceText = event.player_name + (event.skipped ? '跳过' : '进入') + phase;
+        }
+        const text = String(sourceText).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+        if (!text) return false;
+        try {
+            const speech = global.speechSynthesis;
+            const Utterance = global.SpeechSynthesisUtterance;
+            if (!speech || typeof speech.speak !== 'function' || typeof Utterance !== 'function') return false;
+            // Drop stale narration instead of building a queue that could lag behind play.
+            speech.cancel();
+            const utterance = new Utterance(text);
+            utterance.lang = 'zh-CN';
+            const voices = typeof speech.getVoices === 'function' ? speech.getVoices() : [];
+            const chineseVoice = voices.find(voice => /^zh(?:-|$)/i.test(voice.lang || ''));
+            if (chineseVoice) utterance.voice = chineseVoice;
+            utterance.onerror = () => {};
+            speech.speak(utterance);
+            return true;
+        } catch (_) { return false; }
+    }
+
+    global.SpeechAnnouncer = { speakPublicEvent, stop, isSupported: () =>
+        !!(global.speechSynthesis && typeof global.SpeechSynthesisUtterance === 'function') };
+    global.addEventListener('global-settings-changed', event => {
+        if (!event.detail || event.detail.speech_enabled !== true) stop();
+    });
+})(typeof window !== 'undefined' ? window : globalThis);
+
 // 预加载音效
 audioManager.load('card', 'assets/audio/discard.mp3');
 audioManager.load('damage', 'assets/audio/damage.mp3');

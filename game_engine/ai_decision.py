@@ -324,7 +324,10 @@ class AIDecision:
         )
         merged = (old_summary + " / " + digest) if old_summary else digest
         # 截断保留**最近**的内容，且标记必须留在最前面，否则下次识别不出这是摘要。
-        summary = {"role": "user", "content": self.SUMMARY_MARK + merged[-1500:]}
+        # 摘要保留压缩边界，便于模型和离线诊断区分旧事件与最新权威快照。
+        event_seq = int(getattr(self.engine, "_log_seq", 0))
+        summary = {"role": "user", "content":
+                   f"{self.SUMMARY_MARK}【截至事件序号{event_seq}】" + merged[-1500:]}
         session["messages"] = session["messages"][:base] + [summary] + recent
         session["has_summary"] = True
         session["l2_count"] = len(recent)
@@ -877,6 +880,20 @@ class AIDecision:
             )
             if selected:
                 break
+        ablation = self.engine.game_config.get("ai_ablation") or {}
+        skill_strategy = ablation.get("skill_strategy", True) is not False
+        if not selected and skill_strategy and player:
+            # 制衡只换掉确定低价值的手牌；苦肉需要可承受失血并有可弃的低价值牌。
+            low_value = [i for i, card in enumerate(player.hand)
+                         if CARD_TABLE.get(card.name) is not None
+                         and CARD_TABLE[card.name].discard_keep_score < 50]
+            if low_value:
+                selected = next((a for a in playable if a.get("type") == "use_skill"
+                                 and a.get("skill_name") == "制衡"), None)
+            if not selected and low_value and player.hp >= 3:
+                selected = next((a for a in playable if a.get("type") == "use_skill"
+                                 and a.get("skill_name") == "苦肉"
+                                 and (a.get("card_indices") or [None])[0] in low_value), None)
         if not selected:
             skill_priority = ["替身", "仁德", "集智", "武圣", "龙胆", "激将", "义绝"]
             for skill_name in skill_priority:
@@ -887,7 +904,8 @@ class AIDecision:
             # 军争重铸：没有更优先的出牌时，把铁索连环重铸成新牌（规则 AI 不会用连环做配合，持有无益）。
             selected = next((a for a in playable if a.get("type") == "recast"), None)
         if not selected and playable:
-            selected = playable[0]
+            safe = (a for a in playable if a.get("skill_name") not in {"制衡", "苦肉"}) if skill_strategy else iter(playable)
+            selected = next(safe, None)
         if not selected:
             selected = next((a for a in available_actions if a.get("type") == "end_phase"), available_actions[-1])
 
@@ -1017,6 +1035,52 @@ class AIDecision:
     # 对目标有益的锦囊：规则 AI 不会用无懈去拦。
     BENEFICIAL_TRICKS = frozenset({"桃园结义", "五谷丰登", "无中生有"})
 
+    @staticmethod
+    def _judgement_good(judge_type, suit, rank):
+        """Only the three delayed cards have a stable rule-AI replacement policy."""
+        if judge_type == "乐不思蜀":
+            return suit == "heart"
+        if judge_type == "兵粮寸断":
+            return suit == "club"
+        if judge_type == "闪电":
+            return not (suit == "spade" and isinstance(rank, int) and 2 <= rank <= 9)
+        return None
+
+    def _judgement_desired(self, player, context):
+        judged = context.get("judged_player") or {}
+        judged_id = judged.get("id") if isinstance(judged, dict) else getattr(judged, "id", None)
+        if judged_id == player.id:
+            return True
+        identity = judged.get("identity") if isinstance(judged, dict) else (
+            getattr(judged, "identity", None) if getattr(judged, "identity_revealed", False) else None)
+        if player.identity in {"lord", "loyalist"}:
+            if identity in {"lord", "loyalist"}:
+                return True
+            if identity in {"rebel", "spy"}:
+                return False
+        elif player.identity == "rebel":
+            if identity == "rebel":
+                return True
+            if identity in {"lord", "loyalist"}:
+                return False
+        return None
+
+    def _judge_replacements(self, player, skill_name, context, cards):
+        desired = self._judgement_desired(player, context)
+        current = self._judgement_good(context.get("judge_type"), context.get("judge_suit"), context.get("judge_rank"))
+        if desired is None or current is None or current == desired:
+            return []
+        ranked = []
+        for index, card in enumerate(cards):
+            if card is None or (skill_name == "鬼道" and card.suit not in {"spade", "club"}):
+                continue
+            if self._judgement_good(context.get("judge_type"), card.suit, card.rank) != desired:
+                continue
+            score = CARD_TABLE.get(card.name).discard_keep_score if card.name in CARD_TABLE else 20
+            if score < 80:
+                ranked.append((score, index))
+        return [index for _, index in sorted(ranked)]
+
     def simple_response_decision(self, player, request: Dict) -> Optional[int]:
         """规则脚本兜底：不调用任何 API，返回候选索引；None 表示不响应。
 
@@ -1100,6 +1164,15 @@ class AIDecision:
                 friendly = ({"lord", "loyalist"} if player.identity in {"lord", "loyalist"}
                             else {player.identity})
                 return [0] if source_identity in friendly else [1]
+            if skill_strategy and skill_name == "清俭":
+                known_friends = ({"lord", "loyalist"} if player.identity in {"lord", "loyalist"}
+                                 else {player.identity})
+                return [0] if any(other.alive and other.id != player.id
+                                  and other.identity_revealed and other.identity in known_friends
+                                  for other in self.engine.game_state.players) else [1]
+            if skill_strategy and skill_name in {"鬼才", "鬼道"}:
+                own_cards = list(player.hand) + list(player.equipment.values())
+                return [0] if self._judge_replacements(player, skill_name, context, own_cards) else [1]
             return [0] if default else [1]
 
         if kind == "choose_option":
@@ -1110,6 +1183,8 @@ class AIDecision:
             cand_ids = request.get("candidate_ids") or []
             all_players = (request.get("context") or {}).get("all_players") or []
             intent = (request.get("context") or {}).get("intent", "harm")
+            if skill_strategy and request.get("skill_name") in {"清俭", "遗计"}:
+                intent = "benefit"
             def public_field(candidate, key):
                 return candidate.get(key) if isinstance(candidate, dict) else getattr(candidate, key, None)
 
@@ -1152,6 +1227,10 @@ class AIDecision:
             max_n = request.get("max_n", 1)
             hidden = set(request.get("hidden_indices") or [])
             intent = (request.get("context") or {}).get("intent", "discard")
+            if skill_strategy and request.get("skill_name") in {"鬼才", "鬼道"}:
+                replacement = self._judge_replacements(
+                    player, request["skill_name"], request.get("context") or {}, cand_cards)
+                return replacement[:1]
 
             def card_rank(item):
                 index, card = item
@@ -1163,6 +1242,14 @@ class AIDecision:
                 return (-score if intent in ("gain", "obtain", "benefit") else score, index)
 
             indexed = sorted(enumerate(cand_cards), key=card_rank)
+            if skill_strategy and request.get("skill_name") in {"制衡", "清俭"}:
+                # 两项均为可取消的资源选择，避免默认 max_n 导致整手高价值牌流失。
+                cheap = [i for i, card in indexed if i not in hidden and card is not None
+                         and card.name in CARD_TABLE
+                         and CARD_TABLE[card.name].discard_keep_score < 50]
+                if cheap:
+                    return cheap[:min_n]
+                return [] if request.get("cancelable", True) else [i for i, _ in indexed[:min_n]]
             return [i for i, _ in indexed[:max_n]] if len(indexed) >= min_n else list(range(len(indexed)))
 
         return []

@@ -137,6 +137,9 @@ class MainEngine:
         self._request_outcomes: Dict[str, str] = {}
         self.game_id = uuid.uuid4().hex
         self._request_seq = 0
+        # Per-process request namespace.  It is intentionally absent from recovery
+        # snapshots, so a restarted process can never accept an old browser request.
+        self._request_epoch = uuid.uuid4().hex
         self._effect_seq = 0
         self.game_log: List[Dict] = []
         # 按座位与调用类型累计的 token 消耗，结构见 token_usage.py。
@@ -168,6 +171,10 @@ class MainEngine:
         self.spy_duel_lord = False
         self._spy_duel_lord_ready = False
         self._started_at: Any = None
+        # Server-supplied async hook.  It persists only completed safe points;
+        # runtime tasks/Futures remain process-local.
+        self.recovery_checkpoint = None
+        self._restored_from_checkpoint = False
         # 大厅「席间聊天」开关：关闭时 AI 不发聊天消息（真人发言仍会回显）。
         chat_cfg = game_config.get("chat")
         self.ai_spectate = game_config.get("ai_spectate", True) is True
@@ -276,6 +283,13 @@ class MainEngine:
                     "（击杀奖励）" if reason == "kill_rebel_reward" else f"（{reason}）"),
             )
         return drawn
+
+    def phase_draw_count(self, player: Player, base: int = 2) -> int:
+        """Apply the current mode's draw-phase allowance to a normal or skill draw."""
+        mode = get_mode(self.game_state.mode)
+        bonus = (mode.draw_bonus_per_phase
+                 if player.identity == mode.draw_bonus_identity else 0)
+        return max(0, int(base) + int(bonus))
 
     async def announce_judge(self, player: Player, card, judge_for: str, effective=None, result_text: str = ""):
         """判定结果通知：前端在牌桌中央展示判定牌与“生效/失效”，并等待动画 ACK 后再继续结算。
@@ -470,30 +484,34 @@ class MainEngine:
             return self.game_state.winner
         logger.info("\n🎮 游戏开始！\n")
         self._started_at = self.time_source()
-        assigned = self.identity_system.assign_identities(
-            self.game_state.players,
-            self.game_state.mode,
-            self.game_config.get("identity_card") or {},
-        )
-        if not assigned:
-            raise ValueError(f"当前引擎暂不支持该模式或人数不匹配: {self.game_state.mode}/{len(self.game_state.players)}人")
+        if not self._restored_from_checkpoint:
+            assigned = self.identity_system.assign_identities(
+                self.game_state.players,
+                self.game_state.mode,
+                self.game_config.get("identity_card") or {},
+            )
+            if not assigned:
+                raise ValueError(f"当前引擎暂不支持该模式或人数不匹配: {self.game_state.mode}/{len(self.game_state.players)}人")
 
-        mode = get_mode(self.game_state.mode)
-        lord = assigned[mode.first_player_identity]
-        lord.max_hp += mode.lord_hp_bonus
-        lord.hp += mode.lord_hp_bonus
-        self.game_state.current_player_index = self.game_state.players.index(lord)
-        self.game_state.current_player = lord
-        self.game_state.round_anchor_index = self.game_state.current_player_index
+            mode = get_mode(self.game_state.mode)
+            first_player = assigned["first_player"]
+            first_player.max_hp += mode.lord_hp_bonus
+            first_player.hp += mode.lord_hp_bonus
+            self.game_state.current_player_index = self.game_state.players.index(first_player)
+            self.game_state.current_player = first_player
+            self.game_state.round_anchor_index = self.game_state.current_player_index
 
-        for p in self.game_state.players:
-            logger.info(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
+            for p in self.game_state.players:
+                logger.info(f"  {p.name}: {p.identity} {'(公开)' if p.identity_revealed else '(隐藏)'}")
 
-        for p in self.game_state.players:
-            if p.is_ai and self._has_model_key(p):
-                self.notes.ensure(p.id)
-        self._notes_round = self.game_state.round_number
+            for p in self.game_state.players:
+                if p.is_ai and self._has_model_key(p):
+                    self.notes.ensure(p.id)
+            self._notes_round = self.game_state.round_number
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+        if self.recovery_checkpoint is not None:
+            await self.recovery_checkpoint()
 
         self._watchdog_task = asyncio.create_task(self._idle_watchdog())
         self.chat_director.start()
@@ -541,6 +559,8 @@ class MainEngine:
                     self.game_state.current_phase = Phase.PREPARE
                 else:
                     self.game_state.next_turn()
+                if self.recovery_checkpoint is not None:
+                    await self.recovery_checkpoint()
                 await asyncio.sleep(float(self.game_config.get("turn_delay", 0.05)))
         finally:
             if self._watchdog_task is not None:
@@ -860,6 +880,18 @@ class MainEngine:
     def on_player_death(self, player: Player):
         """CardSystem 在玩家阵亡（alive=False）后调用：冻结其笔记，并让其他 AI 下次出牌时复核。"""
         player.flags.setdefault("death_round", int(getattr(self.game_state, "round_number", 0) or 0))
+        # Team modes may continue after the original first seat dies.  Move the
+        # round anchor clockwise to the next survivor so round-scoped skills and
+        # notes keep advancing; identity modes normally end when their lord dies.
+        players = self.game_state.players
+        dead_index = players.index(player)
+        round_anchor = getattr(self.game_state, "round_anchor_index", None)
+        if dead_index == round_anchor and any(p.alive for p in players):
+            for offset in range(1, len(players) + 1):
+                candidate = (dead_index + offset) % len(players)
+                if players[candidate].alive:
+                    self.game_state.round_anchor_index = candidate
+                    break
         if player.identity == "lord":
             survivors = [p for p in self.game_state.players if p.alive]
             self.spy_duel_lord = (self._spy_duel_lord_ready and len(survivors) == 1
@@ -1060,7 +1092,7 @@ class MainEngine:
 
     def _next_request_id(self) -> str:
         self._request_seq += 1
-        return f"{self.game_id}:resp{self._request_seq}"
+        return f"{self.game_id}:{self._request_epoch}:resp{self._request_seq}"
 
     def _prepare_request(self, player: Player, request: Dict, request_id: str) -> Dict:
         """Freeze the server-side request envelope and candidate version."""

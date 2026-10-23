@@ -92,7 +92,9 @@ def test_guicai_dsl_matches_native_judgment_replacement_and_discard():
             native = WeiSkillHandler(engine.skill_manager)
             native.has = lambda player, skill: player is owner and skill == "鬼才"
             native.manager.ask_confirm = AsyncMock(return_value=True)
-            native.manager.ask_choose_cards = AsyncMock(return_value=[replacement])
+            native.manager.ask_choose_cards_result = AsyncMock(return_value={
+                "status": "resolved", "cards": [replacement],
+            })
             result = asyncio.run(native.before_judge(judged_player, old, {"reason": "parity"}))
         assert result is replacement
         outcomes.append(zones(engine))

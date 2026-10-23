@@ -19,6 +19,9 @@
         .skin-card .skin-meta { color:var(--text-dim); font-size:12px; overflow-wrap:anywhere; }
         .skin-actions { display:flex; gap:8px; flex-wrap:wrap; }
         .skin-status { min-height:1.5em; }
+        .source-catalog { display:grid; gap:12px; }
+        .source-catalog select { width:100%; }
+        .source-note { font-size:13px; line-height:1.55; }
         @media(max-width:680px) { .skin-form { grid-template-columns:1fr; } }
     </style>
 </head>
@@ -43,6 +46,15 @@
                 </div>
             </div>
         </section>
+        <section class="frame log-panel source-catalog" aria-labelledby="sourceCatalogTitle">
+            <h2 id="sourceCatalogTitle" class="section-title">Noname 历史原画候选</h2>
+            <p class="muted source-note">固定历史提交中有本项目 27 名武将对应的 307 张候选图。每张只在你选择预览或导入时从来源加载；选中后可导入当前浏览器的本地资源库。它不是旧记录所称的 379 张皮肤包。</p>
+            <label class="field"><span>选择该武将的一张候选图</span><select id="sourceSkinChoice" disabled><option value="">正在读取候选目录…</option></select></label>
+            <div id="sourceSkinPreview" class="skin-preview" aria-label="候选图预览"><span class="muted">先输入或选择武将 ID</span></div>
+            <div id="sourceSkinMeta" class="muted source-note" aria-live="polite"></div>
+            <div class="skin-actions"><button id="previewSourceSkinBtn" type="button" class="btn" disabled>预览候选图</button><button id="importSourceSkinBtn" type="button" class="btn primary" disabled>导入并应用到当前武将</button></div>
+            <p class="muted source-note">来源：<a href="https://github.com/libccy/noname/tree/c9f9424eff49d7f5deacbe5e3dad76c0c0fb6a03/image/skin" target="_blank" rel="noreferrer">libccy/noname 固定历史提交</a>。仓库根目录标有 GPL-3.0；没有核实到图片逐项作者和艺术品许可，不能据此推断可商用或再分发。</p>
+        </section>
         <section class="frame log-panel skin-panel" aria-labelledby="skinLibraryTitle">
             <div class="log-toolbar"><h2 id="skinLibraryTitle" class="section-title">本地资源库</h2><button id="refreshSkinsBtn" type="button" class="btn small">刷新列表</button></div>
             <label class="field"><span>将已有资源绑定到当前武将</span><select id="existingSkin"><option value="">没有已导入资源</option></select></label>
@@ -53,6 +65,6 @@
 </div>
 <script src="js/sgs_common.js?v=20261020f1"></script>
 <script src="js/local_skins.js?v=20261020f1"></script>
-<script src="js/skins_manager.js?v=20261020f1"></script>
+<script src="js/skins_manager.js?v=20261020f1b"></script>
 </body>
 </html>
