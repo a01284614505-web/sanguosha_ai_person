@@ -488,6 +488,11 @@
     z-index: 5;
     pointer-events: none;
 }
+/* 宽屏：上排座位放大到约 150×232（含名签）后，按"居中"摆放的出牌区会顶到上排名签。
+   改为贴在操作条上方往上长：出的牌多、说明多时向上扩展，而不是向两头扩展压住座位。 */
+@media (min-width: 1101px) {
+    .arena { top: auto; bottom: 96px; transform: translateX(-50%); }
+}
 /* 阶段横幅：只在切换阶段时淡入淡出一次 */
 .phase-banner {
     min-height: 34px;
