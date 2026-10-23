@@ -380,8 +380,8 @@ img { display: block; }
 /* 插画：白底图标用 multiply 融进宣纸 */
 .card .c-art {
     position: absolute;
-    left: 10%;
-    right: 10%;
+    left: 28%;
+    right: 8%;
     top: 16%;
     height: 56%;
     background-size: contain;
@@ -399,11 +399,12 @@ img { display: block; }
     color: rgba(80, 50, 20, .78);
     mix-blend-mode: normal;
 }
-/* 左上角点数与花色 */
+/* 左上角点数与花色：宽度与左侧竖排牌名对齐成一列（W1） */
 .card .c-corner {
     position: absolute;
-    top: 3px;
-    left: 5px;
+    top: calc(var(--w) * .05);
+    left: calc(var(--w) * .06);
+    width: calc(var(--w) * .2);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -412,20 +413,38 @@ img { display: block; }
 .card .c-corner .suit { font-size: calc(var(--w) * .17); margin-top: 1px; }
 .card .c-corner.red { color: #a8261c; }
 .card .c-corner.black { color: #1b1612; }
+/* 牌名改为左侧竖排，位于点数花色下方。手牌叠放时每张露出的窄条里也能读到牌名，
+   所以不能再横排压在牌底（那样叠放后只剩下半截字）。 */
 .card .c-name {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 5%;
-    text-align: center;
+    left: calc(var(--w) * .06);
+    top: calc(var(--w) * .42);
+    width: calc(var(--w) * .2);
+    bottom: auto;
+    right: auto;
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+    text-align: start;
     font-family: var(--font-kai);
     font-weight: 700;
-    font-size: calc(var(--w) * .17);
-    letter-spacing: .04em;
-    line-height: 1.1;
-    padding: 0 3px;
+    font-size: calc(var(--w) * .15);
+    letter-spacing: 1px;
+    line-height: 1;
+    padding: 0;
 }
-.card .c-name.long { font-size: calc(var(--w) * .135); letter-spacing: 0; }
+.card .c-name.long { font-size: calc(var(--w) * .13); letter-spacing: 0; }
+/* 牌名颜色跟随花色（红桃、方块用红色） */
+.card .c-name.red { color: #a8261c; }
+.card .c-name.black { color: #1b1612; }
+/* 内金线：只给正面牌加，牌背和锦囊的 ::after 不受影响 */
+.card:not(.back)::before {
+    content: "";
+    position: absolute;
+    inset: calc(var(--w) * .05);
+    border: 1px solid rgba(160, 118, 48, .55);
+    border-radius: calc(var(--w) * .04);
+    pointer-events: none;
+}
 /* 右上角竖排类型签：锦囊 / 延时 / 装备 */
 .card .c-type {
     position: absolute;
@@ -443,7 +462,8 @@ img { display: block; }
 /* 技能转化（如武圣当杀）：牌面中部一条暗朱漆腰封 */
 .card .c-as {
     position: absolute;
-    left: 0;
+    /* 左边让出竖排牌名的宽度，腰封不压住牌名 */
+    left: calc(var(--w) * .24);
     right: 0;
     top: 42%;
     text-align: center;

@@ -139,9 +139,11 @@
             : '';
         const asTag = opts.asName && opts.asName !== name ? '<div class="c-as">当' + esc(opts.asName) + '</div>' : '';
         const detail = opts.noDetail ? '' : cardDetailAttrs(card);
+        // 牌名颜色跟随花色（W1）：红色花色用红字，其余用深色字
+        const nameCls = 'c-name' + (shown.length > 3 ? ' long' : '') + (s.red ? ' red' : ' black');
         return '<div class="' + cls.join(' ') + '" ' + attrs + ' ' + detail + ' aria-label="' + esc(cardLabel(card)) + '">' +
             artHTML + corner + typeTag + asTag +
-            '<div class="c-name' + (shown.length > 3 ? ' long' : '') + '">' + esc(shown) + '</div></div>';
+            '<div class="' + nameCls + '">' + esc(shown) + '</div></div>';
     }
 
     /** 详情浮窗需要的数据属性（牌名、花色、点数）。 */
