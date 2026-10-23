@@ -122,6 +122,20 @@
             return p;
         },
 
+        // 消息时间（W7）：服务器若给了 ts / timestamp（秒、毫秒或 ISO 字符串）就用它，否则用收到消息时的本地时间。
+        timeText(data) {
+            let t = Date.now();
+            const raw = data.ts != null ? data.ts : data.timestamp;
+            if (typeof raw === 'number' && isFinite(raw)) t = raw < 1e12 ? raw * 1000 : raw;
+            else if (typeof raw === 'string' && raw) {
+                const parsed = Date.parse(raw);
+                if (!isNaN(parsed)) t = parsed;
+            }
+            const d = new Date(t);
+            const pad = (n) => String(n).padStart(2, '0');
+            return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+        },
+
         // 追加一条聊天：左侧头像 + 名字 + 气泡；自己的发言靠右。同时在座位上冒气泡。
         // data.kind：human 真人 / ai AI / spectator 观战 / system 系统。系统消息走灰色居中样式，
         // 真人（自己）靠右深漆底，AI 与观战为左侧宣纸气泡；缺 kind 的旧消息按 AI 处理。
@@ -145,7 +159,8 @@
             row.className = 'msg kind-' + kind + (isMe ? ' me' : '');
             row.innerHTML = '<div class="avatar">' + SGS.heroImgHTML(hero.id, hero.name || name) + '</div>' +
                 '<div><div class="who"><b>' + esc(seatLabel + name) + (kind === 'spectator' ? '（观战）' : '') + '</b>' + esc(p && p.hero_name ? p.hero_name : '') + '</div>' +
-                '<div class="text">' + esc(data.message) + '</div></div>';
+                '<div class="text">' + esc(data.message) + '</div>' +
+                '<div class="ts">' + this.timeText(data) + '</div></div>';
             this.append(this.chatList, row);
             if (p) this.opts.showBubble(p.id, data.message);
             if (!isMe) this.markUnread('chat');
