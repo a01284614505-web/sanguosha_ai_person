@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="css/sgs.css?v=20261023u6">
     <link rel="stylesheet" href="css/game.css?v=20261023u8">
     <link rel="stylesheet" href="css/table_v3.css?v=20261023p1">
+    <link rel="stylesheet" href="css/hero_draft.css?v=20261024h2">
 </head>
 <body class="game-page">
 <div class="battle" id="battle" data-palette="night">
@@ -81,6 +82,9 @@
         </div>
     </dialog>
     </div>
+
+    <!-- 正式选将面板：身份分完后主公先选、其余人同时选；内容由 js/hero_draft_panel.js 渲染 -->
+    <section class="hero-draft" id="heroDraft" hidden aria-live="polite" aria-label="选将"></section>
 
     <!-- 自己的区域 -->
     <section class="my-area" id="myArea" aria-label="我的区域">
@@ -200,6 +204,7 @@
 <script src="js/ws_client.js?v=20261020e1"></script>
 <script src="js/global_settings.js?v=20261023u6"></script>
 <script src="js/chat_panel.js?v=20261023u6"></script>
+<script src="js/hero_draft_panel.js?v=20261024h1"></script>
 <script src="js/game_main.js?v=20261023p1"></script>
 </body>
 </html>
