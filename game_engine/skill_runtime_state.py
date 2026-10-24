@@ -192,6 +192,13 @@ class SkillStateStore:
         """取得某角色全部技能实例，保持注册顺序。"""
         return [item for item in self._instances.values() if item.owner_id == owner_id]
 
+    def clear_owner(self, owner_id: Id) -> int:
+        """移除某角色的全部技能实例（换将时先清旧的，避免新旧武将技能叠加）。"""
+        keys = [key for key, item in self._instances.items() if item.owner_id == owner_id]
+        for key in keys:
+            del self._instances[key]
+        return len(keys)
+
     def has_enabled(self, owner_id: Id, skill_id: str) -> bool:
         return any(item.enabled for item in self.find(owner_id, skill_id))
 

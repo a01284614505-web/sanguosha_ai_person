@@ -59,7 +59,9 @@
     /** 读取开局配置；缺武将或 AI 数量不对时返回 null（页面会提示回大厅）。 */
     function loadConfig() {
         const cfg = store.sget('gameConfig', null) || store.get('gameConfig', null);
-        if (!cfg || !cfg.selected_hero || !cfg.selected_hero.id || !Array.isArray(cfg.ais) || cfg.ais.length < 1) return null;
+        // 正式选将（hero_draft = standard）开局时还没有武将，由对局页内的选将面板决定。
+        const draft = cfg && cfg.hero_draft === 'standard';
+        if (!cfg || !(draft || (cfg.selected_hero && cfg.selected_hero.id)) || !Array.isArray(cfg.ais) || cfg.ais.length < 1) return null;
         return cfg;
     }
 
@@ -1629,6 +1631,7 @@
         G.state = s;
         if (s.post_death && s.post_death.mode === 'spectator') G.postDeathMode = 'spectator';
         G.players = s.players || [];
+        if (window.HeroDraftPanel) HeroDraftPanel.onState(s);
         if (s.chat_level) window.currentChatLevel = s.chat_level;
         syncShownPool(s);
         const human = G.players.find(p => !p.is_ai) || G.players.find(p => p.id === 0);
@@ -1676,6 +1679,7 @@
 
     gameClient.onActionResult = function (receipt) {
         // 服务器回执是对象 {status, success, message}；旧写法把整个对象当布尔值，拒绝从来不会提示。
+        if (window.HeroDraftPanel) HeroDraftPanel.onActionResult(receipt);
         const status = receipt && receipt.status;
         const rejected = receipt === false || (receipt && receipt.success === false
             && status !== 'duplicate' && status !== 'game_ended');
@@ -1688,6 +1692,12 @@
 
     /** 场外响应 / 选择请求：开倒计时；手机上若开着聊天抽屉就先收起，免得挡住操作。 */
     gameClient.onRequireResponse = function (data) {
+        // 选将请求由选将面板接管（它自己管倒计时与提交），不进通用的操作条。
+        if (data.kind === 'choose_hero' && window.HeroDraftPanel) {
+            beginIdleWatch();
+            HeroDraftPanel.onRequest(data);
+            return;
+        }
         G.req = data;
         G.picked = [];
         beginIdleWatch();

@@ -1,0 +1,179 @@
+/* ==========================================================================
+   正式选将面板（对局页中央）
+   --------------------------------------------------------------------------
+   手机竖屏优先：360 宽也要看清并点中 5 张候选，整页不滚动（只有技能说明区在面板内部滚动）。
+   · 不写死尺寸：宽度用 clamp / 百分比，高度用 dvh（带 vh 回退）；
+   · 金边只给外框一条细线和被点选的那张牌，其余用暗金细线，避免满屏金边；
+   · backdrop-filter 用 @supports 检测，不支持时只是少一层模糊；
+   · 配色、字体沿用对局页（鎏金深色、宋体系衬线），参考 logs/design/20261023_牌桌第三稿原型.html。
+   ========================================================================== */
+
+.hero-draft {
+    position: fixed; inset: 0; z-index: 60;
+    display: grid; place-items: center;
+    padding: clamp(8px, 2.4vw, 20px);
+    /* 铺底只做压暗，不拦截点击：顶部的信息牌、托管按钮仍可点 */
+    background: rgba(8, 5, 3, .62);
+    pointer-events: none;
+    font-family: var(--font-serif, "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif);
+    color: var(--text, #eadcbf);
+}
+.hero-draft[hidden] { display: none; }
+@supports ((backdrop-filter: blur(3px)) or (-webkit-backdrop-filter: blur(3px))) {
+    .hero-draft { background: rgba(8, 5, 3, .5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+}
+
+.hd-sheet {
+    pointer-events: auto;
+    width: min(100%, 640px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    display: flex; flex-direction: column; gap: 8px;
+    padding: clamp(8px, 2.4vw, 14px);
+    background: linear-gradient(180deg, rgba(34, 22, 14, .97), rgba(18, 11, 7, .98));
+    border: 1px solid var(--gold, #c9a35a);
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .7), 0 14px 34px rgba(0, 0, 0, .65);
+    overflow: hidden;
+    animation: hd-land .22s ease-out;
+}
+.hd-sheet.waiting { width: min(100%, 460px); }
+/* 只做轻微位移不动透明度：点选重绘时面板不会闪成透明（截图/低端机上也不会出现"空面板"） */
+@keyframes hd-land { from { transform: translateY(6px); } to { transform: none; } }
+
+/* ---------- 抬头：身份 + 倒计时 ---------- */
+.hd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hd-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.hd-who .seal { width: 34px; height: 34px; font-size: 17px; flex: none; }
+.hd-who-txt { display: grid; gap: 1px; min-width: 0; }
+.hd-who-txt b { font-size: clamp(15px, 4.2vw, 18px); color: var(--gold-hi, #f1d898); font-weight: 700; letter-spacing: .5px; }
+.hd-who-txt span { font-size: 12px; color: var(--text-dim, #a89577); }
+.hd-hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--paper-dim, #d9c7a0); }
+.hd-hint:empty { display: none; }
+
+.hd-timer {
+    --p: 100%;
+    flex: none; position: relative;
+    width: 38px; height: 38px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: conic-gradient(var(--gold, #c9a35a) var(--p), rgba(255, 255, 255, .12) 0);
+}
+.hd-timer::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: #1b120b; }
+.hd-sec { position: relative; font: 700 13px/1 var(--font-serif, serif); color: var(--paper, #f1e4c3); font-variant-numeric: tabular-nums; }
+.hd-timer.urgent { background: conic-gradient(#d8422f var(--p), rgba(255, 255, 255, .12) 0); }
+.hd-timer.urgent .hd-sec { color: #ff9a86; }
+.waiting .hd-timer { visibility: hidden; }
+
+/* ---------- 主公已选 ---------- */
+.hd-lord, .hd-mine {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-radius: 6px;
+    background: rgba(0, 0, 0, .3);
+    border: 1px solid rgba(201, 163, 90, .28);
+    min-width: 0;
+}
+.hd-lord.wait { color: var(--text-dim, #a89577); font-size: 13px; }
+.hd-lord-art { flex: none; width: 34px; height: 44px; border-radius: 4px; overflow: hidden; border: 1px solid var(--gold-dim, #6e5229); }
+.hd-lord-art img, .hd-lord-art .hero-fallback { width: 100%; height: 100%; object-fit: cover; object-position: 50% 16%; }
+.hd-lord-txt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; flex: 1 1 auto; }
+.hd-lord-k { font-size: 12px; color: var(--text-dim, #a89577); }
+.hd-lord-name { font-size: 15px; color: var(--paper, #f1e4c3); }
+.hd-lord-sk, .hd-mine .hd-lord-sk { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.hd-lord > .seal { flex: none; width: 24px; height: 24px; font-size: 13px; }
+.hd-mine { gap: 8px; flex-wrap: wrap; }
+.hd-mine b { font-size: 15px; color: var(--gold-hi, #f1d898); }
+.hd-sk {
+    font-size: 11.5px; line-height: 1; padding: 3px 6px; border-radius: 3px;
+    color: var(--paper, #f1e4c3); background: rgba(255, 255, 255, .08);
+    border: 1px solid rgba(201, 163, 90, .25);
+}
+.hd-sk.lord { color: #ffd77a; border-color: rgba(255, 215, 122, .5); }
+
+/* ---------- 候选卡 ---------- */
+.hd-grid {
+    display: grid; gap: clamp(4px, 1.4vw, 10px);
+    grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+    flex: none;
+}
+.hd-card {
+    position: relative; display: block; width: 100%;
+    max-width: 124px; justify-self: center;
+    aspect-ratio: 350 / 464;
+    padding: 0; border: 1px solid var(--gold-dim, #6e5229); border-radius: 6px;
+    background: #120c07; color: inherit; overflow: hidden; cursor: pointer;
+    font: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+.hd-card:focus-visible { outline: 2px solid var(--gold-hi, #f1d898); outline-offset: 2px; }
+.hd-card.on {
+    border-color: var(--gold-hi, #f1d898);
+    box-shadow: 0 0 0 2px var(--gold-hi, #f1d898), 0 0 14px 2px rgba(241, 216, 152, .4);
+    transform: translateY(-3px);
+}
+.hd-art { position: absolute; inset: 0; }
+.hd-art img, .hd-art .hero-fallback { width: 100%; height: 100%; object-fit: cover; object-position: 50% 16%; display: block; }
+.hd-art::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0) 52%, rgba(10, 5, 2, .88) 100%);
+}
+.hd-c-seal { position: absolute; left: 3px; top: 3px; z-index: 1; }
+.hd-c-seal .seal { width: clamp(16px, 5vw, 24px); height: clamp(16px, 5vw, 24px); font-size: clamp(9px, 2.8vw, 13px); }
+.hd-c-hp { position: absolute; right: 2px; top: 3px; z-index: 1; }
+.hd-c-hp .hp.vertical { gap: 0; }
+.hd-c-hp .gouyu { width: clamp(9px, 2.8vw, 14px); height: clamp(9px, 2.8vw, 14px); }
+.hd-c-name {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 1;
+    padding: 0 2px 4px; text-align: center;
+    font-size: clamp(11px, 3.4vw, 15px); font-weight: 700; line-height: 1.15; letter-spacing: .5px;
+    color: #f6ecd2; text-shadow: 0 1px 2px #000;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- 技能说明（面板内部滚动，整页不滚） ---------- */
+.hd-detail {
+    flex: 1 1 auto; min-height: 76px;
+    max-height: clamp(96px, 28vh, 230px);
+    max-height: clamp(96px, 28dvh, 230px);
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 8px 10px; border-radius: 6px;
+    background: rgba(0, 0, 0, .3); border: 1px solid rgba(201, 163, 90, .22);
+    font-size: 13px; line-height: 1.6; color: var(--paper, #f1e4c3);
+}
+.hd-detail.empty { display: grid; place-items: center; color: var(--text-dim, #a89577); text-align: center; }
+.hd-d-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-bottom: 4px; }
+.hd-d-name { font-size: 16px; color: var(--gold-hi, #f1d898); }
+.hd-d-title { font-size: 12px; color: var(--text-dim, #a89577); }
+.hd-d-meta { font-size: 12px; color: var(--paper-dim, #d9c7a0); margin-left: auto; }
+.hd-d-skill { margin: 0 0 6px; }
+.hd-d-skill:last-child { margin-bottom: 0; }
+.hd-d-skill b { color: var(--paper, #f1e4c3); }
+.hd-tag {
+    font-style: normal; font-size: 11px; line-height: 1; margin: 0 6px 0 2px; padding: 2px 5px;
+    border-radius: 3px; color: var(--paper-dim, #d9c7a0); border: 1px solid rgba(201, 163, 90, .3);
+}
+.hd-tag.lord { color: #ffd77a; border-color: rgba(255, 215, 122, .55); }
+
+/* ---------- 底部确定 ---------- */
+.hd-foot { display: flex; justify-content: center; flex: none; }
+.hd-ok { width: min(100%, 320px); min-height: 44px; font-size: 16px; letter-spacing: 4px; }
+.hd-ok:disabled { filter: grayscale(.8) brightness(.6); cursor: not-allowed; }
+
+/* ---------- 等待他人 ---------- */
+.hd-dots { display: flex; justify-content: center; gap: 8px; padding: 6px 0 2px; }
+.hd-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--gold, #c9a35a); opacity: .3; animation: hd-pulse 1.2s ease-in-out infinite; }
+.hd-dots i:nth-child(2) { animation-delay: .2s; }
+.hd-dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes hd-pulse { 0%, 100% { opacity: .25; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.1); } }
+@media (prefers-reduced-motion: reduce) {
+    .hd-sheet, .hd-dots i { animation: none; }
+    .hd-card { transition: none; }
+}
+
+/* ---------- 矮屏（手机横屏等）：压缩纵向占用 ---------- */
+@media (max-height: 520px) {
+    .hd-sheet { gap: 5px; padding: 6px 10px; }
+    .hd-hint { display: none; }
+    .hd-card { max-width: 76px; }
+    .hd-detail { min-height: 52px; max-height: 24vh; }
+    .hd-lord-art { width: 26px; height: 34px; }
+}

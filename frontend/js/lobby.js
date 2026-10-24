@@ -1,7 +1,7 @@
 // 大厅：入席设置、四席 AI 配置、牌堆选择。纯 UI：配置的合法性由引擎 normalize_config 复核。
-// 开局配置格式（交给 select_hero → game）：
+// 开局配置格式（free 交给 select_hero → game；standard 直接进 game）：
 //   { mode, player_name, ais:[{name,provider,apiUrl,apiKey,model,temperature,thinking}],
-//     hero_pool, deck_id, chat:{enabled,provider,model}, global_settings, custom_worldbook, identity_card? }
+//     hero_pool, hero_draft:'standard'|'free', deck_id, chat:{enabled,provider,model}, global_settings, custom_worldbook, identity_card? }
 (function () {
     'use strict';
     const { esc, store, toast } = SGS;
@@ -194,12 +194,31 @@
                     lineup.appendChild(badge);
                 });
                 document.getElementById('identityCardSection').hidden = !identityMode || this.cardCount < 1;
+                this.renderDraftOption(identityMode);
                 if (!identityMode) {
                     document.getElementById('useIdentityCard').checked = false;
                     document.getElementById('identitySelect').disabled = true;
                 }
                 this.renderIdentityCard();
             }
+        }
+
+        // 选将方式：有主公的身份局默认走正式选将（身份分完后再选），勾选"自由选将"才进入选将页任选武将。
+        // 2v2、斗地主身份固定且公开，没有主公先选的环节，只有自由选将。
+        supportsHeroDraft() {
+            const mode = this.activeMode();
+            return !mode || (mode.identities_public === false && mode.victory === 'identity');
+        }
+
+        renderDraftOption(supported) {
+            const box = document.getElementById('freeDraft');
+            const note = document.getElementById('freeDraftNote');
+            if (!box) return;
+            box.disabled = !supported;
+            if (!supported) box.checked = true;
+            else if (box.dataset.forced === '1') box.checked = false;
+            box.dataset.forced = supported ? '' : '1';
+            note.textContent = supported ? '勾选后开局前在选将页任选武将；默认关闭，身份分完后按正式规则选将' : '此模式暂用自由选将';
         }
 
         // 保存“称呼 / 席间聊天 / 记住 Key”等偏好到 localStorage['lobbyPrefs']。
@@ -466,7 +485,7 @@
             });
         }
 
-        // 组装开局配置并进入选将页。带 Key 的完整配置只写 sessionStorage；localStorage 里的副本去掉 Key。
+        // 组装开局配置：正式选将直接进对局，自由选将进入选将页。带 Key 的完整配置只写 sessionStorage；localStorage 里的副本去掉 Key。
         async startGame() {
             this.savePrefs();
             if (this.dialog.open) this.saveCurrent();
@@ -494,6 +513,8 @@
                 chat_level: document.getElementById('chatLevel').value,
                 cheat_mode: document.getElementById('cheatMode').checked,
                 hide_dead_identity: document.getElementById('hideDeadIdentity').checked,
+                // standard = 正式选将（直接进对局，选将面板在对局页内）；free = 自由选将（沿用选将页）
+                hero_draft: this.supportsHeroDraft() && !document.getElementById('freeDraft').checked ? 'standard' : 'free',
                 custom_worldbook: store.get('worldbook', []),
                 // 默认模型托管沿用大厅第一席的连接配置，Key 只随 sessionStorage 传给本局。
                 trustee_default: ais[0] ? Object.assign({}, ais[0]) : null
@@ -517,7 +538,7 @@
                 trustee_default: config.trustee_default ? Object.assign({}, config.trustee_default, { apiKey: '' }) : null
             });
             store.set('gameConfig', localConfig);
-            window.location.href = 'select_hero.html';
+            window.location.href = config.hero_draft === 'standard' ? 'game.html' : 'select_hero.html';
         }
 
         getProfileId() {

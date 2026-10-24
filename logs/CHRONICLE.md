@@ -1456,3 +1456,4 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 - 2026-10-23：两边交接文档同步入库：补回旧工作区未进主线的 Stage 8 交接、[Stage 8 计划](handover/20261018_Stage8_plan.md)、[8B 备份原子性修复](handover/20261019_Stage8_8B_备份原子性修复.md)、[新窗口 6 Sol 入口](handover/20261020_新窗口6Sol入口.md)、[玩法审查探针](reports/20261019_gameplay_audit_probes.txt) 及 Stage 8 验证日志（修复上文两处断链）。新增 [全局评估与下一阶段路线图](handover/20261023_全局评估与下一阶段路线图.md)、[GPT-6 Astra 上下文与记忆方案（原文）](handover/20261023_GPT6Astra上下文与记忆方案.md)、[用户决定与 UI 反馈记录](handover/20261023_用户决定与UI反馈记录.md)；后者为已拍板事项，与其他计划冲突时以其为准。
 
 - 2026-10-23：UI 第三稿接线完成（W1–W10，分支 `feat/ui-v3-table`，未开 PR）。最终代码 `d26acdd`：verify_project 981 passed / VERIFY_OK；浏览器验收桌面与手机各 55 通过、2 跳过、1 预存失败（`speaker name is the player`，基线同样失败）。详见 [UI 第三稿接线交接](handover/20261023_0953_UI第三稿接线交接.md)。
+- 2026-10-23：正式选将完成（分支 `feat/hero-draft`，未开 PR）：主公先选并公开、其余每人 5 张互不重复候选、依赖武将的初始化后移，大厅保留“自由选将（测试用）”；1017 passed / VERIFY_OK，b7 两模式 30 局 normal=30，浏览器验收桌面与 412x720 0 fail。详见 [正式选将交接](handover/20261024_正式选将.md)。

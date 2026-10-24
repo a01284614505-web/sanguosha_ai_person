@@ -291,6 +291,7 @@ class GameHistoryStore:
                 "stats": (human or {}).get("stats") or {},
                 "status": "interrupted" if winner == "aborted" else "completed",
                 "cheat": cheat,
+                "hero_draft": "standard" if payload.get("hero_draft") == "standard" else "free",
             }
             profile["history"].insert(0, record)
             profile["history"] = profile["history"][:100]

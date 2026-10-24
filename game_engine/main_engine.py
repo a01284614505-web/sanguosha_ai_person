@@ -37,6 +37,7 @@ from .mode_registry import get_mode, supported_modes
 
 
 logger = logging.getLogger(__name__)
+from . import hero_draft
 from .hero_registry import HeroRegistry
 from .protocol import ENGINE_EVENT, PROVIDERS
 
@@ -195,6 +196,14 @@ class MainEngine:
         # 单个 AI 每回合最多发言数（含免费台词）：(player_id, round) → 已发句数。
         self._chat_counts: Dict[Tuple[int, int], int] = {}
         self._log_seq = 0
+        # 正式选将（hero_draft == "standard"）：先分身份，再由主公先选、其余人各从 5 张候选里选。
+        # free = 自由选将，武将由大厅选将页与默认座位武将给定，引擎不介入。
+        self.hero_draft_mode = "standard" if game_config.get("hero_draft") == "standard" else "free"
+        self.hero_registry = None          # 将池来源；测试可注入，默认读 data/heroes.json 与已启用的武将包
+        self._draft: Any = None            # 选将进行中的公开状态；非 None 表示"选将中"
+        self._draft_timeouts: Set[int] = set()
+        # 局后日志用：每人的候选、所选与来源。含 AI 的候选，所以绝不进 serialize() / 任何下发消息。
+        self.draft_record: List[Dict] = []
 
         logger.info(f"\n{'=' * 60}")
         logger.info("  🎮 引擎v2初始化")
@@ -388,7 +397,8 @@ class MainEngine:
                     "treasure_count": len(p.treasure_cards),
                     "alive": p.alive,
                     "death_round": p.flags.get("death_round"),
-                    "hero_name": self._hero_name(p),
+                    # 正式选将中还没定武将的座位显示"选将中"（前端座位牌直接取 hero_name）。
+                    "hero_name": self._hero_name(p) or ("选将中" if self._draft is not None and not p.hero else ""),
                     "hero": {
                         "id": (p.hero or {}).get("id", ""),
                         "name": self._hero_name(p),
@@ -432,7 +442,7 @@ class MainEngine:
         # serialize() 只发给真人自己的连接（AI 决策不读它），因此可以附带真人自己的手牌，
         # 让前端在非出牌阶段也能看到手牌。他人手牌仍只有 hand_count。
         human = self.human_player()
-        return {
+        snapshot = {
             "self_hand": self.get_player_hand(human) if human else [],
             "mode": gs.mode,
             "round": gs.round_number,
@@ -452,6 +462,17 @@ class MainEngine:
             "trustee": self.trustee_status(),
             "shown_pool": copy.deepcopy(self.shown_pool) if self.shown_pool else None,
         }
+        if self.hero_draft_mode == "standard":
+            # 只带公开信息：阶段、主公是谁、还在选的座位。候选武将绝不放进状态快照。
+            draft = self._draft
+            snapshot["hero_draft"] = {
+                "mode": "standard",
+                "active": draft is not None,
+                "stage": draft["stage"] if draft else None,
+                "lord_id": draft["lord_id"] if draft else None,
+                "pending_ids": sorted(draft["pending"]) if draft else [],
+            }
+        return snapshot
 
     async def set_shown_pool(self, pool):
         """更新临时展示池并推送状态：亮牌、轮到谁、谁取走了哪张，全桌可见。"""
@@ -495,8 +516,10 @@ class MainEngine:
 
             mode = get_mode(self.game_state.mode)
             first_player = assigned["first_player"]
-            first_player.max_hp += mode.lord_hp_bonus
-            first_player.hp += mode.lord_hp_bonus
+            if self.hero_draft_mode != "standard":
+                # 正式选将时武将还没定，主公 +1 体力上限由 set_hero 在选定武将后一并计算。
+                first_player.max_hp += mode.lord_hp_bonus
+                first_player.hp += mode.lord_hp_bonus
             self.game_state.current_player_index = self.game_state.players.index(first_player)
             self.game_state.current_player = first_player
             self.game_state.round_anchor_index = self.game_state.current_player_index
@@ -508,14 +531,23 @@ class MainEngine:
                 if p.is_ai and self._has_model_key(p):
                     self.notes.ensure(p.id)
             self._notes_round = self.game_state.round_number
+            if self.hero_draft_mode == "standard":
+                # 身份已分完、武将未定：从这里开始状态快照里带"选将中"，直到 _draft_heroes 结束。
+                self._draft = {"stage": "lord", "lord_id": first_player.id, "pending": set()}
+        needs_draft = self._draft is not None
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
-        if self.recovery_checkpoint is not None:
+        # 选将期间不存档：此时没有武将与起手牌，恢复出来的半成品局没有意义；选将结束后再存。
+        if self.recovery_checkpoint is not None and not needs_draft:
             await self.recovery_checkpoint()
 
         self._watchdog_task = asyncio.create_task(self._idle_watchdog())
-        self.chat_director.start()
         try:
+            if needs_draft:
+                await self._draft_heroes()
+                if self.recovery_checkpoint is not None and not self.game_aborted:
+                    await self.recovery_checkpoint()
+            self.chat_director.start()
             while not self.is_game_over():
                 self._observe_spy_duel_lord_state()
                 self._roll_notes_round()
@@ -572,6 +604,147 @@ class MainEngine:
         await self._emit_game_end_once()
         logger.info(f"\n🎊 游戏结束！胜者: {self.game_state.winner}")
         return self.game_state.winner
+
+    # ---------- 正式选将 ----------
+
+    def set_hero(self, player: Player, hero: Dict) -> Dict:
+        """唯一的"设置武将"入口：武将、体力、技能注册、AI 会话前缀都在这里一次重建。
+
+        体力 = 武将体力 + 本模式首位身份（主公）的体力上限加成，开局满血；
+        手牌上限由技能管理器按当前武将技能实时计算，换将后自然生效。
+        AI 会话的固定前缀（L1）含"自己与他人的武将技能全文"，换将后必须丢掉重建。
+        """
+        hero = copy.deepcopy(hero)
+        mode = get_mode(self.game_state.mode)
+        bonus = mode.lord_hp_bonus if player.identity == mode.first_player_identity else 0
+        player.hero = hero
+        player.max_hp = int(hero.get("max_hp", 4)) + bonus
+        player.hp = player.max_hp
+        self.skill_manager.register_player(player)
+        self.ai_decision.reset_session(player.id)
+        return hero
+
+    def _draft_pool(self) -> List[Dict]:
+        registry = self.hero_registry or HeroRegistry()
+        return registry.all_heroes()
+
+    async def _draft_pick(self, player: Player, candidates: List[Dict], stage: str,
+                          lord: Player) -> Dict:
+        """让一名玩家（真人或 AI）从候选里选一名武将，走统一的选择请求通道。"""
+        lord_hero = hero_draft.public_hero_card(lord.hero) if lord is not player else None
+        mode = get_mode(self.game_state.mode)
+        request = {
+            "kind": "choose_hero",
+            "prompt": "请选择你的武将",
+            "context": {},
+            "min_n": 1, "max_n": 1, "cancelable": False,
+            "choices": [copy.deepcopy(hero) for hero in candidates],
+            "options": [{"label": hero.get("name", ""), "key": hero.get("id")} for hero in candidates],
+            # 真人沿用 human_action_timeout（与出牌阶段同一个时限）；AI 不受此限。
+            "human_timeout": self.human_action_timeout,
+            "hero_cards": [hero_draft.public_hero_card(hero) for hero in candidates],
+            "draft": {
+                "stage": stage,
+                "identity": player.identity,
+                "seat": seat_of(self.game_state, player.id),
+                "mode": mode.mode_id,
+                "lord_hero": lord_hero,
+                "hp_bonus": mode.lord_hp_bonus if player.identity == mode.first_player_identity else 0,
+            },
+        }
+        result = await self.request_choice(player, request)
+        chosen = result.get("choice")
+        if not isinstance(chosen, dict):
+            # 对局被中止等情况下没有结果：交规则打分兜底，保证后续初始化拿到合法武将。
+            chosen = candidates[hero_draft.pick_by_rules(
+                candidates, player.identity, lord_hero, self.game_state._rng)]
+        return chosen
+
+    def _draft_random_pick(self, player: Player, request: Dict) -> List[int]:
+        """真人选将超时：随机选一名候选（战报在揭晓时写明）。"""
+        self._draft_timeouts.add(player.id)
+        return [self.game_state._rng.randrange(len(request.get("options") or [1]))]
+
+    def _draft_source(self, player: Player) -> str:
+        if player.id in self._draft_timeouts:
+            return "timeout"
+        if player.is_ai:
+            failed = getattr(self.ai_decision, "last_failure", {}).get(player.id)
+            return "model" if self._has_model_key(player) and not failed else "rules"
+        return "trustee" if self._trustee_active else "human"
+
+    async def _reveal_pick(self, player: Player, hero: Dict, candidates: List[Dict]):
+        """公开一名玩家的最终武将：战报 + 服务器日志 + 局后记录。候选名单只进局后记录。"""
+        seat = seat_of(self.game_state, player.id)
+        source = self._draft_source(player)
+        suffix = "（选将超时，系统随机选择）" if source == "timeout" else ""
+        label = "主公" if player.identity == "lord" else f"{seat}号位"
+        await self.log_event(f"{label}{player.name}选择了武将【{hero.get('name')}】{suffix}",
+                             event_kind="hero_draft", actor_id=player.id)
+        # 服务器端日志：身份只在这里出现，不下发前端。
+        logger.info("[选将] %s号 %s(%s) 身份=%s → %s 来源=%s",
+                    seat, player.name, "AI" if player.is_ai else "真人",
+                    player.identity, hero.get("name"), source)
+        self.draft_record.append({
+            "player_id": player.id, "seat": seat, "identity": player.identity,
+            "candidates": [item.get("id") for item in candidates],
+            "chosen": hero.get("id"), "source": source,
+        })
+
+    async def _draft_heroes(self):
+        """身份已分完：主公先选并公开 → 主公未选的放回将池 → 其余人同时选 → 补发起手牌。"""
+        state = self.game_state
+        pool = self._draft_pool()
+        rng = state._rng
+        lord = state.current_player
+        others = [p for p in state.players if p is not lord]
+
+        # 1) 主公：全部主公技武将 + 随机 2 名非主公武将，选定后立刻公开。
+        self._draft.update(stage="lord", pending={lord.id})
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        lord_cards = hero_draft.lord_candidates(pool, rng)
+        lord_hero = await self._draft_pick(lord, lord_cards, "lord", lord)
+        if self.game_aborted:
+            return
+        self.set_hero(lord, lord_hero)
+        await self._reveal_pick(lord, lord_hero, lord_cards)
+
+        # 2) 其余人：主公没选的（含另外 6 张候选）放回将池再发，每人 5 张互不重复。
+        per_player = hero_draft.candidates_per_player(len(pool) - 1, len(others))
+        if per_player < 1:
+            raise ValueError("将池太小，无法为所有座位发候选")
+        hands = hero_draft.deal_candidates(pool, len(others), per_player,
+                                           exclude_ids=[lord_hero.get("id")], rng=rng)
+        self._draft.update(stage="others", pending={p.id for p in others})
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+
+        async def pick_one(player, cards):
+            try:
+                chosen = await self._draft_pick(player, cards, "others", lord)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # 单个座位出错不能卡住整个开局：按规则打分兜底。
+                logger.warning("  ⚠️ %s 选将异常，改用规则选择: %s", player.name, type(exc).__name__)
+                chosen = cards[hero_draft.pick_by_rules(
+                    cards, player.identity, hero_draft.public_hero_card(lord_hero), rng)]
+            self._draft["pending"].discard(player.id)
+            if not self.game_aborted:
+                await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+            return chosen
+
+        picks = await asyncio.gather(*(pick_one(p, cards) for p, cards in zip(others, hands)))
+        if self.game_aborted:
+            return
+        # 所有人选完才一起揭晓：先定的人不会让后定的人提前看到结果。
+        for player, cards, hero in zip(others, hands, picks):
+            self.set_hero(player, hero)
+            await self._reveal_pick(player, hero, cards)
+
+        # 3) 依赖武将的初始化都做完了（体力、技能、会话前缀），最后发起手牌。
+        state.deal_initial_hands()
+        self._draft = None
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
     # ---------- 玩家回合 ----------
 
@@ -1394,7 +1567,7 @@ class MainEngine:
             return {"bool": False, "players": []}
         if kind == "choose_cards":
             return {"bool": False, "cards": []}
-        if kind == "choose_option":
+        if kind in ("choose_option", "choose_hero"):
             return {"bool": False, "choice": None}
         return {"bool": False, "confirmed": False}
 
@@ -1417,7 +1590,7 @@ class MainEngine:
             confirmed = indices[0] == 0
             return {"bool": confirmed, "confirmed": confirmed}
 
-        if kind == "choose_option":
+        if kind in ("choose_option", "choose_hero"):
             choices = request.get("choices") or []
             if not choices:
                 logger.warning("  ⚠️ choose_option 无候选，返回空选择")
@@ -1576,6 +1749,8 @@ class MainEngine:
             "cancelable": request.get("cancelable", True),
         }
         request["selection"] = selection_block
+        # 选将请求的真人时限用 human_action_timeout（120 秒），其余选择仍是 response_timeout。
+        wait_seconds = request.get("human_timeout") or self.response_timeout
         try:
             payload = {
                 "request_id": request_id,
@@ -1584,14 +1759,18 @@ class MainEngine:
                 "player_id": player.id,
                 "kind": request.get("kind", "confirm"),
                 "prompt": request.get("prompt", ""),
-                "timeout": self.response_timeout,
+                "timeout": wait_seconds,
                 "options": [self._serialize_choice_option(o, i) for i, o in enumerate(request.get("options") or [])],
                 "context": self._serialize_response_context(request.get("context") or {}),
                 "selection": selection_block,
             }
+            if request.get("kind") == "choose_hero":
+                # 候选只随这条只发给本人的请求下发；其他座位的候选不会出现在任何出站消息里。
+                payload["heroes"] = copy.deepcopy(request.get("hero_cards") or [])
+                payload["draft"] = copy.deepcopy(request.get("draft") or {})
             self._remember_prompt(request_id, ENGINE_EVENT.REQUIRE_RESPONSE, payload)
             await self.emit(ENGINE_EVENT.REQUIRE_RESPONSE, **payload)
-            raw = await asyncio.wait_for(future, timeout=self.response_timeout)
+            raw = await asyncio.wait_for(future, timeout=wait_seconds)
             if isinstance(raw, dict) and raw.get("trustee"):
                 return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
@@ -1660,7 +1839,11 @@ class MainEngine:
             if self.game_aborted:
                 result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
             else:
-                raw = await self._trustee_choose_choice(player, request)
+                if request.get("kind") == "choose_hero" and input_status == "timeout":
+                    # 选将超时：随机选一名并记战报，不借此开启整局托管。
+                    raw = self._draft_random_pick(player, request)
+                else:
+                    raw = await self._trustee_choose_choice(player, request)
                 if self.game_aborted:
                     result, status = self._empty_choice_result(request.get("kind", "confirm")), "game_ended"
                 else:
@@ -2378,6 +2561,7 @@ class MainEngine:
             mvp=self.stats.mvp(self.game_state.players),
             duration=duration,
             cheat=self.cheat_mode,
+            hero_draft=self.hero_draft_mode,
             total_rounds=self.game_state.round_number,
             spy_duel_lord=self.spy_duel_lord,
         )

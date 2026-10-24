@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Run the B7 five-player rules-AI acceptance batch with fixed seeds.
 
-Usage: python -m scripts.verify_b7_games
+Usage: python -m scripts.verify_b7_games [--hero-draft free|standard] [--picker coverage|rules]
+
+--hero-draft free      自由选将（默认）：真人与 AI 的武将由脚本固定，保持原有的武将覆盖统计。
+--hero-draft standard  正式选将：武将由引擎的选将流程产生，脚本不再固定武将。
+--picker coverage      仅正式选将有效（默认）：AI 座位从候选里挑"目前被覆盖次数最少"的武将，
+                       让 30 局仍能覆盖全部 27 名武将，ai_heroes_covered 保持原有意义。
+--picker rules         AI 座位用引擎自带的规则打分选将（看真实选将会选出什么武将分布）。
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -36,7 +43,22 @@ def all_cards(state):
     return cards
 
 
-async def one_game(deck_id, index):
+def install_coverage_picker(engine, counts):
+    """正式选将下替 AI 座位挑覆盖最少的候选（真人托管座位仍走规则打分）。"""
+    original = engine.ai_decision.simple_choice_decision
+
+    def picker(player, request):
+        if request.get("kind") != "choose_hero" or not player.is_ai:
+            return original(player, request)
+        choices = request["choices"]
+        best = min(range(len(choices)), key=lambda i: (counts.get(choices[i]["id"], 0), i))
+        counts[choices[best]["id"]] = counts.get(choices[best]["id"], 0) + 1
+        return [best]
+
+    engine.ai_decision.simple_choice_decision = picker
+
+
+async def one_game(deck_id, index, hero_draft="free", picker="coverage", counts=None):
     seed = 20261017 + index * 103 + list(DECKS).index(deck_id) * 1009
     random.seed(seed)
     identity = IDENTITIES[index % len(IDENTITIES)]
@@ -48,7 +70,7 @@ async def one_game(deck_id, index):
         if pool[position] == selected_hero:
             position = (position + 1) % len(pool)
         ai_heroes.append(pool[position])
-    config = MainEngine.normalize_config({
+    raw_config = {
         "mode": "5人身份局",
         "selected_hero": {"id": selected_hero},
         "ais": [{"name": f"AI{seat}", "api_key": "", "hero": {"id": hero_id}}
@@ -58,11 +80,19 @@ async def one_game(deck_id, index):
         "max_turns": 120,
         "phase_delay": 0,
         "turn_delay": 0,
-    })
+    }
+    if hero_draft == "standard":
+        # 正式选将：武将交给引擎的选将流程，不再固定（固定的武将配置会被引擎丢弃）。
+        raw_config["hero_draft"] = "standard"
+    config = MainEngine.normalize_config(raw_config)
     engine = MainEngine(config)
-    actual_ai_heroes = [p.hero.get("id") for p in engine.game_state.players[1:]]
-    if actual_ai_heroes != ai_heroes:
-        raise AssertionError(f"{deck_id}/{index}: AI hero configuration changed: {actual_ai_heroes!r}")
+    if hero_draft == "standard":
+        if picker == "coverage":
+            install_coverage_picker(engine, counts if counts is not None else {})
+    else:
+        actual_ai_heroes = [p.hero.get("id") for p in engine.game_state.players[1:]]
+        if actual_ai_heroes != ai_heroes:
+            raise AssertionError(f"{deck_id}/{index}: AI hero configuration changed: {actual_ai_heroes!r}")
     engine.set_trustee(True, source="rules")
     game_ends = []
     invalid_actions = []
@@ -83,6 +113,11 @@ async def one_game(deck_id, index):
 
     engine.execute_action = checked_execute
     winner = await engine.run()
+    if hero_draft == "standard":
+        if any(not p.hero for p in engine.game_state.players):
+            raise AssertionError(f"{deck_id}/{index}: hero draft left a seat without a hero")
+        selected_hero = engine.game_state.players[0].hero["id"]
+        actual_ai_heroes = [p.hero["id"] for p in engine.game_state.players[1:]]
     cards = all_cards(engine.game_state)
     ids = [card.id for card in cards]
     if len(ids) != DECKS[deck_id] or len(set(ids)) != len(ids):
@@ -99,17 +134,20 @@ async def one_game(deck_id, index):
             "declined_skills": len(declined_skills)}
 
 
-async def main():
+async def main(hero_draft="free", picker="coverage"):
     logging.disable(logging.CRITICAL)
     results = []
+    counts = {}
     for deck_id in DECKS:
         for index in range(10):
-            results.append(await one_game(deck_id, index))
+            results.append(await one_game(deck_id, index, hero_draft, picker, counts))
     covered_heroes = {hero for result in results for hero in result["ai_heroes"]}
     expected_heroes = {hero for pool in AI_HEROES.values() for hero in pool}
-    if covered_heroes != expected_heroes:
+    # 自由选将与"覆盖优先"的正式选将保证 AI 座位覆盖全部 27 将；规则打分选将只报告分布，不要求全覆盖。
+    if (hero_draft == "free" or picker == "coverage") and covered_heroes != expected_heroes:
         raise AssertionError(f"AI hero coverage incomplete: {sorted(expected_heroes - covered_heroes)}")
-    print(json.dumps({"games": len(results), "normal": sum(r["winner"] != "draw" for r in results),
+    print(json.dumps({"hero_draft": hero_draft, "picker": picker if hero_draft == "standard" else None,
+                      "games": len(results), "normal": sum(r["winner"] != "draw" for r in results),
                       "draw": sum(r["winner"] == "draw" for r in results),
                       "declined_skills": sum(r["declined_skills"] for r in results),
                       "ai_heroes_covered": len(covered_heroes),
@@ -117,4 +155,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--hero-draft", choices=("free", "standard"), default="free")
+    parser.add_argument("--picker", choices=("coverage", "rules"), default="coverage")
+    args = parser.parse_args()
+    asyncio.run(main(args.hero_draft, args.picker))

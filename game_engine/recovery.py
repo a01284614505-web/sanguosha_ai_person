@@ -204,6 +204,12 @@ def restore_engine(payload: Dict[str, Any], engine_class):
     state._card_move_sequence = int(raw_state["card_move_sequence"])
     state.card_move_events = [CardMoveEvent(**row) for row in raw_state["card_move_events"]]
     state.game_config = config
+    if config.get("hero_draft") == "standard":
+        # 正式选将的局：新建引擎时武将为空，技能没登记；存档只在选将结束后写，
+        # 这里按存档里的武将补登记（技能状态随后由存档整体覆盖）。
+        state.hero_draft_pending = False
+        for player in restored_players:
+            engine.skill_manager.register_player(player)
 
     values = _decode(payload["engine"], cards, players)
     mapping = {

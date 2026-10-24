@@ -15,7 +15,9 @@ import httpx
 from .card_system import option_label
 from .card_table import CARD_TABLE, card_label
 from .card_text import CARD_TEXT, NATURE_CARD_TEXT
+from . import hero_draft
 from .hero_registry import HeroRegistry
+from .mode_registry import get_mode
 from .protocol import PROVIDERS
 from .public_situation import (
     build_private_situation,
@@ -1175,6 +1177,12 @@ class AIDecision:
                 return [0] if self._judge_replacements(player, skill_name, context, own_cards) else [1]
             return [0] if default else [1]
 
+        if kind == "choose_hero":
+            # 正式选将的规则兜底：按身份给候选打分（打分表见 hero_draft.py）。
+            choices = request.get("choices") or []
+            draft = request.get("draft") or {}
+            return [hero_draft.pick_by_rules(choices, player.identity, draft.get("lord_hero"), self.rng)] if choices else []
+
         if kind == "choose_option":
             choices = request.get("choices") or []
             return [0] if choices else []
@@ -1254,8 +1262,92 @@ class AIDecision:
 
         return []
 
+    def _hero_draft_prompt(self, player, request: Dict) -> str:
+        """选将提示：只给自己的身份、主公已公开的武将和候选技能全文，不含任何他人的隐藏信息。"""
+        draft = request.get("draft") or {}
+        spec = get_mode(self.engine.game_state.mode)
+        counts = {}
+        for identity in spec.identities:
+            counts[identity] = counts.get(identity, 0) + 1
+        composition = "、".join(f"{hero_draft.IDENTITY_LABEL.get(k, k)}{v}" for k, v in counts.items())
+        identity_text = hero_draft.IDENTITY_LABEL.get(player.identity, player.identity or "未知")
+        seat = seat_of(self.engine.game_state, player.id)
+        lines = [f"【选将】{spec.mode_id}（{composition}）。你是{seat}号位，身份：{identity_text}。"]
+        lord_hero = draft.get("lord_hero")
+        if player.identity == "lord":
+            lines.append("你是主公，先选并公开武将；你选好后其他人才会看到并各自挑选。"
+                         "主公技只有主公能用，选带主公技的武将能让它发挥作用。")
+        elif lord_hero:
+            lines.append("主公已公开选择：" + hero_draft.hero_text(lord_hero))
+            lines.append("主公技只有主公能用；你不是主公，选带主公技的武将等于白占一个名额。")
+        lines.append(f"候选武将共{len(request.get('choices') or [])}名（编号即 option_indices）：")
+        for index, hero in enumerate(request.get("choices") or []):
+            lines.append(f"{index}. {hero_draft.hero_text(hero)}")
+        lines.append("请按你的身份与取胜思路，选出最有利的一名武将。")
+        lines.append('返回 JSON：{"reasoning":"为什么这名武将最适合你的身份","option_indices":[候选编号]}，只选一名。')
+        return "\n".join(lines)
+
+    async def _make_hero_draft_decision(self, player, request: Dict) -> List[int]:
+        """正式选将的模型决策：一次独立请求，不进会话窗口。
+
+        会话的 L1 固定前缀含"自己的武将与其他角色的技能全文"，选将时这些都还没定；
+        若在这里走 get_session 就会把默认/空武将缓存进前缀，所以选将请求不碰会话，
+        选将结束后由引擎重置会话，让 L1 按最终武将构建。
+        """
+        api_key = player.ai_config.get("api_key", "")
+        choices = request.get("choices") or []
+        self.last_failure[player.id] = None
+        self.last_reasoning[player.id] = ""
+        self.last_meta[player.id] = {}
+        if (not api_key or api_key == "test_key"
+                or not (self.engine.game_config.get("global_settings") or {}).get("choice_ai_enabled", True)):
+            return self.simple_choice_decision(player, request)
+        messages = [
+            {"role": "system", "content": "你是一名三国杀玩家，正在身份局的选将阶段。只依据给出的信息选择武将，"
+                                          "并严格按要求返回 JSON。"},
+            {"role": "user", "content": self._hero_draft_prompt(player, request)},
+        ]
+        capture(self.engine, player, "choice", messages)
+        started = time.perf_counter()
+        usage = {}
+        counted = False   # 用量只记一次：调用成功后即使解析失败，也不再补记一次失败
+        try:
+            reply, usage = await self.gateway.call_ai(
+                **model_call_kwargs(player), messages=messages,
+                temperature=player.ai_config.get("temperature", 0.8), return_usage=True,
+            )
+            self._note_usage(player, "choice", usage, failed=False)
+            counted = True
+            self.last_meta[player.id] = {
+                "model": player.ai_config.get("model"),
+                "elapsed_ms": round((time.perf_counter() - started) * 1000),
+                "prompt_tokens": (usage or {}).get("prompt_tokens"),
+                "cached_tokens": (usage or {}).get("cached_tokens"),
+                "completion_tokens": (usage or {}).get("completion_tokens"),
+                "worldbook_hits": ["选将"],
+            }
+            match = re.search(r"\{.*\}", reply, re.DOTALL)
+            payload = json.loads(match.group(0) if match else reply)
+            indices = payload.get("option_indices", payload.get("option_index"))
+            if isinstance(indices, int) and not isinstance(indices, bool):
+                indices = [indices]
+            if (not isinstance(indices, list) or len(indices) != 1
+                    or isinstance(indices[0], bool) or not isinstance(indices[0], int)
+                    or not 0 <= indices[0] < len(choices)):
+                raise ValueError("invalid hero index")
+            self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:1000]
+            return indices
+        except Exception as exc:
+            if not counted:
+                self._note_usage(player, "choice", None, failed=True)
+            self.last_failure[player.id] = type(exc).__name__
+            logger.warning("  ⚠️ 选将模型失败，切换规则AI: %s", type(exc).__name__)
+            return self.simple_choice_decision(player, request)
+
     async def make_choice_decision(self, player, request: Dict) -> List[int]:
         """Choose only server-issued indices; MainEngine validates the live snapshot."""
+        if request.get("kind") == "choose_hero":
+            return await self._make_hero_draft_decision(player, request)
         api_key = player.ai_config.get("api_key", "")
         if not api_key or api_key == "test_key":
             self.last_failure[player.id] = None

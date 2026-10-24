@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from .chat_director import DEFAULT_CHAT_LEVEL, normalize_level
 from .deck_manager import DECKS, DeckManager
+from .hero_draft import supports_hero_draft
 from .hero_registry import HeroRegistry
 from .mode_registry import get_mode
 DEFAULT_API_KEY = os.getenv("SANGUOSHA_DEFAULT_API_KEY", "")
@@ -59,13 +60,27 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
         raise ValueError(f"{mode.mode_id}需要{mode.ai_count}个AI，当前收到{len(ais)}个")
     root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
     heroes = hero_registry or HeroRegistry(root)
+    # 选将方式：standard = 正式选将（先分身份、主公先选并公开、其余人各 5 选 1）；
+    # free = 自由选将（大厅勾选，沿用选将页，AI 按座位取默认武将）。
+    # 没给时按 free 处理：只有显式要求才走正式选将，直接构造配置的脚本与旧测试保持原行为。
+    hero_draft = cfg.get("hero_draft") or "free"
+    if hero_draft not in ("standard", "free"):
+        raise ValueError(f"未知的选将方式: {hero_draft!r}")
+    if hero_draft == "standard" and not supports_hero_draft(mode.mode_id):
+        raise ValueError(f"{mode.mode_id}暂不支持正式选将，请使用自由选将")
+    cfg["hero_draft"] = hero_draft
     selected_hero = cfg.get("selected_hero") or {}
     player_cfg = cfg.get("player") or {}
     player_cfg.setdefault("name", cfg.get("player_name", "玩家"))
     player_cfg.setdefault("is_ai", False)
-    player_cfg["hero"] = heroes.canonical_hero(
-        player_cfg.get("hero") or selected_hero, 0
-    )
+    if hero_draft == "standard":
+        # 武将要等身份分完、选将结束才定：配置里即使带了武将也丢掉，避免被当成默认武将。
+        player_cfg.pop("hero", None)
+        cfg.pop("selected_hero", None)
+    else:
+        player_cfg["hero"] = heroes.canonical_hero(
+            player_cfg.get("hero") or selected_hero, 0
+        )
     if player_cfg.get("is_ai") and not player_cfg.get("ai_config"):
         player_cfg["ai_config"] = normalize_ai(player_cfg, use_default=False)
     cfg["player"] = player_cfg
@@ -73,8 +88,11 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
     used_hero_ids = {player_cfg.get("hero", {}).get("id")}
     for index, raw_ai in enumerate(ais, start=1):
         ai = normalize_ai(raw_ai, use_default=True)
-        ai["hero"] = heroes.canonical_hero(ai.get("hero"), index, used_hero_ids)
-        used_hero_ids.add(ai.get("hero", {}).get("id"))
+        if hero_draft == "standard":
+            ai.pop("hero", None)
+        else:
+            ai["hero"] = heroes.canonical_hero(ai.get("hero"), index, used_hero_ids)
+            used_hero_ids.add(ai.get("hero", {}).get("id"))
         normalized_ais.append(ai)
     cfg["ais"] = normalized_ais
     requested_deck = cfg.get("deck_id")
