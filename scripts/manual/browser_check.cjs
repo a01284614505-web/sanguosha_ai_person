@@ -12,6 +12,7 @@
  *   cheat    作弊局认知笔记：非作弊局没有 "›"；勾选作弊模式开局后 AI 座位出现 "›"，点开有笔记区块（规则 AI 显示"无笔记"）
  *   level    热闹程度（T3a）：大厅可选三档（默认正常）；选"热闹"开局后对局页状态为 lively；对局设置弹窗里改成"安静"，
  *            发 update_settings 后界面（再次打开弹窗）显示新档位，对局状态同步为 quiet
+ * draft：正式选将面板（默认流程）与自由选将开关。
  * 往后加新组：在 GROUPS 里加一项 {name, run}，用 pass()/skip() 记录，需要对局时调用 ensureGame()。
  *
  * 运行（先起服务器，8888 HTTP / 8889 WS；务必用隔离的战绩与日志路径）：
@@ -96,7 +97,14 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     // 放在点「开始」之前，避开大厅初始化期间按偏好重置复选框。
     await page.locator('#cheatMode').setChecked(!!opts.cheat);
     await page.locator('#chatLevel').selectOption(opts.level || 'normal');
+    // 大厅默认已是正式选将；原有各组依赖"自由选将"的 select_hero 流程，所以默认勾上自由选将，行为与改动前一致。
+    // opts.draft === 'standard' 时走正式选将（见 draft 组）。
+    await page.locator('#freeDraft').setChecked(opts.draft !== 'standard');
     await page.locator('#startGameBtn').click();
+    if (opts.draft === 'standard') {
+      await page.waitForURL('**/game.html');
+      return usedSeal;
+    }
     await page.waitForURL('**/select_hero.html');
     await page.locator('.hero-card[data-id="liubei"]').click();
     await page.locator('#confirmBtn').click();
@@ -320,6 +328,43 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     await page.keyboard.press('Escape');
     const bad = await page.locator('.toast.bad').allInnerTexts();
     pass('no error toast after changing level', bad.length === 0, JSON.stringify(bad));
+  }});
+
+  // 正式选将：默认进对局页先出选将面板；点选 -> 确定 -> 进入第 1 回合；勾"自由选将"仍走 select_hero。
+  GROUPS.push({name: 'draft', run: async () => {
+    await gotoLobby();
+    // 前面的组可能把"自由选将"勾选记进了本地偏好，这里清掉再看真正的默认值
+    await page.evaluate(() => { try { localStorage.removeItem('lobbyPrefs'); } catch (_) {} });
+    await page.reload({waitUntil: 'domcontentloaded'});
+    await page.waitForSelector('#freeDraft');
+    pass('lobby: 自由选将默认关闭', await page.locator('#freeDraft').isChecked() === false);
+    await startGame({draft: 'standard'});
+    await page.waitForSelector('#heroDraft .hd-card', {timeout: 30000});
+    const panel = await page.evaluate(() => ({
+      shown: !document.getElementById('heroDraft').hidden,
+      cards: document.querySelectorAll('#heroDraft .hd-card').length,
+      scrollH: document.documentElement.scrollHeight, vh: window.innerHeight,
+      sheet: (() => { const r = document.querySelector('#heroDraft .hd-sheet').getBoundingClientRect(); return {l: r.left, r: r.right, t: r.top, b: r.bottom}; })(),
+      vw: window.innerWidth
+    }));
+    pass('选将面板在对局页出现并有候选', panel.shown && (panel.cards === 5 || panel.cards === 7), JSON.stringify(panel));
+    pass('面板整体在视口内且整页不滚动', panel.sheet.l >= 0 && panel.sheet.r <= panel.vw && panel.sheet.t >= 0 && panel.sheet.b <= panel.vh && panel.scrollH <= panel.vh + 1, JSON.stringify(panel));
+    pass('没点选前确定按钮不可用', await page.locator('#hdOk').isDisabled());
+    await page.locator('#heroDraft .hd-card').first().click();
+    pass('点选后显示技能说明且确定可用', await page.locator('#heroDraft .hd-d-skill').count() >= 1 && await page.locator('#hdOk').isEnabled());
+    await page.locator('#hdOk').click();
+    await page.waitForSelector('#heroDraft', {state: 'hidden', timeout: 40000});
+    await page.waitForFunction(() => window.GameUI && window.GameUI.players && window.GameUI.players.length === 5 && window.GameUI.players.every(p => p.hero_name && p.hero_name !== '选将中'), null, {timeout: 30000});
+    pass('选完后面板收起，五名玩家都有武将', true);
+    pass('回合开始（进入第 1 轮）', await page.waitForFunction(() => window.GameUI.state && window.GameUI.state.round >= 1, null, {timeout: 30000}).then(() => true).catch(() => false));
+    // 勾"自由选将"：保持原来的 select_hero 流程
+    await gotoLobby();
+    await page.evaluate(() => { try { sessionStorage.removeItem('activeGame'); } catch (_) {} });
+    await page.locator('#playerName').fill(PLAYER_NAME);
+    await page.locator('#freeDraft').setChecked(true);
+    await page.locator('#startGameBtn').click();
+    await page.waitForURL('**/select_hero.html', {timeout: 10000});
+    pass('勾选自由选将仍进入 select_hero.html', true);
   }});
 
   // ---- 执行 -----------------------------------------------------------------------------
