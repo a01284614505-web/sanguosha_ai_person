@@ -27,12 +27,20 @@ from game_engine.seats import seat_of
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 from game_engine.recovery import RecoveryStore, dump_engine, restore_engine
 from game_engine.skill_parity_certification import REPORT_PATH, report_is_current
+from game_engine.skin_store import MAX_UPLOAD_BYTES as MAX_SKIN_UPLOAD_BYTES, SkinError, SkinStore
 BASE_DIR = Path(__file__).resolve().parent
 HTTP_PORT = 8_888
 WS_PORT = 8889
 HISTORY_PATH = Path(os.environ.get("SANGUOSHA_HISTORY_PATH") or BASE_DIR / "logs/runtime/game_history.json")
 GAME_LOG_DIR = Path(os.environ.get("SANGUOSHA_GAME_LOG_DIR") or BASE_DIR / "logs/runtime/game_logs")
 RECOVERY_DIR = Path(os.environ.get("SANGUOSHA_RECOVERY_DIR") or BASE_DIR / "logs/runtime/recovery")
+# 皮肤资源目录：按档案隔离的导入图 + 公共的 noname 缓存，运行时数据不进仓库。
+SKIN_DIR = Path(os.environ.get("SANGUOSHA_SKIN_DIR") or BASE_DIR / "data/skins")
+SKIN_CATALOG_PATH = BASE_DIR / "frontend/data/noname_skin_candidates.json"
+SKIN_STORE = None
+SKIN_STORE_LOCK = __import__("threading").Lock()
+# 写接口必带的自定义头：跨站网页想直接 POST 过来会因此触发预检并被拒绝（服务器不响应 OPTIONS）。
+SKIN_WRITE_HEADER = "X-SGS-Skin"
 # 运行中的 GameServer；HTTP 线程只读取它，用于局内“拉取模型”沿用该 AI 已保存的 Key。
 ACTIVE_SERVER = None
 
@@ -701,6 +709,16 @@ class GameServer:
             return
         except Exception as exc:
             print(f"[发送失败] {exc}")
+def skin_store():
+    """惰性创建皮肤存储；武将 ID 每次现读，这样启用武将包后新武将也能换皮。"""
+    global SKIN_STORE
+    with SKIN_STORE_LOCK:
+        if SKIN_STORE is None:
+            SKIN_STORE = SkinStore(SKIN_DIR, SKIN_CATALOG_PATH,
+                                   lambda: {hero["id"] for hero in HeroRegistry(BASE_DIR).heroes})
+        return SKIN_STORE
+
+
 class CustomHandler(SimpleHTTPRequestHandler):
     ALLOWED_STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".png", ".jpg", ".mp3"}
     def __init__(self, *args, **kwargs):
@@ -802,6 +820,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 self._send_json(503, {"success": False, "current": False,
                                       "message": "技能认证报告暂不可用"})
             return
+        if request_path in ("/api/skins", "/api/skins/catalog", "/api/skins/image"):
+            self._handle_skins_get(request_path, parse_qs(parsed.query))
+            return
         if request_path.startswith("/api/"):
             self.send_error(404)
             return
@@ -812,6 +833,83 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         super().do_GET()
+    def _skin_error(self, exc):
+        if isinstance(exc, SkinError):
+            self._send_json(exc.status, {"success": False, "message": str(exc)})
+        elif isinstance(exc, ValueError):
+            self._send_json(400, {"success": False, "message": str(exc) or "请求无效"})
+        else:
+            logging.getLogger(__name__).error("皮肤接口失败: %s", exc)
+            self._send_json(500, {"success": False, "message": "皮肤保存/读取失败，请检查服务器日志"})
+
+    def _handle_skins_get(self, request_path, query):
+        first = lambda key: (query.get(key) or [None])[0]
+        try:
+            store = skin_store()
+            if request_path == "/api/skins":
+                self._send_json(200, {"success": True, **store.state(first("profile_id"))})
+            elif request_path == "/api/skins/catalog":
+                self._send_json(200, {"success": True, **store.catalog()})
+            else:
+                hero_id, skin_id = first("hero_id"), first("skin_id")
+                if first("profile_id") is not None:
+                    path, mime = store.upload_file(first("profile_id"), hero_id, skin_id)
+                else:
+                    path, mime = store.noname_file(hero_id, skin_id)
+                body = path.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                # skin_id 对应的内容不会变，浏览器可以长期缓存，换皮后不会重复下载。
+                self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                self.end_headers()
+                self.wfile.write(body)
+        except (SkinError, ValueError, OSError, RuntimeError) as exc:
+            self._skin_error(exc)
+
+    def _handle_skins_post(self, request_path, query):
+        try:
+            if self.headers.get(SKIN_WRITE_HEADER) != "1":
+                raise SkinError("缺少皮肤写入标记头。", 403)
+            store = skin_store()
+            if request_path == "/api/skins/upload":
+                first = lambda key: (query.get(key) or [None])[0]
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    raise SkinError("Content-Length 无效。")
+                if length <= 0:
+                    raise SkinError("请求体为空。")
+                if length > MAX_SKIN_UPLOAD_BYTES:
+                    self.close_connection = True
+                    # 适度超限就读掉丢弃，让客户端能收到 413 说明；离谱的大小直接断开不读。
+                    remaining = length if length <= 8 * 1024 * 1024 else 0
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                    raise SkinError("图片大小必须在 1 字节到 2 MiB 之间。", 413)
+                data = self.rfile.read(length)
+                if len(data) != length:
+                    raise SkinError("请求体不完整。")
+                result = store.save_upload(first("profile_id"), first("hero_id"), data,
+                                           self.headers.get("Content-Type"), label=first("label"),
+                                           client_ref=first("client_ref"), select=first("select") or "1")
+                self._send_json(200, {"success": True, "upload": result, **store.state(first("profile_id"))})
+                return
+            body = self._read_json_body(max_bytes=16_000, require_object=True)
+            if request_path == "/api/skins/select":
+                state = store.select(body.get("profile_id"), body.get("hero_id"), body.get("skin_id"))
+            else:
+                state = store.delete_upload(body.get("profile_id"), body.get("skin_id"))
+            self._send_json(200, {"success": True, **state})
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._send_json(400, {"success": False, "message": "请求体不是合法JSON"})
+        except (SkinError, ValueError, OSError, RuntimeError) as exc:
+            self._skin_error(exc)
+
     def _log_store(self):
         server = ACTIVE_SERVER
         return server.game_logs if server is not None else GameLogStore(GAME_LOG_DIR)
@@ -921,6 +1019,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
             except (OSError, RuntimeError) as exc:
                 logging.getLogger(__name__).error("保存称号失败: %s", exc)
                 self._send_json(500, {"success": False, "message": "称号保存失败"})
+            return
+        if request_path in ("/api/skins/upload", "/api/skins/select", "/api/skins/delete"):
+            self._handle_skins_post(request_path, parse_qs(urlsplit(self.path).query))
             return
         if request_path == "/api/models":
             self._handle_list_models()

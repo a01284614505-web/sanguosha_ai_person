@@ -1457,3 +1457,4 @@ cp extracted_resources/cards/*.png frontend/assets/cards/
 
 - 2026-10-23：UI 第三稿接线完成（W1–W10，分支 `feat/ui-v3-table`，未开 PR）。最终代码 `d26acdd`：verify_project 981 passed / VERIFY_OK；浏览器验收桌面与手机各 55 通过、2 跳过、1 预存失败（`speaker name is the player`，基线同样失败）。详见 [UI 第三稿接线交接](handover/20261023_0953_UI第三稿接线交接.md)。
 - 2026-10-23：正式选将完成（分支 `feat/hero-draft`，未开 PR）：主公先选并公开、其余每人 5 张互不重复候选、依赖武将的初始化后移，大厅保留“自由选将（测试用）”；1017 passed / VERIFY_OK，b7 两模式 30 局 normal=30，浏览器验收桌面与 412x720 0 fail。详见 [正式选将交接](handover/20261024_正式选将.md)。
+- 2026-10-24：皮肤系统重做（分支 `feat/skins-gallery`，未开 PR）：玩家式画廊、按档案存服务器、服务器代下载缓存 noname 候选、旧 IndexedDB 自动迁移、头像首帧即皮肤。1010 passed、VERIFY_OK、浏览器验收含 skins 组全通过；真实 GitHub 下载未能在沙箱实测。详见 [皮肤画廊与服务器存储](handover/20261024_皮肤画廊与服务器存储.md)。
