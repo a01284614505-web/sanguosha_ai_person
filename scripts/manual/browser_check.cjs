@@ -410,7 +410,8 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     await page.waitForSelector('#skTiles .sk-tile[data-kind="upload"][aria-pressed="true"]', {timeout: 10000});
     pass('custom import becomes 使用中', true);
     await page.locator('#skFile').setInputFiles({name: 'tiny.png', mimeType: 'image/png', buffer: makePng(32, 32)});
-    await page.waitForFunction(() => document.getElementById('skPanelStatus').classList.contains('bad'), null, {timeout: 5000});
+    // 候选图拉不到时状态栏本来就是红字，所以要等到出现尺寸提示本身，而不是只看 bad 样式
+    await page.waitForFunction(() => { const el = document.getElementById('skPanelStatus'); return el.classList.contains('bad') && el.textContent.includes('64'); }, null, {timeout: 5000}).catch(() => {});
     pass('too-small image is refused with a message', (await page.locator('#skPanelStatus').innerText()).includes('64'));
     await page.locator('#skResetBtn').click();
     await page.waitForSelector('#skTiles .sk-tile[data-kind="default"][aria-pressed="true"]');
