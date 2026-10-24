@@ -982,13 +982,25 @@
         wrap.classList.toggle('urgent', left < 5000);
     }
 
+    /**
+     * 暂停时服务器冻结了倒计时（批次 4），本地圆盘也要停：暂停期间每一拍都把截止时间往后推同样的时长，
+     * 继续后自然按剩余时间接着走。
+     */
+    function holdDeadlineWhilePaused() {
+        const now = Date.now();
+        if (G.paused && G.lastTick) G.reqDeadline += now - G.lastTick;
+        G.lastTick = now;
+    }
+
     function startRequestTimer(seconds) {
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
         const wrap = document.getElementById('abTimer');
+        G.lastTick = Date.now();
         const tick = () => {
             if (!G.req) { clearInterval(G.reqTimer); return; }
+            holdDeadlineWhilePaused();
             const left = G.reqDeadline - Date.now();
             paintTimer(wrap, left, total);
             if (left <= 0) {
@@ -2151,8 +2163,10 @@
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
         const wrap = document.getElementById('abTimer');
+        G.lastTick = Date.now();
         const tick = () => {
             if (!G.turn || G.req || G.ended) { clearInterval(G.reqTimer); return; }
+            holdDeadlineWhilePaused();
             const left = G.reqDeadline - Date.now();
             paintTimer(wrap, left, total);
             if (left <= 0) clearInterval(G.reqTimer);

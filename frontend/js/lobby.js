@@ -540,6 +540,12 @@
 
         // 组装开局配置：正式选将直接进对局，自由选将进入选将页。带 Key 的完整配置只写 sessionStorage；localStorage 里的副本去掉 Key。
         async startGame() {
+            // 还有一局没打完：托管代打中的局会在后台继续；暂停中或无人观看的局，开新局时服务器会把它结束。先问一句。
+            const r = this.resumable;
+            if (r && !r.trustee && r.human_alive !== false) {
+                const what = r.paused ? '暂停中的上一局' : '上一局';
+                if (!window.confirm('你还有' + what + '没打完（第 ' + (r.round || '?') + ' 轮）。开新局会结束它，记为中断。确定开新局吗？\n想接着打，请点“继续上一局”。')) return;
+            }
             this.savePrefs();
             if (this.dialog.open) this.saveCurrent();
             if (!store.get('lobbyAIMigrated', false)) this.restoreAIConfigs();
