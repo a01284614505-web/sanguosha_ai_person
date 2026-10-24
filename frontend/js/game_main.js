@@ -237,10 +237,15 @@
         // 称号牌匾不在这里输出：它在武将框上方，由 titleBadgeHTML() 单独渲染（W4.3）
         // 框顶只留两枚印章（W 第二轮 R1/R2）；座位号+名字挪到框下方的名签（seatNameHTML）；
         // 武将名与手牌数放进框底的名牌（.s-plate）。
-        return SGS.heroImgHTML(hero.id, hero.name || p.name) +
+        // 第三稿：立绘上叠一层暗角（.s-shade，上亮下暗，名牌处压暗），框外四角是大号云纹角花。
+        // 自己的名牌右侧不写手牌数（手牌就在下面），改写“N号 · 你”。
+        const plateRight = opts.hideHand
+            ? '<span class="s-me">' + (p.seat ? p.seat + '号 · ' : '') + '你</span>'
+            : '<span class="s-hand" title="手牌数">' + p.hand_count + '</span>';
+        return SGS.heroImgHTML(hero.id, hero.name || p.name) + '<i class="s-shade" aria-hidden="true"></i>' +
             '<div class="s-top">' + SGS.factionSeal(hero.faction) + idSeal + '</div>' + cheatPeek +
             '<div class="s-plate"><span class="s-hero">' + esc((hero.name || p.hero_name || '').replace(/^界/, '')) + '</span>' +
-            (opts.hideHand ? '' : '<span class="s-hand" title="手牌数">' + p.hand_count + '</span>') + '</div>' +
+            plateRight + '</div>' +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
             (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">' + SGS.chainSVG() + '</div>' : '') +
             '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status +
@@ -249,7 +254,7 @@
 
     /** 武将框下方的名签：“N号 名字”。.s-name 的元素与文字格式保持不变（测试依赖）。 */
     function seatNameHTML(p) {
-        return '<span class="s-name">' + esc((p.seat ? p.seat + '号 ' : '') + p.name) + '</span>';
+        return '<span class="s-name">' + (p.seat ? '<b>' + p.seat + '号</b> ' : '') + esc(p.name) + '</span>';
     }
 
     /** 武将框下方的装备栏（只列出已装备的格子）。 */
@@ -324,7 +329,8 @@
         const eq = p.equipment || {};
         const judge = p.judge_area || [];
         // 装备槽（W5）：简称方块 + 插画缩略图 + 牌名；空槽半透明写"空"
-        zones.innerHTML = '<h3>装备区</h3>' + SGS.EQUIP_ORDER.map(slot => {
+        // 第三稿：电脑上“装备区 / 判定区”两个小标题；手机竖屏合成一行“装备 · 判定”，判定区当作网格里的一格
+        zones.innerHTML = '<h3 class="z-h">装备区</h3><div class="z-mh">装备 · 判定</div>' + SGS.EQUIP_ORDER.map(slot => {
             const name = eq[slot];
             const art = name ? SGS.cardArtURL(name) : '';
             const body = name
@@ -334,7 +340,10 @@
                 esc(SGS.EQUIP_SLOT[slot].short) + '</b>' + body + '</div>';
         }).join('') +
             (p.treasure_count ? '<div class="zone-slot treasure-zone" title="木牛流马扣置的牌不计入手牌"><b>木</b>扣置 ' + p.treasure_count + ' 张</div>' : '') +
-            '<div class="zone-judge"><span>判定区</span>' + (judge.length ? judgeTilesHTML(judge) : '<span class="faint">空</span>') + '</div>';
+            '<h3 class="z-h">判定区</h3><div class="zone-judge' + (judge.length ? '' : ' empty') + '"><b class="zj-k">判</b>' +
+            (judge.length
+                ? judge.map(name => '<span class="zj-item">' + judgeTilesHTML([name]) + '<span class="zj-name">' + esc(name) + '</span></span>').join('')
+                : '<span class="zs-name">空</span>') + '</div>';
 
         const hero = p.hero || {};
         const t = currentTargeting();
@@ -390,7 +399,7 @@
         const track = document.getElementById('phaseTrack');
         const owner = playerById(G.phase.playerId);
         const curIdx = SGS.PHASE_ORDER.indexOf(G.phase.phase);
-        track.querySelector('.pt-owner').textContent = owner ? (owner.id === G.meId ? '你' : owner.name) : '';
+        track.querySelector('.pt-owner').textContent = owner ? (owner.id === G.meId ? '你的回合' : owner.name + ' 的回合') : '';
         track.querySelectorAll('.pt-step').forEach((el, i) => {
             const key = SGS.PHASE_ORDER[i];
             el.classList.toggle('on', i === curIdx);
@@ -1052,34 +1061,56 @@
     function showBubble(id, text) {
         const root = seatRoot(id);
         if (!root) return;
+        const host = id === G.meId ? (root.querySelector('.hero-stack') || root) : root;
         root.querySelectorAll('.bubble').forEach(b => b.remove());
         const b = document.createElement('div');
         const pos = id === G.meId ? 'above' : ({ 1: 'left', 2: 'below', 3: 'below', 4: 'right' }[seatPos(id)] || 'below');
         b.className = 'bubble ' + pos;
         b.textContent = text;
-        root.appendChild(b);
+        host.appendChild(b);
         setTimeout(() => { b.classList.add('fade'); setTimeout(() => b.remove(), 320); }, 3800);
     }
 
-    /** 出牌时从使用者画金线指向目标。 */
+    /**
+     * 出牌时从使用者画一条指向目标的弧线（第三稿）：虚线从淡金渐变到橙红、末端箭头，
+     * 弧线向牌桌中央鼓出（像是“越过牌桌”打过去），虚线缓慢流动，约 1.4 秒后淡出。
+     */
+    let aimSeq = 0;
     function aimLines(fromId, toIds) {
         const svg = document.getElementById('fxLines');
         const from = frameEl(fromId);
         if (!from || !toIds.length) return;
         const base = svg.getBoundingClientRect();
         const a = centerOf(from);
+        const ax = a.x - base.left, ay = a.y - base.top;
+        const fr = document.getElementById('field').getBoundingClientRect();
+        const cx0 = fr.left + fr.width / 2 - base.left, cy0 = fr.top + fr.height * 0.6 - base.top;
         const parts = toIds.map(id => {
             const el = frameEl(id);
             if (!el || id === fromId) return '';
             const b = centerOf(el);
-            return '<line x1="' + (a.x - base.left) + '" y1="' + (a.y - base.top) + '" x2="' + (b.x - base.left) + '" y2="' + (b.y - base.top) + '"/>' +
-                '<circle cx="' + (b.x - base.left) + '" cy="' + (b.y - base.top) + '" r="5"/>';
+            const bx = b.x - base.left, by = b.y - base.top;
+            // 控制点：两端中点朝牌桌中央拉过去一段，弧度随距离变化
+            const mx = (ax + bx) / 2, my = (ay + by) / 2;
+            const qx = mx + (cx0 - mx) * 0.55, qy = my + (cy0 - my) * 0.55 + Math.hypot(bx - ax, by - ay) * 0.08;
+            // 终点停在目标框边缘外一点，箭头不压立绘
+            const dx = bx - qx, dy = by - qy, len = Math.hypot(dx, dy) || 1;
+            const stop = Math.min(b.r.width, b.r.height) * 0.42;
+            const ex = bx - dx / len * stop, ey = by - dy / len * stop;
+            const gid = 'aimG' + (++aimSeq);
+            return '<linearGradient id="' + gid + '" gradientUnits="userSpaceOnUse" x1="' + ax + '" y1="' + ay + '" x2="' + ex + '" y2="' + ey + '">' +
+                '<stop offset="0" stop-color="#fff0b8" stop-opacity=".2"/><stop offset="1" stop-color="#ff6a3a"/></linearGradient>' +
+                '<path class="aim" d="M' + ax + ' ' + ay + ' Q' + qx + ' ' + qy + ' ' + ex + ' ' + ey + '" stroke="url(#' + gid + ')"/>' +
+                '<path class="aim-head" d="M' + (ex - dx / len * 16 - dy / len * 10) + ' ' + (ey - dy / len * 16 + dx / len * 10) +
+                ' L' + ex + ' ' + ey + ' L' + (ex - dx / len * 16 + dy / len * 10) + ' ' + (ey - dy / len * 16 - dx / len * 10) + '"/>';
         }).join('');
         if (!parts) return;
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('class', 'aim-group');
         g.innerHTML = parts;
         svg.appendChild(g);
-        setTimeout(() => g.remove(), 1000);
+        setTimeout(() => g.classList.add('fade'), 1100);
+        setTimeout(() => g.remove(), 1450);
     }
 
     /** 飞牌起点：我自己出的牌从手牌位置飞出，别人的从武将框飞出。 */
@@ -1104,11 +1135,15 @@
         else if (data.reason === 'use' && data.target_name) caption += ' → ' + data.target_name;
         else if (data.reason === 'hand_limit') caption += ' 弃置';
         else if (data.reason && data.reason !== 'use') caption = data.message || caption;
-        fig.innerHTML = SGS.cardHTML(data.card || { name: data.card_name }) + '<figcaption title="' + esc(caption) + '">' + esc(caption) + '</figcaption>';
+        fig.title = caption;
+        fig.innerHTML = SGS.cardHTML(data.card || { name: data.card_name }) + '<figcaption>' + esc(caption) + '</figcaption>';
+        // 第三稿：牌叠成一摞，交替倾斜；tilt-N 决定这张的倾角与高低（按出牌序号轮换，旧牌不会跟着换角度）
+        G.pileSeq = (G.pileSeq || 0) + 1;
+        fig.classList.add('tilt-' + (G.pileSeq % 5));
         box.appendChild(fig);
+        while (box.children.length > 5) box.removeChild(box.firstChild);
         const all = box.querySelectorAll('.table-card');
         all.forEach((el, i) => el.classList.toggle('old', i < all.length - 1));
-        while (box.children.length > 4) box.removeChild(box.firstChild);
         if (Number.isInteger(data.discard_count)) document.getElementById('discardCount').textContent = data.discard_count;
     }
 
@@ -1374,12 +1409,44 @@
     }
 
     // ------------------------------------------------------------------ 总渲染
+    // 左上信息牌（第三稿）：身份局显示场上各身份的存活数（总配置减去已亮明的阵亡者），以及自己的胜利目标
+    const MODE_IDENTITIES = {
+        '5人身份局': ['lord', 'loyalist', 'rebel', 'rebel', 'spy'],
+        '8人身份局': ['lord', 'loyalist', 'loyalist', 'rebel', 'rebel', 'rebel', 'rebel', 'spy']
+    };
+    const IDENTITY_GOAL = {
+        lord: '消灭所有反贼与内奸', loyalist: '保护主公，消灭反贼与内奸', rebel: '消灭主公',
+        spy: '先清场，最后单挑主公', team_a: '消灭 B 队全部角色', team_b: '消灭 A 队全部角色',
+        landlord: '消灭两名农民', farmer: '消灭地主'
+    };
     function renderHUD() {
         const s = G.state;
         if (!s) return;
         document.getElementById('rn').textContent = s.round;
         document.getElementById('dc').textContent = s.deck_count;
         document.getElementById('discardCount').textContent = s.discard_count || 0;
+        const ids = document.getElementById('idCounts');
+        const pool = MODE_IDENTITIES[s.mode || '5人身份局'];
+        if (ids) {
+            if (!pool) ids.hidden = true;
+            else {
+                const left = {};
+                pool.forEach(k => { left[k] = (left[k] || 0) + 1; });
+                G.players.forEach(p => { if (!p.alive && p.identity && left[p.identity] > 0) left[p.identity] -= 1; });
+                const html = ['lord', 'loyalist', 'rebel', 'spy'].map(k =>
+                    '<span class="hid' + (left[k] ? '' : ' zero') + '" title="' + SGS.IDENTITY[k].name + '存活 ' + (left[k] || 0) + '">' +
+                    SGS.identitySeal(k) + '<b>' + (left[k] || 0) + '</b></span>').join('');
+                if (ids.innerHTML !== html) ids.innerHTML = html;
+                ids.hidden = false;
+            }
+        }
+        const goal = document.getElementById('goalText');
+        const mine = me();
+        const text = mine && mine.identity ? IDENTITY_GOAL[mine.identity] : '';
+        if (goal) {
+            goal.textContent = text ? '目标：' + text : '';
+            goal.hidden = !text;
+        }
     }
 
     function renderAll() {
