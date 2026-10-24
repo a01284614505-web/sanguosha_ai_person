@@ -639,13 +639,16 @@ dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
     overflow: hidden; isolation: isolate;
     transition: transform .25s ease, box-shadow .25s ease;
 }
+/* 不支持 aspect-ratio 的旧内核：用固定高度兜底，避免卡面塌成 0 高 */
+@supports not (aspect-ratio: 1 / 1) { .id-card { height: calc(var(--idc-w) * 1.4); } }
 .id-card .idc-frame { position: absolute; inset: 0; width: 100%; height: 100%; }
 .id-card .idc-face {
     position: absolute; left: 0; right: 0; top: 44.3%; transform: translateY(-50%);
     text-align: center; font: 700 calc(var(--idc-w) * .34)/1 var(--font-kai);
-    background: linear-gradient(180deg, #fbe9b4 0%, #d8b25e 48%, #8a6427 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .7));
+    /* 批次 3：不再用"渐变文字 + 滤镜投影"。部分安卓 WebView（如 X 浏览器）会把这种写法画成一整块色块，
+       就是用户看到的"莫名其妙黑一块"。改成纯色字 + 文字阴影，所有浏览器都一样。 */
+    color: #f0d48c;
+    text-shadow: 0 1px 0 #fff1c4, 0 -1px 0 #6b4c22, 0 2px 3px rgba(0, 0, 0, .75);
 }
 .id-card .idc-label {
     position: absolute; left: 0; right: 0; top: 80.7%; transform: translateY(-50%);
@@ -667,8 +670,8 @@ dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
 @keyframes idcSheen { 0%, 55% { transform: translateX(-60%); } 85%, 100% { transform: translateX(60%); } }
 /* 选定身份：外圈发金光，字带对应身份色 */
 .id-card.chosen { box-shadow: 0 0 0 1px #8a6427, 0 0 18px rgba(240, 200, 120, .45), 0 6px 16px rgba(0, 0, 0, .55), inset 0 0 18px rgba(0, 0, 0, .6); }
-.id-card.chosen.id-rebel .idc-face { background-image: linear-gradient(180deg, #e9f4c9, #8fc074 50%, #3d6b2f); }
-.id-card.chosen.id-spy .idc-face { background-image: linear-gradient(180deg, #e3ebff, #8fa8e0 50%, #3a548f); }
+.id-card.chosen.id-rebel .idc-face { color: #b9df9c; text-shadow: 0 1px 0 #eaf6d6, 0 -1px 0 #2f5424, 0 2px 3px rgba(0, 0, 0, .75); }
+.id-card.chosen.id-spy .idc-face { color: #b4c6f0; text-shadow: 0 1px 0 #e8eeff, 0 -1px 0 #2c4275, 0 2px 3px rgba(0, 0, 0, .75); }
 @media (prefers-reduced-motion: reduce) { .id-card .idc-sheen { animation: none; opacity: 0; } }
 
 /* 大厅入席面板里的身份卡区 */

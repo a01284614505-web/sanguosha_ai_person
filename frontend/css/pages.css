@@ -440,3 +440,24 @@ pre.preview { margin: 0; padding: 10px; border-radius: 6px; background: var(--in
 .reward-note b { font-size: 24px; }
 .reward-note p { margin: 4px 0 0; font-family: var(--font-ui); font-size: 14px; color: var(--text-dim); }
 @keyframes rewardIn { from { transform: rotateY(90deg) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ======================================================================
+   批次 3（2026-10-24）：继续上一局（绿色）、未开放模式
+   ====================================================================== */
+/* 继续上一局：用户定为绿色，放在“开始游戏”正下方 */
+.resume-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap;
+    color: #f1fff2; border: 1px solid #8fd498;
+    background: linear-gradient(180deg, #3f8a4c, #255c32);
+    box-shadow: inset 0 1px 0 rgba(220, 255, 220, .35), 0 4px 12px rgba(0, 0, 0, .35);
+}
+.resume-btn:hover { filter: brightness(1.08); }
+.resume-btn small { font-size: 13px; font-weight: 400; opacity: .85; letter-spacing: 0; }
+.resume-btn[hidden] { display: none; }
+/* 暂未开放的模式：压暗、右上角小签，点了只提示 */
+#modeCards .mode-choice.mode-closed { position: relative; opacity: .55; cursor: not-allowed; }
+#modeCards .mode-choice.mode-closed .brush { color: var(--text-dim); }
+.mode-closed-tag {
+    position: absolute; top: 10px; right: 10px; font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 10px;
+    color: var(--text); background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px var(--rule);
+}

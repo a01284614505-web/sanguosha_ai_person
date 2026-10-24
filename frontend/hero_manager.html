@@ -5,8 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>武将包管理 - 三国杀酒馆</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
-    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/sgs.css?v=20261024b3">
+    <link rel="stylesheet" href="css/pages.css?v=20261024b3">
     <style>
+        /* 批次 3：页面换成大厅同一套外观（sgs.css / pages.css）。原来的样式变量名映射到大厅配色，结构与脚本不动。 */
+        :root {
+            --bg-card: linear-gradient(180deg, var(--surface-top), var(--surface-bottom));
+            --border-light: var(--frame-line); --border-dark: var(--field-line); --border-gold: var(--rule);
+            --text-gold: var(--heading); --text-muted: var(--text-dim); --text-light: var(--text);
+            --shu-red: var(--cinnabar-hi);
+        }
+        .hero-manager h1 { font-family: var(--font-brush); font-weight: 400; letter-spacing: 4px; }
+        .btn-primary {
+            display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 16px;
+            border: 1px solid var(--gold); border-radius: var(--radius-m, 6px); cursor: pointer;
+            font: 600 14px/1 var(--font-kai); color: #2b1a08;
+            background: linear-gradient(180deg, #f1d898, #c9a35a);
+        }
+        .btn-primary:hover { filter: brightness(1.06); }
+        .btn-primary:focus-visible, .toggle-btn:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+        .hero-manager input, .hero-manager select {
+            min-height: 34px; padding: 4px 10px; border-radius: 6px; font: 14px var(--font-ui);
+            color: var(--text); background: var(--field-bg); border: 1px solid var(--field-line);
+        }
+        .hero-manager textarea { background: var(--field-bg); border-color: var(--field-line); }
         .hero-manager {
             max-width: 1200px;
             margin: 40px auto;
@@ -15,8 +37,8 @@
 
         .section {
             background: var(--bg-card);
-            border: 2px solid var(--border-light);
-            border-radius: 12px;
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-m, 8px);
             padding: 24px;
             margin-bottom: 24px;
         }
@@ -146,15 +168,27 @@
     </style>
 </head>
 <body>
+<div class="page">
+    <header class="topbar">
+        <a class="logo" href="index.html" aria-label="返回大厅">
+            <span class="logo-seal">杀</span>
+            <span class="logo-text gold-text">三国杀酒馆</span>
+        </a>
+        <nav aria-label="主导航">
+            <a href="index.html">大厅</a><a href="handbook.html">图鉴</a><a href="skins.html">皮肤</a>
+            <a href="hero_manager.html" aria-current="page">武将包</a><a href="settings.html">设置</a>
+            <button class="icon-btn" type="button" data-theme-toggle aria-label="切换主题"></button>
+        </nav>
+    </header>
     <div class="hero-manager">
-        <header style="text-align: center; margin-bottom: 40px;">
-            <h1 style="font-size: 36px; color: var(--text-gold);">⚔️ 武将包管理</h1>
+        <header style="text-align: center; margin-bottom: 28px;">
+            <h1 style="font-size: 34px; color: var(--text-gold);">武将包管理</h1>
             <p style="color: var(--text-muted);">导入武将、管理将池、自动生成世界书</p>
         </header>
 
         <!-- 数据转换器 -->
         <section class="section">
-            <div class="section-title">📝 武将数据转换器</div>
+            <div class="section-title">武将数据转换器</div>
             <p style="color: var(--text-muted); margin-bottom: 16px;">
                 从贴吧复制武将数据，自动转换为JSON格式
             </p>
@@ -222,7 +256,7 @@
 
         <!-- 武将包列表 -->
         <section class="section">
-            <div class="section-title">📦 武将包列表</div>
+            <div class="section-title">武将包列表</div>
             <div id="packageList" class="package-list">
                 <!-- 动态生成 -->
             </div>
@@ -236,7 +270,7 @@
 
         <!-- 使用说明 -->
         <section class="section">
-            <div class="section-title">💡 使用说明</div>
+            <div class="section-title">使用说明</div>
             <ol style="color: var(--text-light); line-height: 2;">
                 <li>从贴吧复制武将数据，粘贴到左侧输入框</li>
                 <li>点击"转换"或"使用AI转换"</li>
@@ -247,10 +281,8 @@
             </ol>
         </section>
 
-        <div style="text-align: center; margin-top: 30px;">
-            <a href="index.html" style="color: var(--text-muted); text-decoration: none;">← 返回大厅</a>
-        </div>
     </div>
+</div>
 
     <script>
         // 武将名称到ID的映射
@@ -511,8 +543,9 @@
         refreshPackages();
         refreshBackups();
     </script>
+    <script src="js/sgs_common.js?v=20261024b3"></script>
     <script src="js/skill_trial.js?v=20261019a"></script>
     <script src="js/skill_certification.js?v=20261020b2"></script>
-    <script src="js/global_settings.js?v=20261023u6"></script>
+    <script src="js/global_settings.js?v=20261024b3"></script>
 </body>
 </html>

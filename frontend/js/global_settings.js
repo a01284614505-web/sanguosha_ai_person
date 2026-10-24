@@ -49,25 +49,36 @@
         style.id = 'globalSettingsStyle';
         style.textContent = `
             #globalSettingsLauncher{position:fixed;top:10px;right:10px;z-index:3000;width:38px;height:38px;border-radius:50%;border:1px solid #c9a35a;background:radial-gradient(circle at 50% 35%,#3b2a1c,#1c140e);color:#f1d898;font-size:18px;display:grid;place-items:center;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.5)}
-            #globalSettingsOverlay{display:none;position:fixed;inset:0;z-index:8000;background:rgba(5,3,2,.74);padding:12px;align-items:center;justify-content:center;color:#eadcbf;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+            /* 批次 3：小窗设置换成对局页/大厅同一套外观——宋体系衬线字、暖色毛玻璃面板、分组卡片；手机上从底部升起 */
+            #globalSettingsOverlay{display:none;position:fixed;inset:0;z-index:8000;background:rgba(5,3,2,.6);padding:12px;align-items:center;justify-content:center;color:#f1e6cf;font-family:"Noto Serif SC","Songti SC","STSong","SimSun",serif}
             #globalSettingsOverlay.show{display:flex}
-            .gs-card{width:min(94vw,600px);max-height:92dvh;overflow:auto;background:linear-gradient(180deg,#2f2117,#241911);border:1px solid #6e5229;border-radius:8px;padding:18px 20px;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35),inset 0 0 0 4px rgba(201,163,90,.28),0 18px 55px rgba(0,0,0,.7)}
-            .gs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-            .gs-head h3{margin:0;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:22px;color:#f1d898}
-            .gs-head button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:1px solid #6e5229;background:#1c140e;color:#f1d898;cursor:pointer}
-            .gs-section{border-top:1px solid rgba(201,163,90,.22);padding:12px 0 4px}
-            .gs-section h4{margin:0 0 6px;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:16px;color:#f1d898;font-weight:600}
-            .gs-row{display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;margin:8px 0;font-size:14px}
+            .gs-card{width:min(94vw,600px);max-height:92dvh;overflow:auto;overscroll-behavior:contain;background:rgba(30,22,14,.94);border-radius:16px;padding:16px 18px 18px;box-shadow:inset 0 0 0 1px rgba(255,236,196,.2),0 18px 55px rgba(0,0,0,.7)}
+            @supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){#globalSettingsOverlay{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}.gs-card{background:rgba(30,22,14,.8)}}
+            .gs-head{position:sticky;top:-16px;z-index:1;display:flex;justify-content:space-between;align-items:center;margin:-16px -18px 8px;padding:14px 18px 10px;background:inherit;border-radius:16px 16px 0 0}
+            .gs-head h3{margin:0;font-weight:700;font-size:19px;letter-spacing:2px;color:#fbe7b0}
+            .gs-head button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:0;background:rgba(0,0,0,.35);box-shadow:inset 0 0 0 1px rgba(255,240,210,.22);color:#f1e6cf;cursor:pointer}
+            .gs-section{margin:10px 0 0;padding:6px 12px 8px;border-radius:12px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,240,210,.08)}
+            .gs-section[hidden]{display:none}
+            .gs-section h4{margin:6px 0 4px;font-size:13px;letter-spacing:2px;color:#e3c27a;font-weight:700}
+            .gs-row{display:grid;grid-template-columns:118px 1fr;gap:10px;align-items:center;margin:0;padding:9px 0;font-size:14px;border-top:1px solid rgba(255,240,210,.06)}
+            .gs-section h4+.gs-row{border-top:0}
             .gs-row[hidden]{display:none}
-            .gs-row>span:first-child{color:#d9c7a0}
-            .gs-row input:not([type=checkbox]):not([type=range]),.gs-row select{min-width:0;width:100%;background:rgba(8,5,3,.55);border:1px solid #5d4730;color:#eadcbf;border-radius:5px;padding:7px 9px}
-            .gs-row input[type=checkbox]{width:16px;height:16px;accent-color:#a8261c;vertical-align:-3px;margin-right:6px}
-            .gs-row input[type=range]{width:100%;accent-color:#c9a35a}
-            .gs-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:12px;margin-top:6px}.gs-stat{background:rgba(0,0,0,.25);border-radius:5px;padding:7px;color:#a89577}.gs-stat b{display:block;color:#f1e4c3;font-size:15px}
+            .gs-row>span:first-child{color:#d9c49a}
+            .gs-row small{color:#a89577}
+            .gs-row input:not([type=checkbox]):not([type=range]),.gs-row select{min-width:0;width:100%;min-height:36px;background:rgba(0,0,0,.4);border:0;box-shadow:inset 0 0 0 1px rgba(255,240,210,.18);color:#f1e6cf;border-radius:8px;padding:6px 10px;font:inherit;font-size:14px}
+            .gs-row input[type=checkbox]{width:18px;height:18px;accent-color:#57a85c;vertical-align:-4px;margin-right:8px}
+            .gs-row input[type=range]{width:100%;accent-color:#e3c27a}
+            .gs-row :focus-visible,.gs-actions button:focus-visible,.gs-head button:focus-visible{outline:2px solid #fbe7b0;outline-offset:2px}
+            .gs-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:12px;margin:6px 0 4px}.gs-stat{background:rgba(0,0,0,.3);border-radius:8px;padding:7px;color:#a89577}.gs-stat b{display:block;color:#f1e4c3;font-size:15px}
             .gs-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin-top:14px}
-            .gs-actions button{min-height:36px;border:1px solid #c9a35a;border-radius:6px;padding:6px 16px;cursor:pointer;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:15px;font-weight:600;letter-spacing:.1em;color:#2a1a0b;background:linear-gradient(180deg,#d8b25e,#9b7330)}
-            .gs-actions .secondary{color:#f1d898;background:linear-gradient(180deg,#3a2a1d,#241911)}
-            @media(max-width:520px){.gs-row{grid-template-columns:1fr;gap:4px}.gs-stats{grid-template-columns:1fr 1fr}}
+            .gs-actions button{min-height:38px;border:0;border-radius:9px;padding:6px 18px;cursor:pointer;font:inherit;font-size:15px;font-weight:700;letter-spacing:.1em;color:#2a1a06;background:linear-gradient(180deg,#f6dc95,#c9952e);box-shadow:inset 0 0 0 1px #fff2bf}
+            .gs-actions .secondary{color:#f1e6cf;background:rgba(0,0,0,.4);box-shadow:inset 0 0 0 1px rgba(255,240,210,.22)}
+            @media(max-width:520px){
+                #globalSettingsOverlay{padding:0;align-items:flex-end}
+                .gs-card{width:100%;max-height:86dvh;border-radius:18px 18px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+                .gs-row{grid-template-columns:1fr;gap:5px}
+                .gs-stats{grid-template-columns:1fr 1fr}
+            }
         `;
         document.head.appendChild(style);
     }
