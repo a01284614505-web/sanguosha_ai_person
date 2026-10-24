@@ -97,8 +97,14 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         message = entry.get("message")
         if not message:
             continue
-        timeline.append({"seq": entry.get("seq"), "round": entry.get("round"), "kind": entry.get("event_kind") or "log",
-                         "text": str(message)[:300]})
+        row = {"seq": entry.get("seq"), "round": entry.get("round"), "kind": entry.get("event_kind") or "log",
+               "text": str(message)[:300]}
+        if entry.get("event_kind") == "death":
+            # 阵亡条目带结构化字段，日志页 / 复盘脚本不必从文字里再抠。
+            for key in ("player_id", "identity", "killer_id"):
+                if entry.get(key) is not None:
+                    row[key] = entry[key]
+        timeline.append(row)
     ledger = getattr(engine, "ledger", None)
     decisions = []
     if include_thinking:

@@ -33,7 +33,7 @@ from .seats import seat_of
 from .chat_facts import contradiction
 from .prompt_trace import redact
 from .public_situation import build_public_situation
-from .mode_registry import get_mode, supported_modes
+from .mode_registry import get_mode, identity_name, supported_modes
 
 
 logger = logging.getLogger(__name__)
@@ -235,6 +235,21 @@ class MainEngine:
         entry = {"message": message, **data}
         self.game_log.append({**entry, "round": self.game_state.round_number, "seq": self.next_log_seq()})
         await self.emit(ENGINE_EVENT.EVENT_NOTIFICATION, **entry)
+
+    def record_death(self, player: Player, killer: Any = None):
+        """阵亡事件写进局后日志的时间线。
+
+        只入 game_log、不 emit：阵亡暗置的局里身份不能通过实时事件泄露，而局后日志在对局结束后才可见，
+        可以记真实身份。此前时间线里没有任何阵亡条目，复盘时看不出谁在第几轮死于谁手。
+        """
+        seat = seat_of(self.game_state, player.id)
+        text = f"{player.name}（{seat}号）阵亡，身份：{identity_name(player.identity)}"
+        data = {"event_kind": "death", "player_id": player.id, "identity": player.identity}
+        if killer is not None:
+            text += f"，击杀者：{killer.name}（{seat_of(self.game_state, killer.id)}号）"
+            data["killer_id"] = killer.id
+        self.game_log.append({"message": text, **data, "round": self.game_state.round_number,
+                              "seq": self.next_log_seq()})
 
     async def move_card(
         self, card, from_zone, to_zone, *, from_owner=None, to_owner=None,
@@ -1128,7 +1143,10 @@ class MainEngine:
             full_choice = choice.get("type", "") if isinstance(choice, dict) else ("放弃" if choice is None else str(choice)[:100])
         public_situation = build_public_situation(self)
         situation_version = public_situation["state_version"]
-        fallback_reason = failure or (None if meta.get("model") else "rules_no_provider")
+        # 没走模型有两种：没配模型/Key（rules_no_provider），或有模型但这类决策本来就在本地处理
+        # （last_local_reason，如全暗置候选的随机选择）。后者不能记成“没配模型”。
+        local_reason = getattr(self.ai_decision, "last_local_reason", {}).get(player.id)
+        fallback_reason = failure or (None if meta.get("model") else local_reason or "rules_no_provider")
         # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。
         self.decision_log.append({
             "seq": self.next_log_seq(), "round": self.game_state.round_number, "player_id": player.id, "player_name": player.name,

@@ -112,6 +112,21 @@ LANDLORD = ModeSpec(
     draw_bonus_per_phase=1,
 )
 
+# 身份码 -> 给人和模型看的中文名。内部数据与协议仍用英文码，只在展示 / 提示词边界转换。
+IDENTITY_NAME = {
+    "lord": "主公", "loyalist": "忠臣", "rebel": "反贼", "spy": "内奸",
+    "team_a": "A队", "team_b": "B队", "landlord": "地主", "farmer": "农民",
+    "unknown": "未知",
+}
+
+
+def identity_name(identity, default: str = "未知") -> str:
+    """身份码转中文名；传入 None 或未登记的码时返回 default（未登记的码原样保留，便于排查）。"""
+    if identity is None or identity == "":
+        return default
+    return IDENTITY_NAME.get(identity, str(identity))
+
+
 MODE_REGISTRY = {
     IDENTITY_FIVE.mode_id: IDENTITY_FIVE,
     IDENTITY_EIGHT.mode_id: IDENTITY_EIGHT,
@@ -166,5 +181,5 @@ def identity_victory(players: Iterable, mode_id="5人身份局") -> dict:
     return {"game_over": False}
 
 
-__all__ = ["ModeSpec", "MODE_REGISTRY", "IDENTITY_FIVE", "IDENTITY_EIGHT", "TEAM_TWO_V_TWO", "LANDLORD",
+__all__ = ["IDENTITY_NAME", "identity_name", "ModeSpec", "MODE_REGISTRY", "IDENTITY_FIVE", "IDENTITY_EIGHT", "TEAM_TWO_V_TWO", "LANDLORD",
            "get_mode", "supported_modes", "identity_victory"]
