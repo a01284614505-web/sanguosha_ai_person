@@ -12,6 +12,8 @@
  *   cheat    作弊局认知笔记：非作弊局没有 "›"；勾选作弊模式开局后 AI 座位出现 "›"，点开有笔记区块（规则 AI 显示"无笔记"）
  *   level    热闹程度（T3a）：大厅可选三档（默认正常）；选"热闹"开局后对局页状态为 lively；对局设置弹窗里改成"安静"，
  *            发 update_settings 后界面（再次打开弹窗）显示新档位，对局状态同步为 quiet
+ *   skins    皮肤画廊：27 名武将网格、无红字报错、点武将开面板、点候选设为"使用中"（候选图要服务器能连 GitHub 或已缓存，否则记 skipped）、
+ *            自定义导入一张 PNG 并设为使用中、恢复默认
  * 往后加新组：在 GROUPS 里加一项 {name, run}，用 pass()/skip() 记录，需要对局时调用 ensureGame()。
  *
  * 运行（先起服务器，8888 HTTP / 8889 WS；务必用隔离的战绩与日志路径）：
@@ -320,6 +322,61 @@ const skip = (name, reason) => results.push({group: curGroup, name, status: 'ski
     await page.keyboard.press('Escape');
     const bad = await page.locator('.toast.bad').allInnerTexts();
     pass('no error toast after changing level', bad.length === 0, JSON.stringify(bad));
+  }});
+
+  GROUPS.push({name: 'skins', run: async () => {
+    await gotoLobby();
+    await page.goto(base + '/skins.html', {waitUntil: 'domcontentloaded'});
+    await page.waitForSelector('.sk-hero');
+    pass('gallery lists 27 heroes with no English id input', await page.locator('.sk-hero').count() === 27 && await page.locator('#skinHeroId').count() === 0);
+    pass('gallery shows no error banner on open', !(await page.locator('#skError').isVisible()));
+    await page.locator('#skSearch').fill('曹操');
+    pass('search narrows the hero grid', await page.locator('.sk-hero').count() === 1);
+    await page.locator('#skSearch').fill('');
+    await page.locator('#skFaction button[data-faction="蜀"]').click();
+    const shu = await page.locator('.sk-hero').count();
+    pass('faction filter works', shu > 0 && shu < 27, String(shu));
+    await page.locator('#skFaction button.all').click();
+    await page.locator('.sk-hero[data-hero="caocao"]').click();
+    await page.waitForSelector('#skTiles .sk-tile');
+    pass('hero panel opens with default tile in use', await page.locator('#skTiles .sk-tile[data-kind="default"][aria-pressed="true"]').count() === 1);
+    pass('panel lists noname candidates without typing any id', await page.locator('#skTiles .sk-tile[data-kind="noname"]').count() > 0);
+    pass('custom import tile is the last tile', await page.locator('#skTiles .sk-tile-wrap').last().locator('#skImportTile').count() === 1);
+    // 候选图：服务器连得上 GitHub 或已缓存才能选中；否则不强造
+    await page.locator('#skTiles .sk-tile[data-kind="noname"]').first().click();
+    const used = await page.waitForFunction(() => {
+      const on = document.querySelector('#skTiles .sk-tile[data-kind="noname"][aria-pressed="true"]');
+      const bad = document.getElementById('skPanelStatus').classList.contains('bad');
+      return on ? 'on' : (bad ? 'bad' : false);
+    }, null, {timeout: 20000}).then(h => h.jsonValue()).catch(() => 'timeout');
+    if (used === 'on') pass('clicking a candidate marks it 使用中', await page.locator('.sk-badge').count() === 1);
+    else skip('clicking a candidate marks it 使用中', '服务器当前拉不到 GitHub 且无缓存：' + (await page.locator('#skPanelStatus').innerText()).slice(0, 60));
+    // 自定义导入（纯本地生成的 PNG，不依赖外网）
+    const makePng = (w, h) => {
+      const zlib = require('zlib');
+      const table = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c; });
+      const crc32 = buf => { let c = -1; for (const b of buf) c = table[(c ^ b) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+      const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type), data]); const sum = Buffer.alloc(4); sum.writeUInt32BE(crc32(body)); return Buffer.concat([len, body, sum]); };
+      const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+      const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(w * 3, 120)]);
+      return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(Array(h).fill(row)))), chunk('IEND', Buffer.alloc(0))]);
+    };
+    await page.locator('#skFile').setInputFiles({name: 'check.png', mimeType: 'image/png', buffer: makePng(96, 128)});
+    await page.waitForSelector('#skTiles .sk-tile[data-kind="upload"][aria-pressed="true"]', {timeout: 10000});
+    pass('custom import becomes 使用中', true);
+    await page.locator('#skFile').setInputFiles({name: 'tiny.png', mimeType: 'image/png', buffer: makePng(32, 32)});
+    await page.waitForFunction(() => document.getElementById('skPanelStatus').classList.contains('bad'), null, {timeout: 5000});
+    pass('too-small image is refused with a message', (await page.locator('#skPanelStatus').innerText()).includes('64'));
+    await page.locator('#skResetBtn').click();
+    await page.waitForSelector('#skTiles .sk-tile[data-kind="default"][aria-pressed="true"]');
+    pass('restore default marks 默认原画 in use again', await page.locator('.sk-badge').count() === 1);
+    // 清理：删掉本检查导入的图片，别污染档案
+    page.once('dialog', d => d.accept());
+    await page.locator('#skTiles .sk-del').first().click();
+    await page.waitForFunction(() => document.querySelectorAll('#skTiles .sk-tile[data-kind="upload"]').length === 0, null, {timeout: 5000});
+    pass('imported image can be deleted', true);
+    await page.keyboard.press('Escape');
+    pass('panel closes on Escape', await page.locator('#skSheet').isHidden());
   }});
 
   // ---- 执行 -----------------------------------------------------------------------------

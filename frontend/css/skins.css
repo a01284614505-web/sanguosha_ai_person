@@ -86,3 +86,4 @@ body.sk-lock { overflow: hidden; }
 .sk-sync-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .sk-sync code { padding: 5px 9px; border-radius: 6px; background: var(--field-bg); border: 1px solid var(--field-line); font-size: 13px; overflow-wrap: anywhere; user-select: all; }
 .sk-source { font-size: 12.5px; line-height: 1.6; margin: 0; }
+.sk-tile.failed img { visibility: hidden; }
