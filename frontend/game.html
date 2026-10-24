@@ -7,13 +7,14 @@
     <title>三国杀酒馆 · 对局</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="css/sgs.css?v=20261023u6">
-    <link rel="stylesheet" href="css/game.css?v=20261023u7">
+    <link rel="stylesheet" href="css/game.css?v=20261023u8">
+    <link rel="stylesheet" href="css/table_v3.css?v=20261023p1">
 </head>
 <body class="game-page">
 <div class="battle" id="battle" data-palette="night">
     <div class="field" id="field">
         <!-- 背景层（W8）：远山、雾带、月晕、中央聚光。颜色走 CSS 变量，随牌桌配色切换；只烘托，不抢戏 -->
-        <svg class="field-bg" aria-hidden="true" viewBox="0 0 1140 900" preserveAspectRatio="xMidYMid slice">
+        <svg class="field-bg" aria-hidden="true" viewBox="0 0 1140 900" preserveAspectRatio="xMidYMin slice">
             <defs>
                 <filter id="fbSoft" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
                 <filter id="fbSofter" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="22"/></filter>
@@ -29,11 +30,16 @@
             <ellipse cx="560" cy="410" rx="460" ry="250" fill="url(#fbSpot)"/>
         </svg>
         <header class="hud" aria-label="对局信息">
+            <!-- 左上信息牌（第三稿）：轮数/牌堆/弃牌，场上身份存活数，自己的胜利目标 -->
             <div class="hud-info">
-                <span class="hud-round">第 <b id="rn">-</b> 轮</span>
-                <span class="hud-pile" title="牌堆剩余">牌堆 <b id="dc">-</b></span>
-                <span class="hud-pile" title="弃牌堆">弃牌 <b id="discardCount">0</b></span>
-                <span class="trustee-indicator" id="trusteeIndicator" hidden></span>
+                <div class="hud-row">
+                    <span class="hud-round">第 <b id="rn">-</b> 轮</span>
+                    <span class="hud-pile" title="牌堆剩余">牌堆 <b id="dc">-</b></span>
+                    <span class="hud-pile" title="弃牌堆">弃牌 <b id="discardCount">0</b></span>
+                    <span class="trustee-indicator" id="trusteeIndicator" hidden></span>
+                </div>
+                <div class="hud-ids" id="idCounts" hidden></div>
+                <div class="hud-goal" id="goalText" hidden></div>
             </div>
             <div class="hud-tools">
                 <button class="icon-btn chat-toggle" id="chatToggle" type="button" aria-label="打开席间聊天" aria-expanded="false"><span class="ic" data-icon="chat"></span><i class="unread" id="chatUnread" hidden></i></button>
@@ -62,21 +68,6 @@
         <svg class="fx-lines" id="fxLines" aria-hidden="true"></svg>
         <div class="fx-layer" id="fxLayer" aria-hidden="true"></div>
 
-        <!-- 操作条：提示语 + 候选 + 按钮 -->
-        <div class="action-bar" id="actionBar" aria-live="assertive">
-            <!-- 提示语与倒计时圆盘同一行（W6）：圆盘中间写剩余秒数，#abTimer 的 id 保留 -->
-            <div class="ab-head">
-                <div class="ab-prompt" id="abPrompt">正在连接游戏服务…</div>
-                <div class="ab-timer" id="abTimer"><span class="ab-sec">0</span></div>
-            </div>
-            <div class="ab-options" id="abOptions"></div>
-            <div class="ab-buttons">
-                <button class="btn confirm" id="okBtn" type="button" disabled>确定</button>
-                <button class="btn cancel" id="cancelBtn" type="button" disabled>取消</button>
-                <button class="btn primary" id="endBtn" type="button" disabled>结束出牌</button>
-            </div>
-        </div>
-
     <dialog class="sgs-dialog post-death-dialog" id="postDeathModal" aria-labelledby="postDeathTitle">
         <div class="frame dialog-body">
             <h2 id="postDeathTitle" class="brush gold-text">你已阵亡</h2>
@@ -97,6 +88,20 @@
         <div class="hand-wrap">
             <!-- 阶段栏移到自己身边（W5）：准 判 摸 出 弃 结，由引擎的 phase 事件驱动，和手牌数同一行 -->
             <div class="hand-meta"><div class="phase-track" id="phaseTrack" role="list" aria-label="回合阶段"></div><span id="handCount">手牌 0</span><span id="actionHint"></span></div>
+            <!-- 操作条（第三稿）：电脑上嵌在阶段栏与手牌之间；手机上浮在我的区域上方 -->
+            <div class="action-bar" id="actionBar" aria-live="assertive">
+                <!-- 提示语与倒计时圆盘同一行（W6）：圆盘中间写剩余秒数，#abTimer 的 id 保留 -->
+                <div class="ab-head">
+                    <div class="ab-prompt" id="abPrompt">正在连接游戏服务…</div>
+                    <div class="ab-timer" id="abTimer"><span class="ab-sec">0</span></div>
+                </div>
+                <div class="ab-options" id="abOptions"></div>
+                <div class="ab-buttons">
+                    <button class="btn confirm" id="okBtn" type="button" disabled>确定</button>
+                    <button class="btn cancel" id="cancelBtn" type="button" disabled>取消</button>
+                    <button class="btn primary" id="endBtn" type="button" disabled>结束出牌</button>
+                </div>
+            </div>
             <div class="hand" id="hand" aria-label="我的手牌"></div>
         </div>
         <div class="my-hero" id="myHero"></div>
@@ -195,6 +200,6 @@
 <script src="js/ws_client.js?v=20261020e1"></script>
 <script src="js/global_settings.js?v=20261023u6"></script>
 <script src="js/chat_panel.js?v=20261023u6"></script>
-<script src="js/game_main.js?v=20261023u6"></script>
+<script src="js/game_main.js?v=20261023p1"></script>
 </body>
 </html>
