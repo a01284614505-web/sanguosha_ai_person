@@ -402,8 +402,14 @@ class AIDecision:
         os.replace(self.cache_stats_path, target)
         logger.info(f"  🗂 缓存统计已轮转: {target}（新文件随后建立）")
 
+    async def _pause_gate(self):
+        """暂停闸门：暂停中不发起新的模型请求，已在路上的结果也先扣住到继续后再用。"""
+        if getattr(self.engine, "paused", False) is True:
+            await self.engine.wait_if_paused()
+
     async def _call_with_session(self, player, kind: str, content: str) -> str:
         """统一的带会话窗口调用：追加L2 → 调API → 追加assistant → 记账。"""
+        await self._pause_gate()
         messages = self.push_user(player, content)
         capture(self.engine, player, kind, messages)
         started = time.perf_counter()
@@ -435,6 +441,7 @@ class AIDecision:
                 "worldbook_hits": self._public_worldbook_hits(player),
                 "situation_version": self.last_situation_versions.get(player.id),
             }
+        await self._pause_gate()
         self.push_assistant(player, reply)
         self._note_usage(player, kind, usage, failed=False)
         self._log_cache_stats(player, kind, usage)
@@ -1314,6 +1321,7 @@ class AIDecision:
                                           "并严格按要求返回 JSON。"},
             {"role": "user", "content": self._hero_draft_prompt(player, request)},
         ]
+        await self._pause_gate()
         capture(self.engine, player, "choice", messages)
         started = time.perf_counter()
         usage = {}
@@ -1325,6 +1333,7 @@ class AIDecision:
             )
             self._note_usage(player, "choice", usage, failed=False)
             counted = True
+            await self._pause_gate()
             self.last_meta[player.id] = {
                 "model": player.ai_config.get("model"),
                 "elapsed_ms": round((time.perf_counter() - started) * 1000),

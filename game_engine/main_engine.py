@@ -162,6 +162,13 @@ class MainEngine:
         self._trustee_degrade_reason = None
         self._trustee_generation = 0
         self._waiting_for_action = False
+        # 暂停（对局中暂停 / 离开暂停）：闸门事件置位 = 运行中。暂停期间不发新请求、不推进回合、
+        # 不发起新的模型决策，真人请求的倒计时冻结。暂停期限（15 分钟）由服务器计时。
+        self._paused = False
+        self._resume_event = asyncio.Event()
+        self._resume_event.set()
+        self._pause_signals: Set[asyncio.Future] = set()
+        self._pause_started: Any = None      # 暂停起点（time_source 刻度），用来顺延离席计时
         # 正在等待真人的提示（出牌回合 / 选择请求），断线重连时据此重发；键为 "your_turn" 或 request_id。
         self._open_prompts: Dict[str, Dict] = {}
         self._abort_reason: Any = None
@@ -564,6 +571,9 @@ class MainEngine:
                     await self.recovery_checkpoint()
             self.chat_director.start()
             while not self.is_game_over():
+                await self.wait_if_paused()       # 回合边界闸门：暂停时不推进到下一个回合
+                if self.is_game_over():
+                    break
                 self._observe_spy_duel_lord_state()
                 self._roll_notes_round()
                 if self.completed_turns >= self.max_turns:
@@ -821,8 +831,8 @@ class MainEngine:
     async def submit_chat(self, player_id: int, text: Any):
         """真人发言：进入桌面发言记录（下一次 AI 出牌决策能看到），并广播。"""
         player = next((p for p in self.game_state.players if p.id == player_id), None)
-        if player is None:
-            return None
+        if player is None or self._paused:
+            return None         # 暂停中不接受发言（服务器入口已先回 error，这里是第二道闸门）
         entry = await self._record_table_chat(player.id, player.name, "human", text)
         if entry is not None:
             self.chat_director.on_human_chat(entry)       # 同步登记，回应在后台生成
@@ -883,6 +893,7 @@ class MainEngine:
         await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
 
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
+            await self.wait_if_paused()
             if self.game_aborted:
                 return
             await self._enter_phase(player, phase)
@@ -899,10 +910,16 @@ class MainEngine:
         play_skipped = await self._skip_play_phase_if_needed(player)
 
         while not play_skipped and player.alive and not self.game_state.game_over:
+            await self.wait_if_paused()
+            if self.game_aborted:
+                break
             actions = self.get_available_actions(player)
             if self._trustee_active:
                 generation = self._trustee_generation
                 decision = await self._trustee_make_decision(player, actions)
+                await self.wait_if_paused()       # 托管的模型结果同样先扣住
+                if self.game_aborted:
+                    break
                 if decision is None or generation != self._trustee_generation:
                     continue
                 action = decision.get("action") or {"type": "end_phase"}
@@ -955,6 +972,7 @@ class MainEngine:
             return
 
         for phase in [Phase.DISCARD, Phase.END]:
+            await self.wait_if_paused()
             if self.game_aborted:
                 return
             await self._enter_phase(player, phase)
@@ -994,6 +1012,7 @@ class MainEngine:
 
     async def _run_phases(self, player: Player):
         for phase in Phase:
+            await self.wait_if_paused()
             if self.game_state.game_over:
                 break
             await self._enter_phase(player, phase)
@@ -1011,6 +1030,7 @@ class MainEngine:
     async def _auto_play_phase(self, player: Player):
         logger.info(f"  {player.name}的出牌阶段")
         for _ in range(20):
+            await self.wait_if_paused()
             if self.game_state.game_over:
                 break
             actions = self.get_available_actions(player)
@@ -1019,6 +1039,10 @@ class MainEngine:
 
             await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="thinking_start")
             decision = await self.ai_decision.make_decision(player, actions)
+            # 模型请求已在路上时被暂停：结果先扣住，继续后（或本局被结束后）再执行。
+            await self.wait_if_paused()
+            if self.game_aborted:
+                break
             await self.emit(
                 ENGINE_EVENT.AI_ACTION, player_name=player.name, action="thinking_end",
                 reasoning=""
@@ -1191,7 +1215,8 @@ class MainEngine:
 
     async def _wait_player_input(self) -> Dict:
         try:
-            await asyncio.wait_for(self._player_event.wait(), timeout=self.human_action_timeout)
+            await self._wait_human(asyncio.ensure_future(self._player_event.wait()),
+                                   self.human_action_timeout)
         except asyncio.TimeoutError:
             self.set_trustee(True, source="rules")
             return {"action": {"type": "trustee"}, "target_ids": []}
@@ -1209,6 +1234,8 @@ class MainEngine:
             return self.submit_response_status(action.get("request_id"), selection)
         if self.game_aborted:
             return {"status": "game_ended", "success": False, "message": "对局已结束"}
+        if self._paused:
+            return {"status": "paused", "success": False, "message": "暂停中，请先继续对局"}
         if self._trustee_active:
             self._note_human_input()
             return {"status": "stale", "success": False,
@@ -1416,6 +1443,7 @@ class MainEngine:
 
     async def _ask_index(self, player: Player, request: Dict, resolver) -> Any:
         """共用询问机制：人/AI分派 + 超时托管 + 回灌。resolver 决定如何验证原始索引。"""
+        await self.wait_if_paused()          # 暂停时不发新的响应请求
         if self.game_aborted:
             return {"bool": False}
         request_id = self._next_request_id()
@@ -1733,6 +1761,7 @@ class MainEngine:
         if handler is not None:
             try:
                 result = await handler(decision_player, request)
+                await self.wait_if_paused()      # 暂停期间返回的模型结果先扣住
                 if trustee:
                     self._update_trustee_failure(player)
                 return result
@@ -1788,7 +1817,7 @@ class MainEngine:
                 payload["draft"] = copy.deepcopy(request.get("draft") or {})
             self._remember_prompt(request_id, ENGINE_EVENT.REQUIRE_RESPONSE, payload)
             await self.emit(ENGINE_EVENT.REQUIRE_RESPONSE, **payload)
-            raw = await asyncio.wait_for(future, timeout=wait_seconds)
+            raw = await self._wait_human(future, wait_seconds)
             if isinstance(raw, dict) and raw.get("trustee"):
                 return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
@@ -1830,6 +1859,7 @@ class MainEngine:
 
     async def request_choice(self, player: Player, request: Dict) -> Dict:
         """四交互原语的统一入口。"""
+        await self.wait_if_paused()          # 暂停时不发新的选择请求
         if self.game_aborted:
             return {**self._empty_choice_result(request.get("kind", "confirm")), "status": "game_ended"}
         request_id = self._next_request_id()
@@ -2022,6 +2052,7 @@ class MainEngine:
         if handler is not None:
             try:
                 result = await handler(decision_player, decision_request)
+                await self.wait_if_paused()      # 暂停期间返回的模型结果先扣住
                 if trustee:
                     self._update_trustee_failure(player)
                 return result
@@ -2056,7 +2087,7 @@ class MainEngine:
             }
             self._remember_prompt(request_id, ENGINE_EVENT.REQUIRE_RESPONSE, payload)
             await self.emit(ENGINE_EVENT.REQUIRE_RESPONSE, **payload)
-            raw = await asyncio.wait_for(future, timeout=self.response_timeout)
+            raw = await self._wait_human(future, self.response_timeout)
             if isinstance(raw, dict) and raw.get("trustee"):
                 return None, "trustee"
             if isinstance(raw, dict) and raw.get("cancel"):
@@ -2086,6 +2117,8 @@ class MainEngine:
             return receipt("invalid", "缺少有效的请求 ID")
         if self.game_aborted:
             return receipt("game_ended", "对局已结束，该选择未生效")
+        if self._paused:
+            return receipt("paused", "暂停中，请先继续对局")
         future = self._pending_requests.get(request_id)
         if future is None:
             outcome = self._request_outcomes.get(request_id)
@@ -2134,6 +2167,88 @@ class MainEngine:
         future.set_result(value)
         self._request_outcomes[request_id] = "accepted"
         return receipt("accepted", "已接收选择")
+
+    # ---------- 暂停 ----------
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @property
+    def started(self) -> bool:
+        """run() 是否已开始（未开始的局不能暂停）。"""
+        return self._started_at is not None
+
+    def pause(self) -> bool:
+        """暂停对局。已暂停 / 已结束 / 未开始返回 False。立即生效：所有闸门与真人倒计时随即停住。"""
+        if self._paused or self.game_aborted or not self.started:
+            return False
+        self._paused = True
+        self._resume_event.clear()
+        self._pause_started = self.time_source()
+        for signal in list(self._pause_signals):
+            if not signal.done():
+                signal.set_result(None)
+        return True
+
+    def resume(self) -> bool:
+        """继续对局。离席计时顺延暂停时长（离席规则本身不变，只是暂停不算离席）。"""
+        if not self._paused:
+            return False
+        paused_for = max(0.0, float(self.time_source() - self._pause_started))
+        if self._human_idle_since is not None:
+            self._human_idle_since += paused_for
+        self._release_pause()
+        self.chat_director.on_resume()
+        return True
+
+    def _release_pause(self):
+        self._paused = False
+        self._pause_started = None
+        self._resume_event.set()
+
+    async def wait_if_paused(self):
+        """暂停闸门：运行中立即返回；暂停中挂起到继续或本局结束。"""
+        while self._paused and not self.game_aborted:
+            await self._resume_event.wait()
+
+    async def _wait_human(self, waiter: asyncio.Future, timeout: float):
+        """等真人应答，倒计时只在运行时流逝：暂停冻结剩余时间，继续后接着数。
+
+        语义与 asyncio.wait_for 一致：超时抛 TimeoutError 并取消 waiter；返回 waiter 的结果。
+        """
+        loop = asyncio.get_running_loop()
+        remaining = float(timeout)
+        try:
+            while True:
+                if self._paused:
+                    resumed = asyncio.ensure_future(self._resume_event.wait())
+                    try:
+                        await asyncio.wait({waiter, resumed}, return_when=asyncio.FIRST_COMPLETED)
+                    finally:
+                        resumed.cancel()
+                    if waiter.done():
+                        await self.wait_if_paused()     # 暂停中被唤醒（如开托管）：先扣住，继续后再返回
+                        return waiter.result()
+                    continue
+                signal = loop.create_future()
+                self._pause_signals.add(signal)
+                started = loop.time()
+                try:
+                    done, _ = await asyncio.wait({waiter, signal}, timeout=max(0.0, remaining),
+                                                 return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    self._pause_signals.discard(signal)
+                    signal.cancel()
+                if waiter in done:
+                    await self.wait_if_paused()         # 应答与暂停同一刻发生：应答先扣住
+                    return waiter.result()
+                if not done:
+                    raise asyncio.TimeoutError()
+                remaining -= loop.time() - started      # 暂停前已经用掉的时间
+        finally:
+            if not waiter.done():
+                waiter.cancel()
 
     # ---------- 托管兜底与离席看门狗 ----------
 
@@ -2189,6 +2304,34 @@ class MainEngine:
             self._player_event.set()
         return self.trustee_status()
 
+    def start_leave_trustee(self) -> Dict:
+        """真人离开对局（leave_game · trustee）：开启托管，让对局在服务器上打完。
+
+        托管来源按优先级：本局已经配置过的托管（沿用）→ 开局时带的默认托管连接（要有可用 Key）
+        → 复制一名配了真模型的 AI → 规则 AI。已经在托管中则保持现状。
+        """
+        if self.game_aborted:
+            raise ValueError("对局已结束")
+        if self._trustee_active:
+            return self.trustee_status()
+
+        def usable(connection):
+            key = (connection or {}).get("api_key", "")
+            return bool(key) and key != "test_key"
+
+        if self._trustee_source != "rules" and usable(self._trustee_config):
+            previous_source, previous_config = self._trustee_source, dict(self._trustee_config)
+            self.set_trustee(True, source="custom", config=previous_config)
+            self._trustee_source = previous_source      # 来源标签保持原样，只是复用了它的连接配置
+            return self.trustee_status()
+        default = self.game_config.get("trustee_default")
+        if isinstance(default, dict) and usable(normalize_ai(default, use_default=True)):
+            return self.set_trustee(True, source="default")
+        donor = next((p for p in self.game_state.players if p.is_ai and self._has_model_key(p)), None)
+        if donor is not None:
+            return self.set_trustee(True, source="copy_ai", player_id=donor.id)
+        return self.set_trustee(True, source="rules")
+
     def _trustee_view(self, player):
         return _TrusteePlayerView(player, self._trustee_config)
 
@@ -2225,7 +2368,9 @@ class MainEngine:
     def idle_seconds(self) -> float:
         if self._human_idle_since is None:
             return 0.0
-        return float(self.time_source() - self._human_idle_since)
+        # 暂停期间冻结在暂停那一刻，不把暂停时间算作离席。
+        now = self._pause_started if self._paused and self._pause_started is not None else self.time_source()
+        return float(now - self._human_idle_since)
 
     async def _trustee_choose(self, player: Player, request: Dict):
         """Resolve a timed out response through the configured takeover source."""
@@ -2245,7 +2390,7 @@ class MainEngine:
         """看门狗单次检查。返回 True 表示已因离席收摊。"""
         if self._abort_reason or self.game_state.game_over:
             return False
-        if self._human_idle_since is None:
+        if self._paused or self._human_idle_since is None:
             return False
         if self.idle_seconds() < self.idle_abort_seconds:
             return False
@@ -2594,6 +2739,7 @@ class MainEngine:
         self.chat_director.shutdown()
         # 与离席看门狗一致：挂起的交互请求不得在收摊后继续落地效果。
         self._abort_reason = self._abort_reason or "player_end_game"
+        self._release_pause()      # 暂停中被结束：放开所有闸门，让挂起的协程看到“已结束”后退出
         for request_id, future in list(self._pending_requests.items()):
             self._request_outcomes[request_id] = "game_ended"
             if not future.done():

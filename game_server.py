@@ -3,8 +3,10 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import sys
+import time
 import traceback
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -43,6 +45,8 @@ SKIN_STORE_LOCK = __import__("threading").Lock()
 SKIN_WRITE_HEADER = "X-SGS-Skin"
 # 运行中的 GameServer；HTTP 线程只读取它，用于局内“拉取模型”沿用该 AI 已保存的 Key。
 ACTIVE_SERVER = None
+# 对局列表里给人看的模式名；未登记的模式直接用模式 ID（5人身份局、8人身份局、斗地主本身就是中文）。
+MODE_DISPLAY_NAME = {"2v2": "2v2 团战"}
 
 
 def configure_logging():
@@ -64,6 +68,8 @@ class GameServer:
     FINISHED_KEEP = 20          # 无人观看时结束的对局，保留多少条结果供重连领取
     DISCONNECT_GRACE = 300.0    # 断线后保留对局的秒数，与 5 分钟离席铁规则一致
     ANIMATION_ACK_TIMEOUT = 2.5
+    PAUSE_LIMIT_SECONDS = 900.0  # 暂停期限（用户拍板 15 分钟）：到点没继续，本局按中断结束；测试可调小
+    ACTIVE_GAMES_MAX = 20        # /api/active_games 最多返回的局数
 
     def __init__(self, history_path=None, recovery_path=None):
         self.engines = {}
@@ -81,6 +87,10 @@ class GameServer:
         self.viewer_modes = {}      # game_id -> player | spectator
         # 主动选择后台结算的局不走意外断线宽限，也不被同档案新局中止。
         self.background_games = {}  # game_id -> profile_id
+        # 暂停：期限计时任务与截止时刻（墙钟，供前端显示倒计时）。
+        self.pause_tasks = {}       # game_id -> 暂停期限计时任务
+        self.pause_deadlines = {}   # game_id -> deadline_ts（time.time() 刻度）
+        self.game_touched = {}      # game_id -> 最近一次状态变化的墙钟时刻（active_games 的 updated_at）
 
     async def handle(self, ws):
         print(f"[连接] {ws.remote_address}")
@@ -113,8 +123,12 @@ class GameServer:
         if engine is None or task is None or task.done():
             self._drop_game(gid)
             return
-        print(f"[观众离开] game_{gid} 对局继续，{int(self.DISCONNECT_GRACE)} 秒内可重连")
         self._cancel_grace(gid)
+        if engine.paused:
+            # 暂停中的 5 分钟离席监控冻结：暂停期间断线不安排 5 分钟中止，由暂停期限负责收尾。
+            print(f"[观众离开] game_{gid} 暂停中，由暂停期限负责收尾")
+            return
+        print(f"[观众离开] game_{gid} 对局继续，{int(self.DISCONNECT_GRACE)} 秒内可重连")
         self.grace_tasks[gid] = asyncio.create_task(self._disconnect_grace(gid))
 
     def _cancel_grace(self, gid):
@@ -132,7 +146,7 @@ class GameServer:
         engine = self.engines.get(gid)
         if engine is None or self.viewers.get(gid) is not None or engine.game_aborted:
             return
-        if gid in self.background_games:
+        if gid in self.background_games or engine.paused:
             return
         try:
             await engine.request_end_game("离线超过 5 分钟，对局中止")
@@ -147,8 +161,16 @@ class GameServer:
                     waiter.set_result(False)
                 self.animation_waiters.pop(animation_id, None)
 
+    def _cancel_pause_timer(self, gid):
+        task = self.pause_tasks.pop(gid, None)
+        if task is not None and not task.done():
+            task.cancel()
+        self.pause_deadlines.pop(gid, None)
+
     def _drop_game(self, gid):
         self._cancel_grace(gid)
+        self._cancel_pause_timer(gid)
+        self.game_touched.pop(gid, None)
         self.tasks.pop(gid, None)
         self.engines.pop(gid, None)
         self.viewers.pop(gid, None)
@@ -170,6 +192,8 @@ class GameServer:
             INBOUND.SET_TRUSTEE: lambda: self.do_set_trustee(ws, data),
             INBOUND.UPDATE_SETTINGS: lambda: self.do_update_settings(ws, data),
             INBOUND.POST_DEATH_ACTION: lambda: self.do_post_death_action(ws, data),
+            INBOUND.SET_PAUSE: lambda: self.do_set_pause(ws, data),
+            INBOUND.LEAVE_GAME: lambda: self.do_leave_game(ws, data),
             INBOUND.PING: lambda: self.send(ws, {"type": OUTBOUND.PONG}),
             INBOUND.SERVER_INFO: lambda: self.send(
                 ws, {"type": OUTBOUND.SERVER_INFO, **MainEngine.server_info()}
@@ -256,6 +280,7 @@ class GameServer:
                 await self.send_error(ws, f"身份卡使用失败: {exc}")
                 return
         self.engines[gid] = engine
+        self.game_touched[gid] = time.time()
         engine.animation_metrics = self.animation_metrics.setdefault(gid, {
             "awaited": 0, "acked": 0, "timed_out": 0, "no_viewer": 0,
             "total_ack_ms": 0.0, "max_ack_ms": 0.0,
@@ -294,6 +319,7 @@ class GameServer:
                 try:
                     engine = restore_engine(snapshot, MainEngine)
                     self.engines[gid] = engine
+                    self.game_touched[gid] = time.time()
                     engine.animation_metrics = self.animation_metrics.setdefault(gid, {
                         "awaited": 0, "acked": 0, "timed_out": 0, "no_viewer": 0,
                         "total_ack_ms": 0.0, "max_ack_ms": 0.0,
@@ -341,6 +367,8 @@ class GameServer:
         status = engine.trustee_status() if hasattr(engine, "trustee_status") else None
         if status:
             await self.send(ws, {"type": OUTBOUND.TRUSTEE_STATUS, **status})
+        if engine.paused:
+            await self.send(ws, self._pause_status(gid, engine))
         if self.viewer_modes.get(gid) != "spectator":
             for prompt in engine.pending_prompts():
                 await self.send(ws, {"type": ENGINE_EVENT_MAP.get(prompt["event"], prompt["event"]),
@@ -397,6 +425,9 @@ class GameServer:
             return
         engine = self.engine_for(ws)
         human = engine.human_player() if engine else None
+        if engine is not None and engine.paused:
+            await self.send_error(ws, "暂停中不能发言")
+            return
         if engine is not None and human is not None:
             # 真人发言交给引擎入库（AI 下次出牌决策能看到）；回显由引擎事件统一转发，这里不再自己发。
             await engine.submit_chat(human.id, message)
@@ -423,6 +454,7 @@ class GameServer:
     def _client_state(self, gid, engine):
         """Add connection lifecycle data to a fresh engine snapshot."""
         state = engine.serialize()
+        state["paused"] = bool(engine.paused)
         human = engine.human_player()
         dead = bool(human is not None and not human.alive)
         state["post_death"] = {
@@ -465,6 +497,119 @@ class GameServer:
         self.background_games[gid] = engine.game_config.get("profile_id")
         await self.send(ws, {"type": OUTBOUND.POST_DEATH_ACTION_RESULT,
                              "game_id": gid, "action": action, "status": "accepted"})
+        self.ws_map.pop(ws, None)
+        if self.viewers.get(gid) is ws:
+            self.viewers.pop(gid, None)
+        self.viewer_modes.pop(gid, None)
+        self._cancel_grace(gid)
+        self._release_animation_waiters(gid)
+
+    # ---------- 暂停 / 离开 ----------
+
+    def _pause_status(self, gid, engine):
+        deadline = self.pause_deadlines.get(gid) if engine.paused else None
+        remaining = max(0, math.ceil(deadline - time.time())) if deadline is not None else 0
+        return {"type": OUTBOUND.PAUSE_STATUS, "paused": bool(engine.paused),
+                "remaining_seconds": remaining, "deadline_ts": float(deadline or 0.0)}
+
+    @staticmethod
+    def pause_end_message(limit):
+        return f"暂停超过 {limit / 60:g} 分钟，对局结束"
+
+    async def _pause_expiry(self, gid, engine, limit):
+        """暂停期限到点仍未继续：按中断结束本局。"""
+        try:
+            await asyncio.sleep(limit)
+        except asyncio.CancelledError:
+            return
+        self.pause_tasks.pop(gid, None)
+        self.pause_deadlines.pop(gid, None)
+        if self.engines.get(gid) is not engine or not engine.paused or engine.game_aborted:
+            return
+        try:
+            await engine.request_end_game(self.pause_end_message(limit))
+        except Exception as exc:
+            logging.getLogger(__name__).error("暂停到期收摊失败: %s", exc)
+
+    async def _broadcast_pause(self, gid, engine):
+        """暂停状态变化：先发 pause_status，再推一份带 paused 字段的状态快照。"""
+        ws = self.viewers.get(gid)
+        if ws is not None:
+            await self.send(ws, self._pause_status(gid, engine))
+        await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
+
+    async def _apply_pause(self, gid, engine, paused):
+        """切换暂停。幂等：状态没变时只重发一次当前状态。返回错误文本或 None。"""
+        if engine.game_aborted:
+            return "对局已结束"
+        if not engine.started:
+            return "对局尚未开始"
+        if paused and not engine.paused:
+            engine.pause()
+            limit = float(self.PAUSE_LIMIT_SECONDS)
+            self.pause_deadlines[gid] = time.time() + limit
+            self._cancel_grace(gid)     # 暂停期间离席 / 断线宽限冻结，由暂停期限负责
+            self.pause_tasks[gid] = asyncio.create_task(self._pause_expiry(gid, engine, limit))
+            print(f"[暂停] game_{gid}，{int(limit)} 秒内未继续则结束")
+        elif not paused and engine.paused:
+            engine.resume()
+            self._cancel_pause_timer(gid)
+            print(f"[继续] game_{gid}")
+        await self._broadcast_pause(gid, engine)
+        return None
+
+    async def do_set_pause(self, ws, data):
+        engine = self.engine_for(ws)
+        if engine is None:
+            await self.send_error(ws, "当前连接没有游戏")
+            return
+        paused = data.get("paused")
+        if not isinstance(paused, bool):
+            await self.send_error(ws, "paused 必须是 true 或 false")
+            return
+        error = await self._apply_pause(self.ws_map[ws], engine, paused)
+        if error:
+            await self.send_error(ws, error)
+
+    async def do_leave_game(self, ws, data):
+        """离开牌桌。trustee：托管代打、对局在服务器打完；pause：暂停后离开，由暂停期限收尾。"""
+        engine = self.engine_for(ws)
+        if engine is None:
+            await self.send_error(ws, "当前连接没有游戏")
+            return
+        mode = data.get("mode")
+        if mode not in ("trustee", "pause"):
+            await self.send_error(ws, "离开方式必须是 trustee 或 pause")
+            return
+        gid = self.ws_map[ws]
+        if engine.game_aborted:
+            await self.send_error(ws, "对局已结束")
+            return
+        if mode == "pause":
+            error = await self._apply_pause(gid, engine, True)
+            if error:
+                await self.send_error(ws, error)
+                return
+            await self.send(ws, {"type": OUTBOUND.LEAVE_GAME_RESULT, "ok": True, "mode": mode,
+                                 "game_id": gid})
+            return
+        human = engine.human_player()
+        human_alive = bool(human is not None and human.alive)
+        if engine.paused:
+            # 选择托管离开就是要对局继续打：先解除暂停，不让它挂到 15 分钟期限被结束。
+            await self._apply_pause(gid, engine, False)
+        if human_alive:
+            try:
+                engine.start_leave_trustee()
+            except ValueError as exc:
+                await self.send_error(ws, str(exc))
+                return
+            await engine.emit(ENGINE_EVENT.TRUSTEE_STATUS, **engine.trustee_status())
+        # 先回执，再脱离观看关系；标记为后台局：断线不触发 5 分钟离线中止，新开局也不会中止它。
+        self.background_games[gid] = engine.game_config.get("profile_id")
+        await self.send(ws, {"type": OUTBOUND.LEAVE_GAME_RESULT, "ok": True, "mode": mode,
+                             "game_id": gid, "human_alive": human_alive,
+                             "trustee": bool(engine._trustee_active)})
         self.ws_map.pop(ws, None)
         if self.viewers.get(gid) is ws:
             self.viewers.pop(gid, None)
@@ -550,6 +695,7 @@ class GameServer:
                 data["move"] = move
             if event == ENGINE_EVENT.STATE_CHANGED and engine is not None:
                 data["state"] = self._client_state(gid, engine)
+                self.game_touched[gid] = time.time()
             if event == ENGINE_EVENT.GAME_END and engine is not None:
                 data["log_saved"] = self._save_game_log(engine, data)
             message = {"type": ENGINE_EVENT_MAP.get(event, event), **data}
@@ -709,6 +855,48 @@ class GameServer:
             return
         except Exception as exc:
             print(f"[发送失败] {exc}")
+def _active_games(server, profile_id, store=None):
+    """某档案名下可以接回的对局：内存里进行中的（含“离开托管代打”和暂停中的）+ 恢复目录里的快照。
+
+    供 /api/active_games 使用，在 HTTP 线程里只读引擎字段。updated_at 是墙钟秒；按它倒序。
+    """
+    rows = []
+    seen = set()
+    if server is not None:
+        for gid, engine in list(server.engines.items()):
+            if engine.game_config.get("profile_id") != profile_id:
+                continue
+            if engine.game_aborted or gid in server.finished:
+                continue
+            human = engine.human_player()
+            mode = engine.game_state.mode
+            seen.add(gid)
+            rows.append({
+                "game_id": gid, "mode": mode, "mode_name": MODE_DISPLAY_NAME.get(mode, mode),
+                "round": int(engine.game_state.round_number or 0),
+                "paused": bool(engine.paused), "trustee": bool(engine._trustee_active),
+                "human_alive": bool(human is not None and human.alive),
+                "recoverable_only": False,
+                "updated_at": float(server.game_touched.get(gid) or time.time()),
+                "profile_id": profile_id,
+            })
+    recovery = server.recovery if server is not None else RecoveryStore(RECOVERY_DIR)
+    finished = set(server.finished) if server is not None else set()
+    for row in recovery.list_for_profile(profile_id):
+        if row["game_id"] in seen or row["game_id"] in finished:
+            continue
+        mode = row["mode"]
+        rows.append({
+            "game_id": row["game_id"], "mode": mode, "mode_name": MODE_DISPLAY_NAME.get(mode, mode),
+            "round": row["round"], "paused": False, "trustee": row["trustee"],
+            "human_alive": row["human_alive"], "recoverable_only": True,
+            "updated_at": row["updated_at"], "profile_id": profile_id,
+        })
+    rows.sort(key=lambda item: item["updated_at"], reverse=True)
+    limit = server.ACTIVE_GAMES_MAX if server is not None else GameServer.ACTIVE_GAMES_MAX
+    return rows[:limit]
+
+
 def skin_store():
     """惰性创建皮肤存储；武将 ID 每次现读，这样启用武将包后新武将也能换皮。"""
     global SKIN_STORE
@@ -761,6 +949,16 @@ class CustomHandler(SimpleHTTPRequestHandler):
             except (OSError, RuntimeError) as exc:
                 logging.getLogger(__name__).error("读取战绩失败: %s", exc)
                 self._send_json(500, {"success": False, "message": "战绩读取失败，请检查服务器日志"})
+            return
+        if request_path == "/api/active_games":
+            try:
+                profile_id = validate_profile_id(parse_qs(parsed.query).get("profile_id", [None])[0])
+                self._send_json(200, {"success": True, "games": _active_games(ACTIVE_SERVER, profile_id)})
+            except ValueError as exc:
+                self._send_json(400, {"success": False, "message": str(exc)})
+            except (OSError, RuntimeError) as exc:
+                logging.getLogger(__name__).error("读取进行中对局失败: %s", type(exc).__name__)
+                self._send_json(500, {"success": False, "message": "进行中对局读取失败"})
             return
         if request_path == "/api/ai-players":
             try:
