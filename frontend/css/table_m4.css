@@ -1,0 +1,262 @@
+/* ==========================================================================
+   对局页第四稿（批次 2，2026-10-24）：在 table_v3.css 之后加载。
+   - 全局：千里江山（亮色）背景与压暗层、点牌"抬起来看"、托管中标签、灰色毛玻璃的 AI 思考按钮、
+           离开弹窗、暂停遮罩、闪电电光 canvas、触屏上不再有"粘住的悬停抬起"。
+   - 手机竖屏：按实际可见高度自适应——顶栏一行 → 对手一排 → 牌桌（弹性）→ 我的区域
+           （左：武将牌 + 装备列表；右：阶段、技能、整行手牌），操作条一行浮在牌桌底部。
+   设计稿：logs/design/20261024_手机牌桌设计稿.html（用户 10-23 确认比例；技能用千里江山版长条、小一号）。
+   ========================================================================== */
+
+/* ---------- 背景：千里江山（默认）/ 夜幕江山 / 江山暮色，外加一层可调的压暗 ---------- */
+.battle { --m3: transparent; --table-dim: .15; }
+.battle[data-palette="shan"] {
+    /* 青绿山水：石青、石绿，比夜色亮得多，但压低了饱和度，远山全部高斯模糊、没有硬边 */
+    --bg: linear-gradient(180deg, #46767d 0%, #5f8f86 40%, #42706a 66%, #22403d 100%);
+    --m1: rgba(150, 196, 168, .62);
+    --m2: rgba(88, 146, 132, .74);
+    --m3: rgba(44, 94, 86, .86);
+    --mist: rgba(244, 226, 178, .12);
+    --glow: rgba(255, 230, 176, .22);
+    --moon: rgba(255, 242, 214, .2);
+    --panel: linear-gradient(180deg, rgba(16, 34, 33, .92), rgba(9, 20, 20, .97));
+    --side-bg: linear-gradient(180deg, #133131, #0a1c1c);
+}
+.field-bg .fb-m3 { fill: var(--m3); }
+.field-dim { position: absolute; inset: 0; z-index: 0; pointer-events: none; background: rgba(0, 0, 0, var(--table-dim)); }
+
+/* ---------- 手牌：触屏上悬停会"粘住"，导致点了收不回；只在真正有鼠标的设备上做悬停抬起 ---------- */
+@media not all and (hover: hover) and (pointer: fine) {
+    .hand .card:hover:not(.selected):not(.peek),
+    .hand .card.dim:hover:not(.selected):not(.peek),
+    .hand .card.can:hover:not(.selected):not(.peek) { transform: none; }
+}
+/* 抬起来看（不算选中）：点一下抬起，再点一下落回；不能用的牌抬起时恢复亮度，方便看清 */
+.hand .card.card.peek, .hand .card.card.peek:hover {
+    transform: translateY(-16px) scale(1.04); z-index: 3; filter: none;
+    box-shadow: 0 0 0 2px rgba(255, 244, 214, .85), 0 10px 18px rgba(0, 0, 0, .6);
+}
+
+/* ---------- 托管中：挂在自己武将牌名牌上方 ---------- */
+.s-trustee {
+    position: absolute; left: 50%; bottom: calc(var(--plate-h, 20px) + 4px); transform: translateX(-50%);
+    z-index: 4; padding: 1px 7px; border-radius: 9px; white-space: nowrap;
+    font: 700 11px/1.5 var(--font-serif); color: #eafff0;
+    background: rgba(40, 120, 70, .86); box-shadow: 0 0 0 1px rgba(170, 240, 180, .6), 0 2px 6px rgba(0, 0, 0, .5);
+}
+
+/* ---------- 查看 AI 思考：灰色毛玻璃小圆钮，不描金边（用户要求） ---------- */
+.cheat-peek {
+    top: 3px; right: -3px; transform: translateX(50%);
+    width: 22px; height: 22px; border: 0; border-radius: 50%;
+    display: grid; place-items: center;
+    background: rgba(70, 72, 76, .62); color: #ececec;
+    font: 700 13px/1 var(--font-serif);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .45);
+}
+.cheat-peek::before { inset: -8px; }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .cheat-peek { -webkit-backdrop-filter: blur(8px) saturate(130%); backdrop-filter: blur(8px) saturate(130%); background: rgba(84, 86, 90, .45); }
+}
+#thoughtsModal .dialog-body { background: rgba(48, 50, 54, .92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+
+/* ---------- 闪电：菱形里叠一块 canvas 画电弧/电粒子（js/fx_bolt.js），旧的旋转虚线电弧关掉 ---------- */
+.judge-tile.thunder { overflow: visible; }
+.judge-tile.thunder canvas.bolt-fx {
+    position: absolute; left: 50%; top: 50%; width: 400%; height: 400%;
+    transform: translate(-50%, -50%) rotate(-45deg); pointer-events: none; z-index: 2;
+}
+.judge-tile.thunder::before { display: none; }
+[data-bolt="off"] .judge-tile.thunder canvas.bolt-fx { display: none; }
+
+/* ---------- 战报按钮：只在侧栏变抽屉的窄屏上出现（宽屏右侧常驻战报页签） ---------- */
+.log-toggle { display: none !important; }
+.log-toggle svg, #pauseBtn svg { width: 18px; height: 18px; }
+@media (max-width: 1100px) { .log-toggle { display: inline-grid !important; place-items: center; } }
+
+/* ---------- 离开弹窗 ---------- */
+.leave-dialog .dialog-body { width: min(92vw, 360px); }
+.leave-dialog h2 { margin: 0 0 4px; font-size: 18px; color: var(--gold-hi); }
+.leave-dialog .muted { margin: 0 0 12px; font-size: 13px; line-height: 1.6; }
+.leave-choices { display: grid; gap: 8px; }
+.leave-choice {
+    display: grid; gap: 2px; justify-items: start; text-align: left;
+    padding: 9px 12px; border: 0; border-radius: 10px; cursor: pointer; color: var(--text);
+    background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(255, 240, 210, .18);
+}
+.leave-choice b { font-size: 14.5px; }
+.leave-choice span { font-size: 12px; color: var(--text-dim); }
+.leave-choice.pri { background: rgba(70, 150, 90, .24); box-shadow: inset 0 0 0 1px rgba(150, 230, 150, .5); }
+.leave-choice.danger b { color: #ff9a86; }
+.leave-choice:disabled { opacity: .55; cursor: default; }
+.leave-choice:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+.leave-status { min-height: 1.4em; margin: 10px 0 0; font-size: 12.5px; color: var(--gold-hi); }
+
+/* ---------- 暂停遮罩 ---------- */
+.pause-overlay { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .5); }
+.pause-overlay[hidden] { display: none; }
+.pause-card {
+    width: min(100%, 340px); padding: 18px 16px; border-radius: 16px; text-align: center;
+    background: rgba(30, 22, 14, .86); box-shadow: inset 0 0 0 1px rgba(255, 236, 196, .2), 0 16px 40px rgba(0, 0, 0, .6);
+}
+.pause-big { font: 400 54px/1.1 var(--font-brush); color: var(--gold-hi); }
+.pause-clock { margin: 4px 0 8px; font: 700 26px/1 var(--font-serif); font-variant-numeric: tabular-nums; color: #fff; }
+.pause-card p { margin: 0 0 14px; font-size: 12.5px; line-height: 1.6; color: var(--text-dim); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .pause-overlay { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+    .pause-card { background: rgba(30, 22, 14, .7); }
+}
+
+/* ---------- 阵亡后：保留退出按钮（原来观战时整个隐藏，手机上就出不去了） ---------- */
+.game-page.spectator-mode #quitBtn { display: inline-grid !important; }
+.game-page.spectator-mode #pauseBtn { display: none; }
+
+/* ==========================================================================
+   手机竖屏
+   ========================================================================== */
+@media (max-width: 600px) and (orientation: portrait) {
+    .battle {
+        grid-template-rows: minmax(0, 1fr) auto;
+        --hero-w: clamp(76px, 22.5vw, 98px);
+        --hand-w: clamp(52px, 16.5vw, 72px);
+        --pile-w: clamp(48px, 14vw, 62px);
+        --tool: clamp(29px, 8.4vw, 34px);
+    }
+
+    /* 顶栏：左信息牌，右边一排毛玻璃圆钮（不描金边） */
+    .hud { position: absolute; top: 0; left: 0; right: 0; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+    .hud-info { flex: 0 1 auto; min-width: 0; padding: 4px 9px; border-radius: 8px; font-size: 12px; overflow: hidden; background: rgba(20, 14, 9, .55); box-shadow: inset 0 0 0 1px rgba(255, 240, 210, .18); }
+    .hud-row { gap: 6px; }
+    .hud-row .hud-pile + .hud-pile { display: none; }
+    .trustee-indicator { display: none !important; }
+    .hud-tools { display: flex; flex: none; gap: clamp(3px, 1.2vw, 6px); margin-left: auto; }
+    .hud-tools .icon-btn {
+        width: var(--tool); height: var(--tool); color: #f1e6cf;
+        background: rgba(24, 18, 12, .55); box-shadow: inset 0 0 0 1px rgba(255, 240, 210, .22);
+    }
+    .hud-tools .icon-btn .ic svg, .hud-tools .icon-btn > svg { width: 17px; height: 17px; }
+    #trusteeBtn {
+        height: var(--tool); padding: 0 9px; border-radius: calc(var(--tool) / 2);
+        font: 700 12px/1 var(--font-serif); letter-spacing: 0; color: #f1e6cf;
+        background: rgba(24, 18, 12, .55); box-shadow: inset 0 0 0 1px rgba(255, 240, 210, .22);
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+        .hud-info, .hud-tools .icon-btn, #trusteeBtn { -webkit-backdrop-filter: blur(10px) saturate(140%); backdrop-filter: blur(10px) saturate(140%); }
+    }
+    .peek-log { display: none !important; }
+
+    /* 对手一排：平均分列，紧贴顶栏下方 */
+    #opponents {
+        position: absolute; z-index: 4; left: 8px; right: 8px; top: calc(var(--tool) + 14px); bottom: auto; align-items: start;
+        display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: clamp(6px, 2.2vw, 10px);
+    }
+    #opponents > .seat { position: relative; inset: auto; left: auto; right: auto; top: auto; width: auto; min-width: 0; }
+    #opponents .seat-frame { width: 100%; height: auto; aspect-ratio: 3 / 4; }
+    #opponents .plaque-row { height: 14px; margin-bottom: 3px; }
+    #opponents .plaque-row:empty { height: 6px; margin-bottom: 0; }
+    #opponents .seat-namebar { margin-top: 4px; }
+    #opponents .seat-namebar .s-name {
+        display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        padding: 1px 4px; border-radius: 8px; font-size: clamp(9.5px, 2.7vw, 11px); line-height: 1.35;
+        background: rgba(0, 0, 0, .42); text-align: center;
+    }
+    #opponents .seat-equips { justify-content: center; }
+    #opponents .equip-line { font-size: 9.5px; padding: 0 4px; background: rgba(0, 0, 0, .5); box-shadow: inset 0 0 0 1px rgba(255, 240, 210, .12); }
+    #opponents .s-top .seal.faction { display: inline-grid; }
+    .seat .s-hero { font-size: clamp(11px, 3.2vw, 14px); }
+
+    /* 出牌区：落在对手一排底边与操作条之间（--seats-b 由脚本每次重绘后量出） */
+    .arena {
+        top: calc((var(--seats-b, 220px) + 100% - 64px) / 2); bottom: auto; left: 50%;
+        transform: translate(-50%, -50%); width: 92%;
+    }
+    .table-card:not(.old) figcaption { max-width: 86vw; }
+
+    /* 我的区域：左列武将牌 + 装备，右列阶段、技能、手牌 */
+    .my-area {
+        grid-template-columns: var(--hero-w) minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        grid-template-areas: "hero meta" "hero skills" "hero hand" "zones hand";
+        gap: 6px 8px; align-content: start;
+        padding: 10px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+        background: var(--panel);
+        box-shadow: inset 0 1px 0 rgba(241, 207, 120, .35);
+    }
+    .my-area::before, .my-area::after { display: none; }
+    .hand-wrap, .my-hero { display: contents; }
+    .my-hero .hero-stack { grid-area: hero; width: var(--hero-w); align-self: start; }
+    .my-hero .plaque-row, .my-hero .seat-namebar { display: none; }
+    .my-hero .hero-frame { width: var(--hero-w); height: calc(var(--hero-w) * 4 / 3); aspect-ratio: auto; max-height: none; }
+    .my-hero .s-hero { font-size: clamp(12px, 3.4vw, 14px); }
+    .my-hero .s-me { font-size: 9.5px; }
+
+    .hand-meta { grid-area: meta; position: static; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 0; padding: 0; }
+    .phase-track { flex: 1; min-width: 0; gap: 4px; overflow: hidden; }
+    .pt-owner { order: 9; max-width: 6.5em; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pt-step { width: 20px; height: 20px; font-size: 10.5px; flex: none; }
+    .pt-step + .pt-step::before { width: 4px; }
+    .pt-step.on { width: 24px; height: 24px; font-size: 12px; }
+    #handCount { flex: none; font-size: 10.5px; padding: 1px 7px; }
+    #actionHint { display: none; }
+
+    /* 技能：千里江山版加重边框长条，小一号；两个一行，多了换行 */
+    .my-hero .skill-btns {
+        grid-area: skills; display: flex; flex-wrap: wrap; gap: 6px;
+        width: auto; margin: 0; padding: 0; max-height: none; overflow: visible;
+    }
+    .my-hero .skill-btn, .my-hero .skill-btn:not(:only-child) {
+        flex: 1 1 calc(50% - 3px); min-width: 0; width: auto; height: 28px; padding: 0 6px; gap: 4px;
+    }
+    .my-hero .skill-btn .sk-name, .my-hero .skill-btn:not(:only-child) .sk-name { font-size: 13px; letter-spacing: 2px; }
+    .my-hero .skill-btn .sk-state { font-size: 9.5px; }
+
+    /* 装备：挂在武将牌下面，一格一行（武 / 防 / +1 / -1，木牛流马另起一行）；判定区画在武将牌上 */
+    .my-zones { grid-area: zones; display: flex; flex-direction: column; gap: 3px; }
+    .my-zones .z-h, .my-zones .z-mh, .my-zones .zone-judge { display: none; }
+    .zone-slot {
+        height: 20px; min-height: 0; margin: 0; padding: 0 4px 0 2px; gap: 4px;
+        border-radius: 5px; font-size: 11px; white-space: nowrap; overflow: hidden;
+        background: rgba(0, 0, 0, .4); box-shadow: inset 0 0 0 1px rgba(255, 240, 210, .1);
+    }
+    .zone-slot.empty { opacity: .42; }
+    .zone-slot b { flex: none; display: grid; place-items: center; width: 17px; height: 15px; border-radius: 3px; font-size: 9.5px; }
+    .zone-slot .zs-art { width: 14px; height: 14px; flex: none; }
+    .zone-slot .zs-name { overflow: hidden; text-overflow: ellipsis; }
+
+    /* 手牌：整行，底部对齐；顶上留出抬起的空间 */
+    .hand { grid-area: hand; align-self: end; height: calc(var(--hand-w) * 1.4 + 20px); padding: 20px 0 0; align-items: flex-start; justify-content: flex-start; }
+    .hand .card.selected { transform: translateY(-18px) scale(1.05); }
+    .hand .card.card.peek, .hand .card.card.peek:hover { transform: translateY(-14px) scale(1.03); }
+
+    /* 操作条：一行，浮在牌桌底部（我的区域上方），不压手牌 */
+    .action-bar {
+        position: absolute; left: 8px; right: 8px; top: auto; bottom: calc(100% + 6px); width: auto; transform: none;
+        min-height: 48px; padding: 5px 6px 5px 10px; gap: 6px; border-radius: 12px;
+    }
+    .action-bar .ab-prompt { font-size: 12.5px; line-height: 1.4; }
+    .action-bar .ab-timer { width: 34px; height: 34px; }
+    .action-bar .ab-timer .ab-sec { width: 27px; height: 27px; font-size: 13px; }
+    .action-bar .ab-buttons .btn { height: 36px; min-height: 0; min-width: 52px; padding: 0 9px; font-size: 13.5px; letter-spacing: 1px; }
+    .action-bar.idle { left: 50%; right: auto; transform: translateX(-50%); min-height: 0; max-width: calc(100% - 16px); }
+
+    /* 阵亡后（观战）：我的区域只留灰掉的武将牌和装备，操作条收起 */
+    .game-page.spectator-mode #myArea { display: grid !important; }
+    .game-page.spectator-mode .skill-btns, .game-page.spectator-mode .hand-meta { opacity: .5; pointer-events: none; }
+
+    /* 阵亡三选：从底部升起的面板，盖住我的区域，不挡牌桌 */
+    .post-death-dialog[open] {
+        margin: auto 0 0; width: 100%; max-width: 100%; max-height: 70dvh;
+        border-radius: 16px 16px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .post-death-dialog::backdrop { background: rgba(0, 0, 0, .25); }
+    .post-death-dialog .dialog-body { text-align: left; }
+    .post-death-actions { display: grid; gap: 8px; justify-content: stretch; }
+    .post-death-actions .btn { width: 100%; height: 42px; }
+
+    .side-panel { width: 100vw; }
+}
+
+/* 很窄的屏（≤ 370）：顶栏再紧一点，信息牌只留轮数 */
+@media (max-width: 370px) and (orientation: portrait) {
+    .hud-row .hud-pile { display: none; }
+    #trusteeBtn { padding: 0 7px; }
+}

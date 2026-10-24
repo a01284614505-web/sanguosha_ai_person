@@ -10,9 +10,10 @@
     <link rel="stylesheet" href="css/game.css?v=20261023u8">
     <link rel="stylesheet" href="css/table_v3.css?v=20261023p1">
     <link rel="stylesheet" href="css/hero_draft.css?v=20261024h2">
+    <link rel="stylesheet" href="css/table_m4.css?v=20261024m1">
 </head>
 <body class="game-page">
-<div class="battle" id="battle" data-palette="night">
+<div class="battle" id="battle" data-palette="shan">
     <div class="field" id="field">
         <!-- 背景层（W8）：远山、雾带、月晕、中央聚光。颜色走 CSS 变量，随牌桌配色切换；只烘托，不抢戏 -->
         <svg class="field-bg" aria-hidden="true" viewBox="0 0 1140 900" preserveAspectRatio="xMidYMin slice">
@@ -28,8 +29,11 @@
             <path class="fb-m1" d="M-40 330 C 60 250, 140 230, 230 270 S 390 190, 500 250 S 690 200, 800 260 S 1000 210, 1180 270 L1180 560 L-40 560 Z" filter="url(#fbSoft)"/>
             <path class="fb-m2" d="M-40 420 C 90 360, 200 350, 320 390 S 540 330, 660 380 S 880 340, 1000 380 S 1120 360, 1180 380 L1180 640 L-40 640 Z" filter="url(#fbSoft)"/>
             <rect class="fb-mist" x="-40" y="360" width="1220" height="90" filter="url(#fbSofter)"/>
+            <path class="fb-m3" d="M-40 560 C 120 500, 260 510, 400 540 S 700 480, 860 520 S 1080 500, 1180 520 L1180 900 L-40 900 Z" filter="url(#fbSoft)"/>
             <ellipse cx="560" cy="410" rx="460" ry="250" fill="url(#fbSpot)"/>
         </svg>
+        <!-- 背景压暗层（设置里可调），只压背景，不压牌桌上的东西 -->
+        <div class="field-dim" aria-hidden="true"></div>
         <header class="hud" aria-label="对局信息">
             <!-- 左上信息牌（第三稿）：轮数/牌堆/弃牌，场上身份存活数，自己的胜利目标 -->
             <div class="hud-info">
@@ -44,9 +48,12 @@
             </div>
             <div class="hud-tools">
                 <button class="icon-btn chat-toggle" id="chatToggle" type="button" aria-label="打开席间聊天" aria-expanded="false"><span class="ic" data-icon="chat"></span><i class="unread" id="chatUnread" hidden></i></button>
-                <button class="icon-btn" id="sbtn" type="button" aria-label="全局设置" title="全局设置"><span class="ic" data-icon="gear"></span></button>
+                <!-- 手机上战报在顶栏打开（原来浮在 3 号座位上的"战报 ›"不再显示） -->
+                <button class="icon-btn log-toggle" id="logToggle" type="button" aria-label="打开战报" title="战报"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg></button>
+                <button class="icon-btn" id="pauseBtn" type="button" aria-label="暂停对局" title="暂停对局"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="7" y="5" width="3.4" height="14" rx="1"/><rect x="13.6" y="5" width="3.4" height="14" rx="1"/></svg></button>
                 <button class="btn small" id="trusteeBtn" type="button">托管</button>
-                <button class="icon-btn" id="quitBtn" type="button" aria-label="结束对局" title="结束对局"><span class="ic" data-icon="exit"></span></button>
+                <button class="icon-btn" id="sbtn" type="button" aria-label="全局设置" title="全局设置"><span class="ic" data-icon="gear"></span></button>
+                <button class="icon-btn" id="quitBtn" type="button" aria-label="离开对局" title="离开对局"><span class="ic" data-icon="exit"></span></button>
             </div>
         </header>
 
@@ -183,6 +190,31 @@
     </form>
 </dialog>
 
+<!-- 离开对局：默认托管代打；也可以先暂停再走，或结束本局 -->
+<dialog class="sgs-dialog leave-dialog" id="leaveModal" aria-labelledby="leaveTitle">
+    <div class="frame dialog-body">
+        <h2 id="leaveTitle">离开对局</h2>
+        <p class="muted" id="leaveNote">直接离开时，你的座位交给托管继续打，回来可以接回。想让整桌停下等你，就先暂停再离开。</p>
+        <div class="leave-choices">
+            <button class="leave-choice pri" type="button" id="leaveTrustee"><b>离开，托管代打</b><span>默认 · 武将牌上会标“托管中”</span></button>
+            <button class="leave-choice" type="button" id="leavePause"><b>暂停后离开</b><span>整桌停下，最多 15 分钟，超时结束本局</span></button>
+            <button class="leave-choice danger" type="button" id="leaveEnd"><b>结束本局</b><span id="leaveEndNote">记为中断，不计胜负</span></button>
+            <button class="leave-choice" type="button" data-close><b>回到牌桌</b></button>
+        </div>
+        <p class="leave-status" id="leaveStatus" role="status" aria-live="polite"></p>
+    </div>
+</dialog>
+
+<!-- 暂停遮罩：整桌停下，倒计时冻结，不能发言；15 分钟内不继续则本局结束 -->
+<div class="pause-overlay" id="pauseOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+    <div class="pause-card">
+        <div class="pause-big" id="pauseTitle">暂停</div>
+        <div class="pause-clock" id="pauseClock">15:00</div>
+        <p>整桌已停下，倒计时冻结，AI 不行动，席间不能发言。<br>15 分钟内不继续，本局自动结束。</p>
+        <button class="btn confirm" type="button" id="resumeBtn">继续对局</button>
+    </div>
+</div>
+
 <!-- 结束 / 断线 -->
 <dialog class="sgs-dialog end-dialog" id="endModal" aria-labelledby="endTitle">
     <div class="frame cornered dialog-body end-body">
@@ -204,6 +236,7 @@
 <script src="js/global_settings.js?v=20261023u6"></script>
 <script src="js/chat_panel.js?v=20261023u6"></script>
 <script src="js/hero_draft_panel.js?v=20261024h1"></script>
-<script src="js/game_main.js?v=20261023p1"></script>
+<script src="js/fx_bolt.js?v=20261024m1"></script>
+<script src="js/game_main.js?v=20261024m1"></script>
 </body>
 </html>

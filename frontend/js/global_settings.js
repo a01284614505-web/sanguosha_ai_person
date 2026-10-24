@@ -12,7 +12,9 @@
         animation_ms: 1100,
         show_ai_thinking: true,
         show_decision_trace: true,
-        table_palette: 'night',
+        table_palette: 'shan',
+        table_dim: 0.15,
+        bolt_style: 'mix',
         worldbook_enabled: true,
         custom_worldbook_enabled: true,
         default_provider: 'deepseek',
@@ -107,7 +109,9 @@
                     <label class="gs-row"><span>界面主题</span><select id="gsTheme"><option value="dark">夜墨（深色）</option><option value="light">暖纸（浅色）</option><option value="system">跟随系统</option></select></label>
                     <label class="gs-row"><span>出牌动画</span><select id="gsAnimation"><option value="800">轻快 0.8 秒</option><option value="1100">标准 1.1 秒</option><option value="1600">从容 1.6 秒</option></select></label>
                     <label class="gs-row"><span>AI 思考提示</span><span><input id="gsThinking" type="checkbox">在武将框上显示“思考中”，并把思考摘要写进战报</span></label>
-                    <label class="gs-row" id="gsPaletteRow" hidden><span>牌桌配色</span><select id="gsTablePalette"><option value="night">夜幕江山（默认）</option><option value="jade">江山暮色</option></select></label>
+                    <label class="gs-row" id="gsPaletteRow" hidden><span>牌桌背景</span><select id="gsTablePalette"><option value="shan">千里江山（默认）</option><option value="night">夜幕江山</option><option value="jade">江山暮色</option></select></label>
+                    <label class="gs-row" id="gsDimRow" hidden><span>背景压暗</span><input id="gsTableDim" type="range" min="0" max="0.6" step="0.05" aria-label="背景压暗程度，越往右越暗"></label>
+                    <label class="gs-row" id="gsBoltRow" hidden><span>闪电效果</span><select id="gsBoltStyle"><option value="mix">电弧加电粒子（默认）</option><option value="arc">电弧跳动</option><option value="particle">电粒子环绕</option><option value="off">关闭</option></select></label>
                     <label class="gs-row"><span>决策轨迹</span><span><input id="gsDecisionTrace" type="checkbox">在战报中显示可展开的简略与完整决策记录</span></label>
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
                     <label class="gs-row"><span>语音播报</span><span><input id="gsSpeech" type="checkbox">朗读公开对局事件（仅此设备播放，默认关闭）<small class="muted" style="display:block;margin-top:4px">依赖浏览器语音合成和设备已安装的中文语音；无可用语音时静默跳过，不连接外部语音服务。</small></span></label>
@@ -214,8 +218,10 @@
         // 热闹程度只在对局页出现；显示的是服务器确认过的当前档位（window.currentChatLevel 由对局页随状态更新）。
         const inGame = !!document.getElementById('battle');
         // 牌桌配色只在对局页出现，保存后立即生效（game_main.js 监听 global-settings-changed）
-        document.getElementById('gsTablePalette').value = s.table_palette === 'jade' ? 'jade' : 'night';
-        document.getElementById('gsPaletteRow').hidden = !inGame;
+        document.getElementById('gsTablePalette').value = ['shan', 'night', 'jade'].includes(s.table_palette) ? s.table_palette : 'shan';
+        document.getElementById('gsTableDim').value = String(Number.isFinite(Number(s.table_dim)) ? s.table_dim : 0.15);
+        document.getElementById('gsBoltStyle').value = ['mix', 'arc', 'particle', 'off'].includes(s.bolt_style) ? s.bolt_style : 'mix';
+        ['gsPaletteRow', 'gsDimRow', 'gsBoltRow'].forEach(id => { document.getElementById(id).hidden = !inGame; });
         document.getElementById('gsChatSection').hidden = !inGame;
         if (inGame) document.getElementById('gsChatLevel').value = window.currentChatLevel || 'normal';
         loadStats();
@@ -229,6 +235,8 @@
             show_ai_thinking: document.getElementById('gsThinking').checked,
             show_decision_trace: document.getElementById('gsDecisionTrace').checked,
             table_palette: document.getElementById('gsTablePalette').value,
+            table_dim: Number(document.getElementById('gsTableDim').value) || 0,
+            bolt_style: document.getElementById('gsBoltStyle').value,
             sfx_enabled: document.getElementById('gsSfx').checked,
             sfx_volume: Number(document.getElementById('gsVolume').value),
             speech_enabled: document.getElementById('gsSpeech').checked,
