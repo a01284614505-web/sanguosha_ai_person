@@ -137,6 +137,9 @@ class GameState:
         self.deck_id: str = "standard"
         self.initial_deck_count: int = 0
         
+        # 正式选将：True 表示武将、体力、起手牌都还没定（run() 里分完身份后才选将）。
+        self.hero_draft_pending: bool = False
+
         # 游戏配置
         self.mode: str = "5人身份局"
         self.game_config: Dict = {}
@@ -167,6 +170,7 @@ class GameState:
         candidate_rng = config.get("_rng")
         self._rng = candidate_rng if callable(getattr(candidate_rng, "shuffle", None)) else random
         self.mode = config.get('mode', '5人身份局')
+        self.hero_draft_pending = config.get('hero_draft') == 'standard'
         
         # 初始化玩家
         self._init_players(config)
@@ -177,8 +181,10 @@ class GameState:
         # 洗牌
         self.shuffle_deck()
         
-        # 发牌
-        self._deal_cards()
+        # 发牌。正式选将时起手牌要等武将定了再发（见 MainEngine._draft_heroes），
+        # 自由选将保持原来在初始化时发牌。
+        if not self.hero_draft_pending:
+            self._deal_cards()
         
         # 设置第一个玩家（主公）
         self.current_player_index = 0
@@ -191,12 +197,12 @@ class GameState:
         player = Player(
             id=0,
             name=player_cfg.get('name', config.get('player_name', '玩家')),
-            hero=player_cfg.get('hero'),
+            hero=None if self.hero_draft_pending else player_cfg.get('hero'),
             is_ai=player_cfg.get('is_ai', False),
             ai_config=player_cfg.get('ai_config', {}),
             title=player_cfg.get('title'),
-            hp=player_cfg.get('hero', {}).get('max_hp', 4) if player_cfg.get('hero') else 4,
-            max_hp=player_cfg.get('hero', {}).get('max_hp', 4) if player_cfg.get('hero') else 4
+            hp=player_cfg.get('hero', {}).get('max_hp', 4) if player_cfg.get('hero') and not self.hero_draft_pending else 4,
+            max_hp=player_cfg.get('hero', {}).get('max_hp', 4) if player_cfg.get('hero') and not self.hero_draft_pending else 4
         )
         self.players.append(player)
         
@@ -207,11 +213,12 @@ class GameState:
             ai_player = Player(
                 id=i+1,
                 name=ai_config.get('name', f'AI{i+1}'),
-                hero=ai_hero,
+                # 正式选将：武将还没定，用 None 表示"待选"（体力先按 4 占位，选定后由 set_hero 重建）。
+                hero=None if self.hero_draft_pending else ai_hero,
                 is_ai=True,
                 ai_config=ai_config,
-                hp=ai_hero.get('max_hp', 4),
-                max_hp=ai_hero.get('max_hp', 4)
+                hp=4 if self.hero_draft_pending else ai_hero.get('max_hp', 4),
+                max_hp=4 if self.hero_draft_pending else ai_hero.get('max_hp', 4)
             )
             self.players.append(ai_player)
     
@@ -263,6 +270,11 @@ class GameState:
                 if self.deck:
                     player.hand.append(self.deck.pop(0))
     
+    def deal_initial_hands(self):
+        """正式选将结束后补发起手牌（自由选将在 init_game 里已经发过）。"""
+        self._deal_cards()
+        self.hero_draft_pending = False
+
     def draw_card(self, player: Player, count: int = 1) -> List[Card]:
         """摸牌"""
         drawn_cards = []

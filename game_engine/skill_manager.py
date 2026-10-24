@@ -47,52 +47,63 @@ class SkillManager:
         self._dsl_actor_usage.clear()
         self.dsl_runtime.diagnostics.clear()
         for player in engine.game_state.players:
-            skills = get_hero_skills(hero_id(player))
-            by_name = {skill.name: skill for skill in skills}
-            for definition in (player.hero or {}).get("skills", []):
-                if not isinstance(definition, dict) or not isinstance(definition.get("dsl"), dict):
-                    continue
-                try:
-                    compiled = compile_skill(definition["dsl"])
-                except ValueError as exc:
-                    logger.warning("拒绝无效技能 DSL %s/%s: %s", hero_id(player), definition.get("name"), exc)
-                    continue
-                name = str(definition.get("name") or "").strip()
-                status = definition.get("implementation_status", "partial")
-                if not name or status not in ("active", "partial", "data_only"):
-                    continue
-                # Keep metadata-only declarations out of every executable DSL
-                # lookup, including overrides of names backed by native skills.
-                if status == "active":
-                    self.dsl_programs[(player.id, name)] = compiled
-                runtime = by_name.get(name)
-                if runtime is None:
-                    runtime = RuntimeSkill(
-                        skill_id=f"{hero_id(player)}_{name}", name=name,
-                        owner_hero_id=hero_id(player), skill_type=definition.get("type", "trigger"),
-                        trigger_event=compiled.program["trigger"],
-                        description=str(definition.get("description") or ""),
-                        implementation_status=status,
-                    )
-                    skills.append(runtime)
-                    by_name[name] = runtime
-            self.registered_skills[player.id] = skills
-            for skill in self.registered_skills[player.id]:
-                dsl_program = self.dsl_programs.get((player.id, skill.name))
-                usage = dsl_program.program.get("usage", {}) if dsl_program is not None else {}
-                scope = usage.get("scope", "current_turn") if usage else ("current_turn" if skill.name == "制衡" else "game")
-                if scope == "actor_turn":
-                    # Delegated actions keep their donor-specific counter separately.
-                    scope = "current_turn"
-                charges = usage.get("charges") if usage else (1 if skill.name == "替身" else None)
-                state = {"awakened": False} if skill.name == "勤学" else None
-                self.skill_state.register(
-                    player.id, skill.skill_id, version_id=getattr(skill, "version_id", None),
-                    source=hero_id(player) or "native", charges=charges,
-                    usage_scope=scope, state=state,
-                )
+            self.register_player(player)
         self._load_handlers()
         return self
+
+    def register_player(self, player):
+        """按该角色当前的武将注册技能与技能状态；可重复调用（换将时先清掉旧登记）。
+
+        开局初始化（bind_engine）与正式选将后的"设置武将"都走这一条，避免两处各写一份注册逻辑。
+        """
+        self.registered_skills.pop(player.id, None)
+        for key in [key for key in self.dsl_programs if key[0] == player.id]:
+            del self.dsl_programs[key]
+        self.skill_state.clear_owner(player.id)
+        skills = get_hero_skills(hero_id(player))
+        by_name = {skill.name: skill for skill in skills}
+        for definition in (player.hero or {}).get("skills", []):
+            if not isinstance(definition, dict) or not isinstance(definition.get("dsl"), dict):
+                continue
+            try:
+                compiled = compile_skill(definition["dsl"])
+            except ValueError as exc:
+                logger.warning("拒绝无效技能 DSL %s/%s: %s", hero_id(player), definition.get("name"), exc)
+                continue
+            name = str(definition.get("name") or "").strip()
+            status = definition.get("implementation_status", "partial")
+            if not name or status not in ("active", "partial", "data_only"):
+                continue
+            # Keep metadata-only declarations out of every executable DSL
+            # lookup, including overrides of names backed by native skills.
+            if status == "active":
+                self.dsl_programs[(player.id, name)] = compiled
+            runtime = by_name.get(name)
+            if runtime is None:
+                runtime = RuntimeSkill(
+                    skill_id=f"{hero_id(player)}_{name}", name=name,
+                    owner_hero_id=hero_id(player), skill_type=definition.get("type", "trigger"),
+                    trigger_event=compiled.program["trigger"],
+                    description=str(definition.get("description") or ""),
+                    implementation_status=status,
+                )
+                skills.append(runtime)
+                by_name[name] = runtime
+        self.registered_skills[player.id] = skills
+        for skill in self.registered_skills[player.id]:
+            dsl_program = self.dsl_programs.get((player.id, skill.name))
+            usage = dsl_program.program.get("usage", {}) if dsl_program is not None else {}
+            scope = usage.get("scope", "current_turn") if usage else ("current_turn" if skill.name == "制衡" else "game")
+            if scope == "actor_turn":
+                # Delegated actions keep their donor-specific counter separately.
+                scope = "current_turn"
+            charges = usage.get("charges") if usage else (1 if skill.name == "替身" else None)
+            state = {"awakened": False} if skill.name == "勤学" else None
+            self.skill_state.register(
+                player.id, skill.skill_id, version_id=getattr(skill, "version_id", None),
+                source=hero_id(player) or "native", charges=charges,
+                usage_scope=scope, state=state,
+            )
 
     async def _run_dsl(self, trigger, owners, event):
         if self.engine is None or self.engine.game_aborted:

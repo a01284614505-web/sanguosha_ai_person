@@ -113,6 +113,9 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         "profile_id": config.get("profile_id"),
         "ended_at": datetime.now(timezone.utc).isoformat(),
         "mode": config.get("mode"),
+        # 选将方式：standard = 正式选将，free = 自由选将；picks 记录每人的候选、所选与来源（局后才写盘）。
+        "hero_draft": getattr(engine, "hero_draft_mode", "free"),
+        "hero_draft_picks": [dict(row) for row in getattr(engine, "draft_record", [])],
         "deck_id": config.get("deck_id") or state.get("deck_id"),
         "winner": game_end.get("winner"),
         "message": game_end.get("message"),

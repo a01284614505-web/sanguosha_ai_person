@@ -82,6 +82,15 @@ def combinations_limited(items: Iterable[int], size: int, limit: int = 12):
     return result
 
 
+# 主公技的唯一判定依据：技能元数据 type == "lord"（武将数据 data/heroes.json 与导入的武将包同源）。
+# 正式选将挑"主公技武将"、前端打"主公技"标签都读这个值，不看描述文字。
+LORD_SKILL_TYPE = "lord"
+
+
+def is_lord_skill_type(skill_type) -> bool:
+    return skill_type == LORD_SKILL_TYPE
+
+
 @dataclass
 class RuntimeSkill:
     skill_id: str
@@ -98,6 +107,10 @@ class RuntimeSkill:
     # 只为方案 6.2 表里涉及的技能填写（仁德、遗计、流离、刚烈、反馈）。
     ledger_kind: str = "none"
 
+    @property
+    def lord_skill(self) -> bool:
+        return is_lord_skill_type(self.skill_type)
+
     def public_dict(self) -> Dict[str, Any]:
         return {
             "id": self.skill_id,
@@ -109,6 +122,7 @@ class RuntimeSkill:
             "is_limited": self.limited,
             "description": self.description,
             "implementation_status": self.implementation_status,
+            "lord_skill": self.lord_skill,
         }
 
 
@@ -230,7 +244,7 @@ class FactionSkillHandler:
 
 
 __all__ = [
-    "RuntimeSkill", "FactionSkillHandler", "hero_id", "hero_faction", "card_color",
+    "RuntimeSkill", "LORD_SKILL_TYPE", "is_lord_skill_type", "FactionSkillHandler", "hero_id", "hero_faction", "card_color",
     "card_type_group", "alive_others", "player_by_id", "ensure_flags",
     "once_per_turn", "mark_once_per_turn", "reset_turn_flags", "combinations_limited",
     "RED_SUITS", "BLACK_SUITS",
