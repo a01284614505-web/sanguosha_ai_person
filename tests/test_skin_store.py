@@ -196,20 +196,33 @@ if __name__ == "__main__":
 
 
 class DownloadScriptTest(unittest.TestCase):
-    def test_script_downloads_all_and_resumes(self):
+    def load(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location("dl", Path(__file__).resolve().parents[1] / "scripts/download_noname_skins.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        real = json_catalog = Path(__file__).resolve().parents[1] / "frontend/data/noname_skin_candidates.json"
-        import json
-        from game_engine.skin_store import git_blob_sha1
-        items = json.loads(real.read_text(encoding="utf-8"))["items"]
-        # 假 GitHub：按真实目录的大小/哈希造不出内容，所以只验证失败路径与参数处理
+        return module
+
+    def test_downloads_all_then_resumes_after_failures(self):
+        module = self.load()
         with TemporaryDirectory() as tmp:
-            def offline(url):
-                raise OSError("offline")
-            code = module.main(["--dir", tmp, "--hero", "yuanshao", "--retries", "1"], fetcher=offline)
-            self.assertEqual(code, 1)
-            self.assertEqual(module.main(["--dir", tmp, "--hero", "nobody"], fetcher=offline), 1)
-        self.assertEqual(len(items), 307)
+            catalog, blobs = fake_catalog(Path(tmp) / "cat.json")
+            out = Path(tmp) / "out"
+            flaky = {"on": True}
+
+            def fetch(url):
+                if flaky["on"] and "liubei" in url:
+                    raise OSError("offline")
+                return blobs[url]
+
+            self.assertEqual(module.main(["--dir", str(out), "--retries", "1"], fetcher=fetch, catalog=catalog), 1)
+            self.assertEqual(len(list((out / "noname").rglob("*.jpg"))), 2)       # 只有曹操两张成功
+            flaky["on"] = False
+            self.assertEqual(module.main(["--dir", str(out), "--retries", "1"], fetcher=fetch, catalog=catalog), 0)
+            self.assertEqual(len(list((out / "noname").rglob("*.jpg"))), 4)
+            self.assertEqual(module.main(["--dir", str(out), "--hero", "nobody"], fetcher=fetch, catalog=catalog), 1)
+
+    def test_real_catalog_has_307_items(self):
+        import json
+        real = Path(__file__).resolve().parents[1] / "frontend/data/noname_skin_candidates.json"
+        self.assertEqual(len(json.loads(real.read_text(encoding="utf-8"))["items"]), 307)

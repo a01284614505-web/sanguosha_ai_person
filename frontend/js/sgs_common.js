@@ -242,24 +242,69 @@
         const f = faction || '群';
         return '<span class="seal faction faction-' + esc(f) + (extraCls ? ' ' + extraCls : '') + '" title="' + esc(f) + '势力">' + esc(f) + '</span>';
     }
-    function heroImageURL(heroId) { return heroId ? 'assets/heroes/' + encodeURIComponent(heroId) + '.jpg' : ''; }
-    /** 武将立绘；图片缺失时用书法首字兜底（见 imgFallback）。 */
+    // ---- 武将皮肤：服务器按档案保存，浏览器只认 hero_id -> 皮肤地址 ----
+    // 皮肤表在 localStorage 里留一份副本（带档案 ID），页面脚本一加载就能同步读到，
+    // 所以头像第一次渲染就是皮肤地址，不会“先默认图、再异步替换”。
+    const SKIN_CACHE_KEY = 'skinMap';
+    const PROFILE_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+    let skinMap = {};
+    let skinsReadyPromise = Promise.resolve(false);
+    function skinProfileId() {
+        const id = store.get('profileId', '');
+        return typeof id === 'string' && PROFILE_ID_RE.test(id) ? id : '';
+    }
+    function loadSkinCache() {
+        const cached = store.get(SKIN_CACHE_KEY, null);
+        skinMap = cached && cached.profile && cached.profile === skinProfileId() && cached.map && typeof cached.map === 'object' ? cached.map : {};
+    }
+    function defaultHeroImageURL(heroId) { return heroId ? 'assets/heroes/' + encodeURIComponent(heroId) + '.jpg' : ''; }
+    function heroImageURL(heroId) { return (heroId && skinMap[heroId]) || defaultHeroImageURL(heroId); }
+    /** 皮肤表变化后，把页面上已经画出来的头像改成新地址（只改地址不同的，不重复触发加载）。 */
+    function repaintHeroImages() {
+        document.querySelectorAll('img[data-hero-id]').forEach(img => {
+            const next = heroImageURL(img.dataset.heroId);
+            if (next && img.getAttribute('src') !== next) { delete img.dataset.skinFallbackChecked; img.setAttribute('src', next); }
+        });
+    }
+    /** 向服务器取当前档案的皮肤表；setSkinMap 供皮肤页在改动后直接写入，不必再请求。 */
+    function setSkinMap(map, profile) {
+        skinMap = map || {};
+        store.set(SKIN_CACHE_KEY, { profile: profile || skinProfileId(), map: skinMap });
+        repaintHeroImages();
+        global.dispatchEvent(new CustomEvent('hero-skins-updated'));
+    }
+    function skinMapFromState(state) {
+        const map = {};
+        Object.keys((state && state.selection) || {}).forEach(id => { if (state.selection[id] && state.selection[id].url) map[id] = state.selection[id].url; });
+        return map;
+    }
+    function refreshSkins() {
+        const profile = skinProfileId();
+        if (!profile || typeof fetch !== 'function') { skinsReadyPromise = Promise.resolve(false); return skinsReadyPromise; }
+        skinsReadyPromise = fetch('/api/skins?profile_id=' + encodeURIComponent(profile), { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+            .then(state => {
+                const map = skinMapFromState(state);
+                if (JSON.stringify(map) !== JSON.stringify(skinMap) || (store.get(SKIN_CACHE_KEY, {}) || {}).profile !== profile) setSkinMap(map, profile);
+                return true;
+            })
+            .catch(() => false);   // 服务器暂时取不到皮肤表：沿用本地副本，头像仍可用
+        return skinsReadyPromise;
+    }
+    /** 武将立绘；图片缺失时先退回默认立绘，再用书法首字兜底（见 imgFallback）。 */
     function heroImgHTML(heroId, name, cls) {
         const fallback = esc(String(name || '?').replace(/^界/, '').charAt(0) || '?');
         if (!heroId) return '<div class="hero-fallback ' + esc(cls || '') + '">' + fallback + '</div>';
         const imageURL = heroImageURL(heroId);
-        return '<img class="' + esc(cls || '') + '" src="' + imageURL + '" data-default-src="' + imageURL + '" alt="' + esc(name || '') +
+        return '<img class="' + esc(cls || '') + '" src="' + esc(imageURL) + '" data-default-src="' + esc(defaultHeroImageURL(heroId)) + '" alt="' + esc(name || '') +
             '" data-hero-id="' + esc(heroId) + '" data-fallback="' + fallback + '" loading="lazy" onerror="SGS.imgFallback(this)">';
     }
     function imgFallback(img) {
-        const localSkins = global.LocalHeroSkins;
-        const heroId = img && img.dataset && img.dataset.heroId;
-        if (heroId && localSkins && !img.dataset.skinFallbackChecked) {
+        const fallbackSrc = img && img.dataset && img.dataset.defaultSrc;
+        // 皮肤文件打不开（服务器丢了文件等）时，先试一次默认立绘
+        if (fallbackSrc && !img.dataset.skinFallbackChecked && img.getAttribute('src') !== fallbackSrc) {
             img.dataset.skinFallbackChecked = '1';
-            localSkins.getHeroImageURL(heroId).then(url => {
-                if (url && img.isConnected) { img.src = url; return; }
-                replaceWithHeroFallback(img);
-            }).catch(() => replaceWithHeroFallback(img));
+            img.setAttribute('src', fallbackSrc);
             return;
         }
         replaceWithHeroFallback(img);
@@ -616,14 +661,18 @@
     const SGS = {
         SUIT, CARD_ART, CARD_INFO, DELAYED, EQUIP_SLOT, EQUIP_ORDER, IDENTITY, WINNER, PHASE, PHASE_ORDER, PHASE_SHORT, SKILL_TAG,
         esc, rankText, suitInfo, cardLabel, cardArtURL, cardHTML, cardDetailAttrs, hpHTML, hpColor, ensureGouyuDefs, cornersHTML, chainSVG, BOLT_SVG,
-        identitySeal, factionSeal, heroImageURL, heroImgHTML, imgFallback, icon, hydrateIcons,
+        identitySeal, factionSeal, heroImageURL, defaultHeroImageURL, heroImgHTML, imgFallback, refreshSkins, setSkinMap, skinMapFromState, skinProfileId, icon, hydrateIcons,
         applyTheme, toggleTheme, Detail, cardDetailHTML, natureOf, displayName, bracketName, NATURE_INFO, skillDetailHTML, store, toast, fetchJSON, attachModelPicker, identityCardHTML
     };
     global.SGS = SGS;
+    Object.defineProperty(SGS, 'skinsReady', { get: () => skinsReadyPromise });
 
     if (typeof document !== 'undefined') {
         // 主题越早应用越好（本脚本放在 <head> 时可避免闪一下夜墨）
         applyTheme();
+        loadSkinCache();
+        window.addEventListener('storage', (e) => { if (e.key === SKIN_CACHE_KEY) { loadSkinCache(); repaintHeroImages(); } });
+        refreshSkins();
         if (window.matchMedia) {
             const mq = matchMedia('(prefers-color-scheme: light)');
             const onChange = () => { if (themeSetting() === 'system') applyTheme('system'); };
@@ -631,6 +680,7 @@
         }
         window.addEventListener('global-settings-changed', (e) => applyTheme(e.detail && e.detail.theme));
         const ready = () => {
+            repaintHeroImages();   // 静态写在 HTML 里的头像也立刻换成缓存里的皮肤
             ensureGouyuDefs();
             hydrateIcons();
             applyTheme();

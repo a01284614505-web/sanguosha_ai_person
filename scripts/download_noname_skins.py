@@ -21,13 +21,13 @@ sys.path.insert(0, str(ROOT))
 from game_engine.skin_store import SkinError, SkinStore  # noqa: E402
 
 
-def main(argv=None, fetcher=None):
+def main(argv=None, fetcher=None, catalog=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dir", default=os.environ.get("SANGUOSHA_SKIN_DIR") or str(ROOT / "data" / "skins"))
     parser.add_argument("--hero", action="append", help="只下载这名武将，可重复")
     parser.add_argument("--retries", type=int, default=3)
     args = parser.parse_args(argv)
-    store = SkinStore(args.dir, ROOT / "frontend/data/noname_skin_candidates.json", lambda: set(), fetcher=fetcher)
+    store = SkinStore(args.dir, catalog or ROOT / "frontend/data/noname_skin_candidates.json", lambda: set(), fetcher=fetcher)
     todo = [pair for pair in store.all_noname() if not args.hero or pair[0] in args.hero]
     if not todo:
         print("没有匹配的候选图。")
