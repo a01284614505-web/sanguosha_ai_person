@@ -16,3 +16,6 @@ data/backups/hero_packages.*.json
 .aidev/*
 !.aidev/config.json
 */.aidev/
+
+# 皮肤资源（按档案隔离的导入图 + noname 缓存），运行时生成
+data/skins/

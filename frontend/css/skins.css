@@ -1,0 +1,89 @@
+/* 皮肤画廊：手机竖屏优先；尺寸用 clamp/百分比，毛玻璃带 @supports 降级。 */
+.sk-intro { text-align: center; padding: 6px 0 14px; }
+.sk-intro h1 { margin: 0 0 6px; font-size: clamp(28px, 8vw, 38px); }
+.sk-intro p { margin: 0 auto; max-width: 36em; font-size: clamp(13px, 3.6vw, 15px); }
+
+.sk-banner { margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--field-line); border-radius: 8px; background: var(--inset); font-size: 14px; line-height: 1.5; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.sk-banner[hidden] { display: none; }
+.sk-banner-bad { border-color: var(--bad); color: var(--text); }
+
+.sk-filter { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.sk-filter .input { flex: 1 1 160px; min-width: 0; max-width: 280px; min-height: 40px; }
+.sk-filter .faction-tabs button { min-height: 36px; }
+
+/* 武将网格 */
+.sk-hero-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(92px, 27vw, 140px), 1fr)); gap: clamp(8px, 2.4vw, 14px); }
+.sk-hero-grid > p { grid-column: 1 / -1; }
+.sk-hero { position: relative; display: grid; gap: 6px; padding: 0 0 8px; text-align: center; color: var(--text); font: inherit; cursor: pointer;
+    border: 1px solid var(--field-line); border-radius: 10px; background: var(--inset); overflow: hidden; min-width: 0;
+    transition: transform .15s var(--ease), border-color .15s; -webkit-tap-highlight-color: transparent; }
+.sk-hero:hover { border-color: var(--gold-dim); transform: translateY(-2px); }
+.sk-hero-art { display: block; aspect-ratio: 350 / 464; background: rgba(0, 0, 0, .25); overflow: hidden; }
+.sk-hero-art img, .sk-hero-art .hero-fallback { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.sk-hero-art .hero-fallback { display: grid; place-items: center; font: 42px var(--font-brush); color: var(--text-dim); }
+.sk-hero-meta { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 6px; min-width: 0; }
+.sk-hero-meta b { font: 600 clamp(14px, 3.9vw, 16px) var(--font-kai); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-hero-meta .seal { width: 20px; height: 20px; font-size: 12px; flex: none; }
+.sk-hero-tag { position: absolute; top: 6px; left: 6px; padding: 1px 7px; border-radius: 10px; font-size: 11px; line-height: 1.5; color: #2a1a0b; background: var(--gold); }
+
+/* 皮肤面板：手机上是底部浮层，电脑上居中 */
+.sk-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
+.sk-sheet[hidden] { display: none; }
+.sk-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .55); }
+.sk-panel { position: relative; width: 100%; max-width: 760px; height: 88vh; height: 88dvh; display: flex; flex-direction: column; gap: 8px; padding: 14px clamp(12px, 3.5vw, 20px) calc(12px + env(safe-area-inset-bottom));
+    border: 1px solid var(--frame-line); border-bottom: 0; border-radius: 16px 16px 0 0; outline: none;
+    background: var(--surface-bottom); box-shadow: 0 -10px 40px rgba(0, 0, 0, .5); animation: sk-rise .22s var(--ease); }
+@keyframes sk-rise { from { transform: translateY(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .sk-panel { background: rgba(28, 20, 14, .74); -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
+    :root[data-theme="light"] .sk-panel { background: rgba(250, 244, 228, .78); }
+    .sk-backdrop { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+}
+@media (min-width: 720px) {
+    .sk-sheet { align-items: center; }
+    .sk-panel { height: auto; max-height: 86vh; max-height: 86dvh; border-bottom: 1px solid var(--frame-line); border-radius: 14px; }
+}
+body.sk-lock { overflow: hidden; }
+
+.sk-panel-head { display: flex; gap: 10px; align-items: flex-start; }
+.sk-current { flex: none; width: clamp(60px, 17vw, 100px); }
+.sk-current-art { aspect-ratio: 350 / 464; border-radius: 8px; overflow: hidden; border: 2px solid var(--gold); background: rgba(0, 0, 0, .3); }
+.sk-current-art img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.sk-panel-info { flex: 1; min-width: 0; display: grid; gap: 4px; align-content: start; }
+.sk-panel-info h2 { margin: 0; font-size: clamp(22px, 6.4vw, 30px); line-height: 1.15; color: var(--heading); }
+.sk-panel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.sk-panel-actions .btn { min-height: 38px; padding: 3px clamp(8px, 2.6vw, 14px); letter-spacing: 0; font-size: clamp(13px, 3.8vw, 15px); white-space: nowrap; }
+.sk-close { flex: none; width: 40px; height: 40px; }
+.sk-status { min-height: 1.4em; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.sk-status.bad { color: var(--bad); }
+
+.sk-tile-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 4px; }
+.sk-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(84px, 25vw, 124px), 1fr)); gap: clamp(8px, 2.2vw, 12px); }
+.sk-tile { position: relative; display: flex; flex-direction: column; width: 100%; gap: 4px; padding: 0 0 6px; min-width: 0; text-align: center; font: inherit; color: var(--text); cursor: pointer;
+    border: 1px solid var(--field-line); border-radius: 8px; background: var(--inset); overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.sk-tile:hover { border-color: var(--gold-dim); }
+.sk-tile-art { display: block; position: relative; width: 100%; flex: none; aspect-ratio: 350 / 464; background: rgba(0, 0, 0, .28); overflow: hidden; }
+.sk-tile-art img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.sk-tile-cap { font-size: 12px; line-height: 1.3; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+/* “使用中”：唯一用金边强调的元素，另配对勾徽标，不只靠颜色区分 */
+.sk-tile[aria-pressed="true"] { border: 2px solid var(--gold); box-shadow: 0 0 0 2px rgba(201, 163, 90, .25); padding-bottom: 5px; }
+.sk-tile[aria-pressed="true"] .sk-tile-cap { color: var(--heading); font-weight: 600; }
+.sk-badge { position: absolute; top: 5px; left: 5px; padding: 1px 8px 1px 6px; border-radius: 10px; font-size: 11px; line-height: 1.6; color: #2a1a0b; background: var(--gold); box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+.sk-tile.busy .sk-tile-art::after { content: "下载中…"; position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; font-size: 13px; }
+.sk-tile.failed .sk-tile-art::after { content: "拉取失败\A点此重试"; white-space: pre; position: absolute; inset: 0; display: grid; place-items: center; text-align: center; background: rgba(60, 12, 8, .78); color: #fff; font-size: 12px; line-height: 1.5; }
+.sk-del { position: absolute; top: 3px; right: 3px; z-index: 2; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 0; color: #fff; background: rgba(0, 0, 0, .6); cursor: pointer; }
+.sk-del .ic { width: 16px; height: 16px; }
+.sk-tile-wrap { position: relative; min-width: 0; }
+.sk-tile-import { border-style: dashed; color: var(--heading); }
+.sk-tile-import .sk-tile-art { display: grid; place-items: center; font: 300 clamp(34px, 11vw, 48px) / 1 var(--font-ui); color: var(--gold); }
+.sk-tile-import.busy .sk-tile-art::after { content: "上传中…"; position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; font-size: 13px; }
+.sk-panel-note { margin: 12px 0 0; font-size: 12px; line-height: 1.5; }
+
+.sk-foot { margin-top: 24px; display: grid; gap: 12px; }
+.sk-sync { border: 1px solid var(--field-line); border-radius: 8px; padding: 10px 14px; background: var(--inset); }
+.sk-sync summary { cursor: pointer; font-family: var(--font-kai); font-size: 16px; color: var(--heading); min-height: 28px; }
+.sk-sync[open] { display: grid; gap: 10px; }
+.sk-sync-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.sk-sync code { padding: 5px 9px; border-radius: 6px; background: var(--field-bg); border: 1px solid var(--field-line); font-size: 13px; overflow-wrap: anywhere; user-select: all; }
+.sk-source { font-size: 12.5px; line-height: 1.6; margin: 0; }
+.sk-tile.failed img { visibility: hidden; }
