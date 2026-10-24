@@ -15,9 +15,9 @@
     "奸雄": "4e4cd843450b3a75d56ea99e1eb0ad0f95447aa8d0b1796783bc21a520801b0d",
     "反馈": "23be52c3cefb00e3925335fa3dec6dccfff6f917f176af96702f6a5faf71cc9b"
   },
-  "engine_version": "45f6c068df7a07cbafaa9fa1dbaedb6e77addadb8a3da89ba7aae8990f48c0a9",
+  "engine_version": "8a30c9b14a98b25fb7892e5fb53d3379b851d8850b98f2439796657cbe2b85fa",
   "engine_inputs_sha256": {
-    "game_engine/main_engine.py": "8ed9bf84f4f705d9731e41bdfecdd577fa3af5c085b9b0570e9e0fe8f4c3d937",
+    "game_engine/main_engine.py": "8d7b969398eed181140a88026f667d46fba954a753f6bd43cda3c4935552897a",
     "game_engine/state_manager.py": "aa6d50d42581a78998d6367a9684d61717d7183ac06d7f145c91f1391b205a7e",
     "game_engine/card_flow.py": "26ddd9d424ddc68ef09978258bfd0e442219a27165c25d2e8971ba0289eab3bb",
     "game_engine/skill_dsl.py": "2568988526d8ee95f1751502ac4d20566fbaf526bbae099282746b79b3a5da63",

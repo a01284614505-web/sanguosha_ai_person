@@ -275,6 +275,35 @@ class RecoveryStore:
             raise ValueError("snapshot game id mismatch")
         return data
 
+    def list_for_profile(self, profile_id: str) -> list:
+        """某档案名下可恢复的快照摘要（不含牌面细节），按文件修改时间倒序。损坏 / 版本不符的文件跳过。"""
+        rows = []
+        if not self.root.is_dir():
+            return rows
+        for path in self.root.glob("*.json"):
+            try:
+                with open(path, encoding="utf-8") as stream:
+                    data = json.load(stream)
+                if (data.get("version") != SNAPSHOT_VERSION or data.get("profile_id") != profile_id
+                        or data.get("game_id") != path.stem):
+                    continue
+                state = data["state"]
+                human = next((p for p in state["players"] if not p.get("is_ai")), None)
+                if state.get("game_over"):
+                    continue
+                rows.append({
+                    "game_id": data["game_id"], "mode": state.get("mode"),
+                    "round": int(state.get("round_number") or 0),
+                    "human_alive": bool(human and human.get("alive")),
+                    "trustee": any(key == "trustee_active" and value is True
+                                   for key, value in (data.get("engine") or {}).get("$dict", [])),
+                    "updated_at": path.stat().st_mtime,
+                })
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        rows.sort(key=lambda row: row["updated_at"], reverse=True)
+        return rows
+
     def delete(self, game_id: str) -> None:
         try: self.path(game_id).unlink()
         except FileNotFoundError: pass

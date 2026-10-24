@@ -1000,6 +1000,9 @@ class CardSystem:
             if killer is not None:
                 record_stat(self.engine, killer, "kills")
             logger.info(f"  💀 {player.name} 阵亡，身份揭示为 {player.identity}")
+            record_death = getattr(self.engine, "record_death", None)
+            if callable(record_death):
+                record_death(player, killer)
             await self._discard_player_zones(player, "death")
             if self.engine is not None and self.engine.game_aborted:
                 return
