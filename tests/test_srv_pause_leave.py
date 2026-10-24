@@ -693,3 +693,21 @@ def test_active_game_from_list_is_resumable_for_memory_and_snapshot_games(tmp_pa
         await settle()
 
     asyncio.run(scenario())
+
+
+def test_dead_human_background_settlement_while_paused_unpauses(tmp_path):
+    async def scenario():
+        server = new_server(tmp_path)
+        server.PAUSE_LIMIT_SECONDS = 0.1
+        engine = MainEngine(make_config())
+        engine.human_player().alive = False
+        ws = Socket()
+        attach(server, engine, "t6", ws)
+        await server.do_set_pause(ws, {"paused": True})
+        await server.do_post_death_action(ws, {"action": "background"})
+        assert not engine.paused and "t6" in server.background_games
+        await settle(0.3)
+        assert not engine.game_aborted
+        server.tasks["t6"].cancel()
+
+    asyncio.run(scenario())

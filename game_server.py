@@ -493,6 +493,9 @@ class GameServer:
                                  "status": "accepted" if accepted else "already_finished"})
             return
 
+        if engine.paused:
+            # 选择后台结算就是要让对局打完：先解除暂停，别让它挂到暂停期限被结束。
+            await self._apply_pause(gid, engine, False)
         # ACK first, then detach without scheduling the disconnect watchdog.
         self.background_games[gid] = engine.game_config.get("profile_id")
         await self.send(ws, {"type": OUTBOUND.POST_DEATH_ACTION_RESULT,
