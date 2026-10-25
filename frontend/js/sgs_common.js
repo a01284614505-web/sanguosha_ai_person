@@ -351,10 +351,9 @@
         if (setting === 'system') return window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         return setting === 'light' ? 'light' : 'dark';
     }
-    /** 应用主题；对局页（<html data-theme-lock>）始终保持夜墨。 */
+    /** 应用主题。 */
     function applyTheme(setting) {
         const root = document.documentElement;
-        if (root.hasAttribute('data-theme-lock')) { root.dataset.theme = 'dark'; return; }
         const theme = resolveTheme(setting || themeSetting());
         root.dataset.theme = theme;
         const meta = document.querySelector('meta[name="theme-color"]');
@@ -574,25 +573,53 @@
             list.hidden = false;
         }
         function hide() { list.hidden = true; }
+        function showMessage(message, providerValue) {
+            list.textContent = message;
+            const provider = (typeof Protocol !== 'undefined' ? Protocol.PROVIDERS : []).find(p => p.value === providerValue);
+            if (provider && provider.default_model) {
+                const fallback = document.createElement('button');
+                fallback.type = 'button';
+                fallback.className = 'model-opt';
+                fallback.dataset.model = provider.default_model;
+                fallback.textContent = '使用默认模型：' + provider.default_model;
+                list.appendChild(fallback);
+            }
+            list.hidden = false;
+        }
 
         btn.addEventListener('click', async (e) => {
             e.preventDefault();
+            models = [];
             btn.disabled = true;
             btn.textContent = '拉取中…';
+            let params = {};
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 12000);
             try {
+                params = getParams() || {};
+                showMessage('正在连接服务商，最多等待 12 秒…');
                 const data = await fetchJSON('/api/models', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(getParams() || {})
+                    signal: controller.signal,
+                    body: JSON.stringify(params)
                 });
-                if (!data.success) { toast(data.message || '拉取失败，请手动填写', { bad: true, ms: 3200 }); hide(); return; }
+                if (!data.success) {
+                    const message = data.message || '拉取失败，请手动填写模型名';
+                    showMessage(message, params.provider);
+                    toast(message, { bad: true, ms: 3200 });
+                    return;
+                }
                 models = data.models || [];
                 filterOn = false;
                 render();
                 toast('拉取到 ' + models.length + ' 个模型，点选即可');
             } catch (err) {
-                toast('连不上游戏服务，无法拉取模型', { bad: true });
+                const message = err.name === 'AbortError' ? '拉取超时，请检查 API 地址或手动填写模型名' : '连不上游戏服务，无法拉取模型';
+                showMessage(message, params.provider);
+                toast(message, { bad: true, ms: 3200 });
             } finally {
+                clearTimeout(timer);
                 btn.disabled = false;
                 btn.textContent = '拉取';
             }

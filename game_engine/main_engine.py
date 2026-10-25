@@ -148,7 +148,7 @@ class MainEngine:
         self.completed_turns = 0
         self.max_turns = int(game_config.get("max_turns", 300))
         self.human_action_timeout = int(game_config.get("human_action_timeout", 120))
-        self.response_timeout = int(game_config.get("response_timeout", 30))
+        self.response_timeout = int(game_config.get("response_timeout", 60))
         # 离席看门狗：只累计「引擎在等真人、而真人没应答」的时间；AI回合期间恒不计时。
         self.idle_abort_seconds = float(game_config.get("idle_abort_seconds", 300))
         self.idle_check_interval = float(game_config.get("idle_check_interval", 15))

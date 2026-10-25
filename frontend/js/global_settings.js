@@ -4,7 +4,7 @@
 // - getGlobalSettings() / saveGlobalSettings() 供其他脚本读写；保存时广播
 //   'global-settings-changed' 事件（sgs_common.js 据此切换主题，对局页据此重绘）。
 // - 页面若已自带入口按钮（#openGlobalSettings / #sbtn），则不再注入右上角悬浮按钮。
-// - theme：dark 夜墨 / light 暖纸 / system 跟随系统；对局页始终是夜墨。
+// - theme：dark 夜墨 / light 暖纸 / system 跟随系统。
 // =============================================================================
 (function () {
     const STORAGE_KEY = 'globalSettings';
