@@ -19,6 +19,7 @@
     'use strict';
     const { esc, store, toast } = SGS;
     const SEAT_COUNT = 5;
+    const modelFailuresShown = new Set();
 
     // ------------------------------------------------------------------ 页面状态
     // 所有可变状态集中放在 G 里，方便在浏览器控制台用 GameUI 查看调试。
@@ -1854,6 +1855,16 @@
     };
 
     gameClient.onDecisionTrace = function (trace) {
+        const failure = String(trace.fallback_reason || '');
+        if (failure && failure !== 'rules_no_provider' &&
+            !['hidden_candidates_local_random', 'choice_ai_disabled'].includes(failure) &&
+            (trace.source === 'rules' || trace.source === 'trustee')) {
+            const signature = trace.player_id + ':' + failure;
+            if (!modelFailuresShown.has(signature)) {
+                modelFailuresShown.add(signature);
+                toast((trace.player_name || 'AI') + ' 已改用规则 AI：' + failure + '。请在配置中点“测试连接”排查。', { bad: true, ms: 7000 });
+            }
+        }
         // 作弊模式：AI 的公开理由进思考列表，并写进战报。
         if (trace.cheat && trace.reason && Number.isInteger(trace.player_id) && trace.player_id !== G.meId) {
             const arr = G.thoughts[trace.player_id] || (G.thoughts[trace.player_id] = []);
@@ -1880,7 +1891,7 @@
         full.className = 'decision-trace-full';
         const facts = [
             ['理由', trace.reason], ['最终选择', trace.final_choice],
-            ['校验', trace.validation], ['来源', trace.source],
+            ['校验', trace.validation], ['来源', trace.source], ['降级原因', trace.fallback_reason],
             ['候选数', trace.candidate_count], ['候选概览', trace.candidate_summary],
             ['世界书规则', trace.worldbook_hits],
             ['耗时', Number.isFinite(trace.elapsed_ms) ? trace.elapsed_ms + ' ms' : null]
@@ -2383,6 +2394,10 @@
         }));
         ConnectionLibrary.attach(document.getElementById('trusteeKey'), 'keys', () => val('trusteeProvider'));
         ConnectionLibrary.attach(document.getElementById('trusteeUrl'), 'urls', () => val('trusteeProvider'));
+        const trusteeTest = ConnectionLibrary.attachTester(document.getElementById('trusteeModel'), () => ({
+            provider: val('trusteeProvider'), api_url: val('trusteeUrl'),
+            api_key: val('trusteeKey'), model: val('trusteeModel')
+        }));
         // 局内调整 AI 时 Key 可留空：服务器按本局 game_id + 座位沿用已保存的 Key（Key 不会回传给页面）。
         const aiPicker = SGS.attachModelPicker(document.getElementById('aiSettingModel'), () => {
             const active = store.sget('activeGame') || {};
@@ -2392,8 +2407,21 @@
         });
         ConnectionLibrary.attach(document.getElementById('aiSettingKey'), 'keys', () => val('aiSettingProvider'));
         ConnectionLibrary.attach(document.getElementById('aiSettingUrl'), 'urls', () => val('aiSettingProvider'));
-        ['trusteeProvider', 'trusteeUrl', 'trusteeKey'].forEach(id => document.getElementById(id).addEventListener('change', () => trusteePicker && trusteePicker.reset()));
-        ['aiSettingProvider', 'aiSettingUrl', 'aiSettingKey'].forEach(id => document.getElementById(id).addEventListener('change', () => aiPicker && aiPicker.reset()));
+        const aiTest = ConnectionLibrary.attachTester(document.getElementById('aiSettingModel'), () => {
+            const active = store.sget('activeGame') || {};
+            return { provider: val('aiSettingProvider'), api_url: val('aiSettingUrl'),
+                api_key: val('aiSettingKey'), model: val('aiSettingModel'),
+                game_id: active.game_id || gameClient.gameId, profile_id: active.profile_id,
+                player_id: parseInt(val('aiSettingPlayerId'), 10) };
+        });
+        ['trusteeProvider', 'trusteeUrl', 'trusteeKey', 'trusteeModel'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+            if (id !== 'trusteeModel' && trusteePicker) trusteePicker.reset();
+            if (trusteeTest) trusteeTest.reset();
+        }));
+        ['aiSettingProvider', 'aiSettingUrl', 'aiSettingKey', 'aiSettingModel'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+            if (id !== 'aiSettingModel' && aiPicker) aiPicker.reset();
+            if (aiTest) aiTest.reset();
+        }));
         document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
         document.querySelectorAll('dialog.sgs-dialog').forEach(d => d.addEventListener('click', (e) => { if (e.target === d && d.id !== 'endModal') d.close(); }));
         document.getElementById('endModal').addEventListener('cancel', (e) => e.preventDefault());

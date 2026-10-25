@@ -30,6 +30,13 @@ from .public_situation import (
 logger = logging.getLogger(__name__)
 
 
+def _failure_label(exc: Exception) -> str:
+    """给战报保留可排查的状态码，不带请求头或服务商响应正文。"""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
+
+
 def model_call_kwargs(player) -> Dict[str, Any]:
     """一个座位的模型连接参数（Provider / 模型 / Key / 地址）。
 
@@ -501,7 +508,7 @@ class AIDecision:
             response = await self._call_with_session(player, "decision", content)
             return self.parse_ai_response(response, player, available_actions)
         except Exception as exc:
-            self.last_failure[player.id] = type(exc).__name__
+            self.last_failure[player.id] = _failure_label(exc)
             self.last_reasoning[player.id] = ""
             logger.warning("  ⚠️ AI调用失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_ai_decision(player, available_actions)
@@ -759,7 +766,7 @@ class AIDecision:
                 "reasoning": str(payload.get("reasoning", ""))[:1000],
             }
         except Exception as exc:
-            self.last_failure[player.id] = type(exc).__name__
+            self.last_failure[player.id] = _failure_label(exc)
             self.last_reasoning[player.id] = ""
             logger.warning("  ⚠️ AI响应解析失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_ai_decision(player, available_actions)
@@ -1012,7 +1019,7 @@ class AIDecision:
             )
             return self.parse_response_choice(response, player, request)
         except Exception as exc:
-            self.last_failure[player.id] = type(exc).__name__
+            self.last_failure[player.id] = _failure_label(exc)
             self.last_reasoning[player.id] = ""
             logger.warning("  ⚠️ 响应AI调用失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_response_decision(player, request)
@@ -1032,7 +1039,7 @@ class AIDecision:
             self.last_reasoning[player.id] = reasoning
             return index
         except Exception as exc:
-            self.last_failure[player.id] = type(exc).__name__
+            self.last_failure[player.id] = _failure_label(exc)
             self.last_reasoning[player.id] = ""
             logger.warning("  ⚠️ 响应解析失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_response_decision(player, request)
@@ -1356,7 +1363,7 @@ class AIDecision:
         except Exception as exc:
             if not counted:
                 self._note_usage(player, "choice", None, failed=True)
-            self.last_failure[player.id] = type(exc).__name__
+            self.last_failure[player.id] = _failure_label(exc)
             logger.warning("  ⚠️ 选将模型失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_choice_decision(player, request)
 
@@ -1434,7 +1441,7 @@ class AIDecision:
             self.last_reasoning[player.id] = str(payload.get("reasoning", ""))[:1000]
             return indices
         except Exception as exc:
-            self.last_failure[player.id] = type(exc).__name__
+            self.last_failure[player.id] = _failure_label(exc)
             self.last_reasoning[player.id] = ""
             logger.warning("  ⚠️ 选择模型失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_choice_decision(player, request)
