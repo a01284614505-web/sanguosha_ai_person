@@ -88,9 +88,16 @@
             this.modelPicker = SGS.attachModelPicker(f.model, () => ({
                 provider: f.provider.value, api_url: f.apiUrl.value.trim(), api_key: f.apiKey.value.trim()
             }));
+            this.connectionTest = ConnectionLibrary.attachTester(f.model, () => ({
+                provider: f.provider.value, api_url: f.apiUrl.value.trim(),
+                api_key: f.apiKey.value.trim(), model: f.model.value.trim()
+            }));
             ConnectionLibrary.attach(f.apiKey, 'keys', () => f.provider.value);
             ConnectionLibrary.attach(f.apiUrl, 'urls', () => f.provider.value);
-            ['provider', 'apiUrl', 'apiKey'].forEach(n => f[n].addEventListener('change', () => this.modelPicker && this.modelPicker.reset()));
+            ['provider', 'apiUrl', 'apiKey', 'model'].forEach(n => f[n].addEventListener('change', () => {
+                if (n !== 'model' && this.modelPicker) this.modelPicker.reset();
+                if (this.connectionTest) this.connectionTest.reset();
+            }));
             document.getElementById('syncBtn').addEventListener('click', () => this.syncAPIConfig());
 
             this.loadUserData();
@@ -464,6 +471,7 @@
         // 把当前席的配置填进表单。
         fillForm() {
             if (this.modelPicker) this.modelPicker.reset();
+            if (this.connectionTest) this.connectionTest.reset();
             const a = this.aiConfigs[this.current];
             const f = this.form.elements;
             f.name.value = a.name;

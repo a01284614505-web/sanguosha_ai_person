@@ -9,6 +9,7 @@ import sys
 import time
 import traceback
 import uuid
+import httpx
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
@@ -914,6 +915,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
     ALLOWED_STATIC_SUFFIXES = {".html", ".css", ".js", ".json", ".png", ".jpg", ".mp3"}
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(BASE_DIR / "frontend"), **kwargs)
+    def end_headers(self):
+        if urlsplit(self.path).path.endswith(".html"):
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -1194,6 +1199,43 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
         self._send_json(200, {"success": True, **result})
 
+    def _handle_connection_test(self):
+        """用与对局相同的聊天端点做一次小请求，只回传安全的诊断。"""
+        try:
+            body = self._read_json_body(max_bytes=16_000, require_object=True)
+            provider = str(body.get("provider") or "openai").strip()
+            model = str(body.get("model") or "").strip()
+            api_key = str(body.get("api_key") or "").strip() or self._saved_ai_key(body)
+            api_url = str(body.get("api_url") or "").strip()
+            if not api_key or not model:
+                raise ValueError("请先填写 API Key 和模型名称")
+            if api_url:
+                parts = urlsplit(api_url)
+                if parts.scheme not in ("http", "https") or not parts.netloc:
+                    raise ValueError("API 地址必须以 http:// 或 https:// 开头")
+            content = asyncio.run(AIGateway(timeout=12).call_ai(
+                provider=provider, model=model, api_key=api_key, base_url=api_url or None,
+                messages=[{"role": "user", "content": "连通性测试。请只回复 OK。"}],
+            ))
+            if not str(content or "").strip():
+                raise ValueError("接口返回了空内容；该模型可能不支持当前聊天接口")
+            self._send_json(200, {"success": True, "message": "连接成功：模型聊天接口已返回内容"})
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+            self._send_json(200, {"success": False, "message": str(exc)[:160]})
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            hint = "Key 无效或没有权限" if status in (401, 403) else (
+                "地址或模型不支持聊天接口" if status == 404 else
+                "请求过多或额度不足" if status == 429 else "服务商拒绝了请求")
+            self._send_json(200, {"success": False, "message": f"{hint}（HTTP {status}）"})
+        except httpx.TimeoutException:
+            self._send_json(200, {"success": False, "message": "连接超时，请检查 API 地址或中转站状态"})
+        except httpx.HTTPError:
+            self._send_json(200, {"success": False, "message": "无法连接到 API 地址"})
+        except Exception as exc:
+            logging.getLogger(__name__).warning("模型连接测试失败: %s", type(exc).__name__)
+            self._send_json(200, {"success": False, "message": "接口返回格式不符合聊天接口要求"})
+
     def do_POST(self):
         request_path = urlsplit(self.path).path
         if request_path == "/api/ai-players/update":
@@ -1226,6 +1268,9 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
         if request_path == "/api/models":
             self._handle_list_models()
+            return
+        if request_path == "/api/connection-test":
+            self._handle_connection_test()
             return
         if request_path == "/api/logs/delete":
             self._handle_logs_delete()

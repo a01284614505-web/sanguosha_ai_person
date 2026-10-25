@@ -300,6 +300,10 @@ img { display: block; }
 .model-pick { display: flex; gap: 6px; align-items: stretch; }
 .model-pick > input { flex: 1 1 0; min-width: 0; }
 .model-pick > .model-pick-btn { flex: 0 0 auto; }
+.conn-test-btn { flex: 0 0 auto; }
+.conn-test-status { display: block; margin-top: 5px; font-size: 12px; line-height: 1.45; }
+.conn-test-status[data-ok="true"] { color: var(--ok); }
+.conn-test-status[data-ok="false"] { color: var(--bad); }
 .model-select-dialog .dialog-body { display: grid; gap: 12px; width: min(92vw, 620px); }
 .model-select-dialog .dialog-head { margin: 0; }
 .model-status { margin: 0; color: var(--text-dim); font-size: 13px; }
@@ -313,7 +317,10 @@ img { display: block; }
 .model-opt.on { color: var(--gold-hi); background: rgba(201, 163, 90, .22); }
 .conn-pick { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
 .conn-pick > input { flex: 1 1 0; min-width: 0; }
-.conn-pick-btn { flex: 0 0 auto; }
+.conn-pick-btn, .conn-reveal-btn { flex: 0 0 auto; }
+.conn-value-wrap { display: flex; gap: 6px; min-width: 0; }
+.conn-value-wrap > input { flex: 1 1 0; min-width: 0; }
+.conn-value-wrap > .conn-reveal-btn[hidden] { display: none; }
 .conn-dialog .dialog-body { width: min(92vw, 640px); }
 .conn-hint { margin: -4px 0 12px; color: var(--text-dim); font-size: 12px; }
 .conn-list { display: grid; gap: 8px; max-height: min(38dvh, 320px); overflow-y: auto; margin-bottom: 16px; }
@@ -586,6 +593,7 @@ dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
     position: fixed;
     left: 50%;
     top: 14%;
+    width: min(94vw, 600px);
     transform: translateX(-50%);
     z-index: 9000;
     display: grid;
@@ -594,6 +602,9 @@ dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
     pointer-events: none;
 }
 .toast {
+    max-width: 100%;
+    text-align: center;
+    overflow-wrap: anywhere;
     padding: 7px 26px;
     font-family: var(--font-kai);
     font-size: 16px;
@@ -603,7 +614,7 @@ dialog.sgs-dialog[open] { animation: dlg-in .18s var(--ease); }
     border-bottom: 1px solid rgba(201, 163, 90, .5);
     animation: toast-in .2s var(--ease);
     transition: opacity .25s;
-    white-space: nowrap;
+    white-space: normal;
 }
 .toast.bad { color: #f0b9a8; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }

@@ -31,7 +31,27 @@
         const list = typeof Protocol !== 'undefined' ? Protocol.PROVIDERS : [];
         return (list.find(p => p.value === value) || {}).name || value || '当前提供方';
     }
-    function mask(value) { return '••••••' + value.slice(-4); }
+    function mask(value) {
+        return value.length >= 12 ? value.slice(0, 4) + '••••••' + value.slice(-4) : '••••••' + value.slice(-4);
+    }
+    function addRevealButton(input, wrap) {
+        if (input.dataset.keyReveal) return;
+        input.dataset.keyReveal = '1';
+        const reveal = document.createElement('button');
+        reveal.type = 'button';
+        reveal.className = 'btn small conn-reveal-btn';
+        reveal.textContent = '查看';
+        reveal.setAttribute('aria-label', '查看 API Key 明文');
+        reveal.setAttribute('aria-pressed', 'false');
+        reveal.addEventListener('click', () => {
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            reveal.textContent = visible ? '隐藏' : '查看';
+            reveal.setAttribute('aria-label', visible ? '隐藏 API Key 明文' : '查看 API Key 明文');
+            reveal.setAttribute('aria-pressed', String(visible));
+        });
+        wrap.appendChild(reveal);
+    }
     function button(label, action, id) {
         const el = document.createElement('button');
         el.type = 'button';
@@ -51,10 +71,11 @@
             '<p class="conn-hint">只保存在此浏览器。Key 需要明确点击下方按钮才会保存。</p>' +
             '<div class="conn-list"></div>' +
             '<form class="conn-form"><label class="field"><span>备注</span><input class="conn-note" maxlength="80" placeholder="例如：个人账号、备用线路"></label>' +
-            '<label class="field"><span class="conn-value-label"></span><input class="conn-value" autocomplete="off"></label>' +
+            '<label class="field"><span class="conn-value-label"></span><span class="conn-value-wrap"><input class="conn-value" autocomplete="off"></span></label>' +
             '<div class="dialog-actions"><button class="btn cancel conn-clear" type="button">清空编辑</button>' +
             '<button class="btn confirm conn-save" type="submit">保存到本机</button></div></form></div>';
         document.body.appendChild(dialog);
+        addRevealButton(dialog.querySelector('.conn-value'), dialog.querySelector('.conn-value-wrap'));
         dialog.querySelector('.conn-close').addEventListener('click', () => dialog.close());
         dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
         dialog.querySelector('.conn-clear').addEventListener('click', clearEditor);
@@ -152,6 +173,9 @@
         dialog.querySelector('.conn-value-label').textContent = META[kind].label;
         const valueInput = dialog.querySelector('.conn-value');
         valueInput.type = META[kind].inputType;
+        dialog.querySelector('.conn-reveal-btn').hidden = kind !== 'keys';
+        dialog.querySelector('.conn-reveal-btn').textContent = '查看';
+        dialog.querySelector('.conn-reveal-btn').setAttribute('aria-pressed', 'false');
         clearEditor();
         valueInput.value = input.value.trim();
         render();
@@ -164,6 +188,7 @@
         wrap.className = 'conn-pick';
         input.parentNode.insertBefore(wrap, input);
         wrap.appendChild(input);
+        if (kind === 'keys') addRevealButton(input, wrap);
         const trigger = document.createElement('button');
         trigger.type = 'button';
         trigger.className = 'btn small conn-pick-btn';
@@ -173,5 +198,47 @@
         wrap.appendChild(trigger);
         return { open: () => open(input, kind, getProvider) };
     }
-    window.ConnectionLibrary = { attach };
+    function attachTester(modelInput, getParams) {
+        const wrap = modelInput && modelInput.closest('.model-pick');
+        if (!wrap || wrap.dataset.connectionTester) return;
+        wrap.dataset.connectionTester = '1';
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'btn small conn-test-btn';
+        trigger.textContent = '测试连接';
+        const status = document.createElement('small');
+        status.className = 'conn-test-status';
+        status.setAttribute('role', 'status');
+        wrap.appendChild(trigger);
+        wrap.insertAdjacentElement('afterend', status);
+        trigger.addEventListener('click', async () => {
+            const params = getParams() || {};
+            if (!params.model) {
+                status.textContent = '请先填写模型名称';
+                status.dataset.ok = 'false';
+                return;
+            }
+            trigger.disabled = true;
+            status.textContent = '正在请求模型，最多等待约 15 秒…';
+            status.dataset.ok = '';
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 16000);
+            try {
+                const result = await SGS.fetchJSON('/api/connection-test', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params), signal: controller.signal
+                });
+                status.textContent = result.message || '连接测试失败';
+                status.dataset.ok = String(!!result.success);
+            } catch (error) {
+                status.textContent = error.name === 'AbortError' ? '连接超时，请检查地址' : '游戏服务没有返回连接测试结果';
+                status.dataset.ok = 'false';
+            } finally {
+                clearTimeout(timer);
+                trigger.disabled = false;
+            }
+        });
+        return { reset() { status.textContent = ''; status.dataset.ok = ''; } };
+    }
+    window.ConnectionLibrary = { attach, attachTester };
 })();
