@@ -24,7 +24,6 @@ from .protocol import PROVIDERS
 
 DEFAULT_BASES = {p["value"]: p["default_url"] for p in PROVIDERS}
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
-MAX_MODELS = 500
 
 
 class ModelListError(Exception):
@@ -74,7 +73,7 @@ def parse_models(payload, style: str) -> List[str]:
             elif isinstance(item, str):
                 ids.append(item)
     unique = sorted({i.strip() for i in ids if i and i.strip()})
-    return unique[:MAX_MODELS]
+    return unique
 
 
 def list_models(provider: str, api_url: Optional[str], api_key: str, *,

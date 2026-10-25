@@ -91,6 +91,10 @@ def test_parse_models_accepts_bare_lists():
     assert parse_models(["b", "a", ""], "openai") == ["a", "b"]
 
 
+def test_parse_models_keeps_full_provider_list():
+    assert len(parse_models([f"model-{i}" for i in range(700)], "openai")) == 700
+
+
 def _handler(body):
     raw = json.dumps(body).encode()
     handler = game_server.CustomHandler.__new__(game_server.CustomHandler)

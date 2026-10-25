@@ -260,3 +260,38 @@
     .hud-row .hud-pile { display: none; }
     #trusteeBtn { padding: 0 7px; }
 }
+
+/* 平板竖屏底栏要放下武将和两条技能；顶部座位让开两排工具钮。 */
+@media (min-width: 601px) and (max-width: 900px) and (min-height: 800px) and (orientation: portrait) {
+    .battle { --my-h: 260px; }
+    .seat.pos-2, .seat.pos-3 { top: 110px; }
+}
+
+/* 暖纸主题也作用于对局。保留牌桌配色选项，改换操作区的底色与文字。 */
+:root[data-theme="light"] .battle {
+    --panel: linear-gradient(180deg, rgba(255, 248, 226, .97), rgba(232, 211, 170, .98));
+    --side-bg: linear-gradient(180deg, #f7ead0, #e7d4ad);
+    --ink: #775833;
+}
+:root[data-theme="light"] .hud-info,
+:root[data-theme="light"] .action-bar,
+:root[data-theme="light"] .ab-options { background: rgba(255, 249, 232, .95); }
+:root[data-theme="light"] .hud-info,
+:root[data-theme="light"] .hud-ids b,
+:root[data-theme="light"] .hud-goal,
+:root[data-theme="light"] .ab-prompt,
+:root[data-theme="light"] .zone-judge,
+:root[data-theme="light"] .hand-meta { color: #3d2c1b !important; text-shadow: none; }
+:root[data-theme="light"] .hud-info b,
+:root[data-theme="light"] .ab-prompt em,
+:root[data-theme="light"] .phase-track.mine .pt-owner { color: #795018; }
+:root[data-theme="light"] .zone-slot {
+    color: #45301c; background: rgba(255, 251, 238, .78);
+    box-shadow: inset 0 0 0 1px rgba(121, 80, 24, .38);
+}
+:root[data-theme="light"] .zone-slot.empty { color: #675036; }
+:root[data-theme="light"] .sp-tabs [role="tab"][aria-selected="true"],
+:root[data-theme="light"] .msg .who b { color: #795018; }
+:root[data-theme="light"] .sp-tabs [role="tab"] { color: #66533b; }
+:root[data-theme="light"] .chat-input input { color: #3d2c1b; background: #fffaf0; }
+:root[data-theme="light"] .quick-phrases button { color: #4c3822; background: #fbefd8; }

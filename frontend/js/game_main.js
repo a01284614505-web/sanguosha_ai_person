@@ -488,7 +488,7 @@
     function reqHandMap() {
         const r = G.req;
         if (!r || r.expired) return null;
-        if (r.kind === 'choose_players' || r.kind === 'confirm' || r.kind === 'choose_option') return null;
+        if (r.kind === 'choose_players' || r.kind === 'confirm' || r.kind === 'choose_option' || r.kind === 'wuxie') return null;
         const requiredZone = r.selection && r.selection.zone;
         if (requiredZone && !['hand', 'treasure'].includes(requiredZone)) return null;
         const byId = new Map(G.hand.map((c, i) => [c.id, i]).filter(([id, i]) => !requiredZone || (G.hand[i] || {}).zone === requiredZone));
@@ -795,6 +795,10 @@
         }
         const options = r.options || [];
         const isLegacy = !r.selection;
+        if (r.kind === 'wuxie') {
+            ok.textContent = '打出无懈';
+            cancel.textContent = '不使用';
+        }
         if (r.kind === 'confirm') {
             ok.textContent = (options[0] && options[0].label) || '是';
             cancel.textContent = (options[1] && options[1].label) || '否';
@@ -808,11 +812,12 @@
         } else if (poolRequestMap() && G.pool) {
             // 五谷丰登：在展示池面板里点选，操作条只留提示和确定按钮
             opts.innerHTML = '<span class="muted">在上方【五谷丰登】面板中点选一张牌，再按确定（双击可直接确定）</span>';
-        } else if (!reqHandMap()) {
+        } else if (r.kind === 'wuxie' || !reqHandMap()) {
             // 候选不全在我手里（他人的牌等）→ 在操作条里列出候选牌
             opts.innerHTML = options.map((o, i) => {
                 if (o.is_pass) return '';
-                const label = o.skill_name ? '（' + o.skill_name + '）' : (o.hidden ? '暗置手牌' : (o.detail || ''));
+                const label = r.kind === 'wuxie' ? (G.picked.includes(i) ? '已选中' : '点选此牌')
+                    : (o.skill_name ? '（' + o.skill_name + '）' : (o.hidden ? '暗置手牌' : (o.detail || '')));
                 const owner = o.owner_name && o.owner_id !== G.meId ? o.owner_name + '的' : '';
                 return '<div class="opt-wrap">' + SGS.cardHTML(o.hidden ? null : o.card, {
                     cls: G.picked.includes(i) ? 'picked' : '', back: o.hidden || !o.card, asName: o.as_name,
@@ -834,7 +839,8 @@
         } else {
             const min = sel.min != null ? Number(sel.min) : 1;
             const max = sel.max != null ? Number(sel.max) : 1;
-            ok.disabled = n < min || n > max;
+            // 场外单牌响应的“0 张”必须走取消；空选后点确定不会发送任何操作。
+            ok.disabled = ['wuxie', 'respond', 'dying'].includes(r.kind) ? n !== 1 : (n < min || n > max);
             cancel.hidden = !sel.cancelable;
             cancel.disabled = !sel.cancelable;
             if (max > 1) prompt.innerHTML += '　<small class="muted">已选 ' + n + ' / ' + (min === max ? max : min + '–' + max) + '</small>';
@@ -2375,6 +2381,8 @@
         const trusteePicker = SGS.attachModelPicker(document.getElementById('trusteeModel'), () => ({
             provider: val('trusteeProvider'), api_url: val('trusteeUrl'), api_key: val('trusteeKey')
         }));
+        ConnectionLibrary.attach(document.getElementById('trusteeKey'), 'keys', () => val('trusteeProvider'));
+        ConnectionLibrary.attach(document.getElementById('trusteeUrl'), 'urls', () => val('trusteeProvider'));
         // 局内调整 AI 时 Key 可留空：服务器按本局 game_id + 座位沿用已保存的 Key（Key 不会回传给页面）。
         const aiPicker = SGS.attachModelPicker(document.getElementById('aiSettingModel'), () => {
             const active = store.sget('activeGame') || {};
@@ -2382,6 +2390,8 @@
                 game_id: active.game_id || gameClient.gameId, profile_id: active.profile_id,
                 player_id: parseInt(val('aiSettingPlayerId'), 10) };
         });
+        ConnectionLibrary.attach(document.getElementById('aiSettingKey'), 'keys', () => val('aiSettingProvider'));
+        ConnectionLibrary.attach(document.getElementById('aiSettingUrl'), 'urls', () => val('aiSettingProvider'));
         ['trusteeProvider', 'trusteeUrl', 'trusteeKey'].forEach(id => document.getElementById(id).addEventListener('change', () => trusteePicker && trusteePicker.reset()));
         ['aiSettingProvider', 'aiSettingUrl', 'aiSettingKey'].forEach(id => document.getElementById(id).addEventListener('change', () => aiPicker && aiPicker.reset()));
         document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
