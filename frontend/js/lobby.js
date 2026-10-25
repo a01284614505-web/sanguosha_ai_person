@@ -9,6 +9,8 @@
     const SEAT_NAMES = ['二', '三', '四', '五', '六', '七', '八'];
     const DEFAULT_NAMES = ['诸葛村夫', '曹操的粉丝', '小乔我老婆', '酒馆常客', '长坂坡听书人', '江东来客', '洛阳棋友'];
     const DEFAULT_MODE = '5人身份局';
+    // 已开放的模式（其余模式的模型 AI 提示词还没按模式改好，大厅里标"暂未开放"）
+    const OPEN_MODES = new Set(['5人身份局']);
 
     class LobbyController {
         // 大厅控制器：一个页面只有一个实例（window.lobby）。
@@ -20,6 +22,7 @@
             this.pendingProfileSaves = [];
             this.modes = [];
             this.selectedMode = DEFAULT_MODE;
+            this.resumable = null;
             this.current = 0;
             this.prefs = Object.assign({ playerName: '', chatEnabled: true, aiSpectate: true, chatLevel: 'normal', rememberKeys: false, cheatMode: false, hideDeadIdentity: false }, store.get('lobbyPrefs', {}));
             this.dialog = document.getElementById('aiDialog');
@@ -69,6 +72,8 @@
             });
             this.cardCount = 0;
             document.getElementById('startGameBtn').addEventListener('click', () => this.startGame());
+            document.getElementById('resumeGameBtn').addEventListener('click', () => this.resumeGame());
+            this.loadResumable();
             document.getElementById('openGlobalSettings').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
             document.getElementById('deckSelect').addEventListener('change', (e) => {
                 if (e.target.value) store.set('active_deck_choice', e.target.value);
@@ -113,7 +118,10 @@
                     Number.isInteger(mode.ai_count) && mode.ai_count >= 1 && mode.ai_count <= SEAT_NAMES.length);
                 if (!this.modes.length) return;
                 start.disabled = false;
-                if (!this.modes.some(mode => mode.id === this.selectedMode)) this.selectedMode = this.modes[0].id;
+                if (!this.modes.some(mode => mode.id === this.selectedMode) || !OPEN_MODES.has(this.selectedMode)) {
+                    const firstOpen = this.modes.find(mode => OPEN_MODES.has(mode.id));
+                    this.selectedMode = (firstOpen || this.modes[0]).id;
+                }
                 const required = Math.max(...this.modes.map(mode => mode.ai_count));
                 SGS.fetchJSON('/api/ai-players?profile_id=' + encodeURIComponent(this.getProfileId()) + '&count=' + required)
                     .then(roster => {
@@ -142,6 +150,45 @@
             for (let i = this.assignments.length; i < count; i++) this.assignments.push(this.aiRoster[i].id);
         }
 
+        /**
+         * 继续上一局：问服务器当前档案有没有能接回的对局（进行中、托管代打中、暂停中，或服务器重启后可从存档恢复的）。
+         * 有就在"开始游戏"下面亮出绿色按钮。接口由批次 4 提供；旧服务器没有这个接口时按钮保持隐藏。
+         */
+        loadResumable() {
+            const btn = document.getElementById('resumeGameBtn');
+            const note = document.getElementById('resumeGameNote');
+            let profileId = '';
+            try { profileId = this.getProfileId(); } catch (_) { return; }
+            if (!profileId) return;
+            SGS.fetchJSON('/api/active_games?profile_id=' + encodeURIComponent(profileId)).then(data => {
+                const games = data && data.success && Array.isArray(data.games) ? data.games : [];
+                const game = games[0];
+                if (!game || !game.game_id) { btn.hidden = true; this.resumable = null; return; }
+                this.resumable = Object.assign({ profile_id: profileId }, game);
+                const bits = [];
+                if (game.round) bits.push('第 ' + game.round + ' 轮');
+                if (game.paused) bits.push('暂停中');
+                else if (game.trustee) bits.push('托管代打中');
+                else if (game.recoverable_only) bits.push('从存档恢复');
+                if (game.human_alive === false) bits.push('你已阵亡');
+                note.textContent = bits.length ? ' · ' + bits.join(' · ') : '';
+                btn.hidden = false;
+                // 托管代打中的局会在后台继续；暂停中或无人观看的局，开新局时服务器会把它结束（记为中断），提前说一声
+                const warn = document.getElementById('resumeWarn');
+                if (warn) {
+                    warn.hidden = !!game.trustee || game.human_alive === false;
+                    warn.textContent = game.paused ? '开新局会结束暂停中的上一局（记为中断）' : '开新局会结束上一局（记为中断）';
+                }
+            }).catch(() => { btn.hidden = true; });
+        }
+
+        resumeGame() {
+            const g = this.resumable;
+            if (!g) return;
+            store.sset('activeGame', { game_id: g.game_id, profile_id: g.profile_id });
+            window.location.href = 'game.html';
+        }
+
         activeMode() { return this.modes.find(mode => mode.id === this.selectedMode) || null; }
 
         renderModes() {
@@ -167,7 +214,19 @@
                 const desc = document.createElement('small');
                 desc.textContent = descriptions[mode.id] || (mode.identities_public ? '公开队伍对抗。' : '身份信息按服务端规则处理。');
                 button.append(title, note, desc);
+                // 暂未开放（用户 10-23 定）：8 人局、2v2、斗地主的规则引擎有了，但模型 AI 的提示词还是按 5 人身份局写的，
+                // 用模型 AI 打会拿到错误的胜负说明。先标"暂未开放"，点了只提示，不能选中开局。
+                const open = OPEN_MODES.has(mode.id);
+                if (!open) {
+                    button.classList.add('mode-closed');
+                    button.setAttribute('aria-disabled', 'true');
+                    const tag = document.createElement('em');
+                    tag.className = 'mode-closed-tag';
+                    tag.textContent = '暂未开放';
+                    button.append(tag);
+                }
                 button.addEventListener('click', () => {
+                    if (!open) { SGS.toast('「' + mode.id + '」暂未开放：AI 还没学会这个模式的胜负规则，改好后再开放。'); return; }
                     this.selectedMode = mode.id;
                     this.renderModes();
                     this.renderGuests();
@@ -538,6 +597,8 @@
                 trustee_default: config.trustee_default ? Object.assign({}, config.trustee_default, { apiKey: '' }) : null
             });
             store.set('gameConfig', localConfig);
+            // 开新局：清掉本标签页里上一局的接回信息，否则对局页会把新局当成"重连上一局"（用户反馈第 15 条）
+            store.sset('activeGame', null);
             window.location.href = config.hero_draft === 'standard' ? 'game.html' : 'select_hero.html';
         }
 

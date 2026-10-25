@@ -9,6 +9,7 @@ import hashlib
 import json
 from typing import Any
 
+from .mode_registry import identity_name
 from .seats import seat_of
 from .state_manager import card_to_dict
 
@@ -118,9 +119,28 @@ def build_private_situation(engine, viewer) -> dict[str, Any]:
     }
 
 
+def localize_identities(view):
+    """给模型看的副本：把 identity / guess 字段里的英文身份码换成中文名。
+
+    只改副本，不动 build_*_situation 的返回值：state_version 的哈希、局后日志和协议都保留英文码。
+    """
+    if isinstance(view, list):
+        return [localize_identities(item) for item in view]
+    if not isinstance(view, dict):
+        return view
+    localized = {}
+    for key, value in view.items():
+        if key in ("identity", "guess") and isinstance(value, str):
+            localized[key] = identity_name(value)
+        else:
+            localized[key] = localize_identities(value)
+    return localized
+
+
 def compact_public_situation(view) -> str:
     """Return stable compact JSON suitable for a model prompt."""
     return json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-__all__ = ["build_public_situation", "build_private_situation", "compact_public_situation"]
+__all__ = ["build_public_situation", "build_private_situation", "compact_public_situation",
+           "localize_identities"]

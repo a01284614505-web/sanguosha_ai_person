@@ -13,7 +13,7 @@ PROTOCOL_VERSION = "1.0"
 
 
 class INBOUND:
-    """前端 → 服务器（WebSocket 入站消息类型，12 种）。"""
+    """前端 → 服务器（WebSocket 入站消息类型，14 种）。"""
 
     CREATE_GAME = "create_game"
     PLAYER_ACTION = "player_action"
@@ -30,10 +30,14 @@ class INBOUND:
     UPDATE_SETTINGS = "update_settings"
     # 真人阵亡后明确选择：留桌观战、回大厅后台结算、结束本局。
     POST_DEATH_ACTION = "post_death_action"
+    # 暂停 / 继续：{"paused": true|false}。暂停期限（默认 15 分钟）内没继续则本局按中断结束。
+    SET_PAUSE = "set_pause"
+    # 离开对局：{"mode": "trustee" | "pause"}。trustee = 托管代打，对局在服务器打完；pause = 暂停后离开。
+    LEAVE_GAME = "leave_game"
 
 
 class OUTBOUND:
-    """服务器 → 前端（WebSocket 出站消息类型，23 种）。"""
+    """服务器 → 前端（WebSocket 出站消息类型，25 种）。"""
 
     PONG = "pong"
     SERVER_INFO = "server_info"
@@ -62,6 +66,10 @@ class OUTBOUND:
     # 仅作弊局下发公开事实冲突，不进入桌面聊天。
     CHAT_REJECTED = "chat_rejected"
     POST_DEATH_ACTION_RESULT = "post_death_action_result"
+    # 暂停 / 继续时广播；重连补发当前状态。{"paused", "remaining_seconds", "deadline_ts"}
+    PAUSE_STATUS = "pause_status"
+    # leave_game 的回执，服务器发出后前端才离开牌桌。{"ok": true, "mode": ...}
+    LEAVE_GAME_RESULT = "leave_game_result"
 
 
 class ENGINE_EVENT:

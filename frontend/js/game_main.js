@@ -51,7 +51,12 @@
         idleWarningTimer: null,
         lastTurnKey: '',    // “轮次:当前玩家”，用于识别换人
         pool: null,         // 正在显示的临时展示池（五谷丰登）；结算结束后保留片刻再收起
-        poolTimer: null
+        poolTimer: null,
+        peekIds: new Set(), // 抬起来看的手牌（按牌 id）：点一下抬起、再点落回，不算选中
+        paused: false,      // 服务器广播的暂停状态
+        pauseTicker: null,
+        leavePending: '',   // 离开弹窗里正在提交的方式（trustee / pause）
+        leaveTimer: null
     };
     window.GameUI = G;
 
@@ -241,6 +246,8 @@
         // 武将名与手牌数放进框底的名牌（.s-plate）。
         // 第三稿：立绘上叠一层暗角（.s-shade，上亮下暗，名牌处压暗），框外四角是大号云纹角花。
         // 自己的名牌右侧不写手牌数（手牌就在下面），改写“N号 · 你”。
+        // 托管中（批次 2）：自己的武将牌上直接挂一个绿色标签，离开或开启托管后一眼能看到
+        const trusteeTag = isMe && G.trustee && G.trustee.enabled && p.alive ? '<span class="s-trustee">托管中</span>' : '';
         const plateRight = opts.hideHand
             ? '<span class="s-me">' + (p.seat ? p.seat + '号 · ' : '') + '你</span>'
             : '<span class="s-hand" title="手牌数">' + p.hand_count + '</span>';
@@ -250,7 +257,7 @@
             plateRight + '</div>' +
             (judge ? '<div class="s-judge">' + judge + '</div>' : '') +
             (p.chained ? '<div class="s-chain" title="横置（铁索连环）：受到属性伤害会传导">' + SGS.chainSVG() + '</div>' : '') +
-            '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status +
+            '<div class="s-hp">' + SGS.hpHTML(p.hp, p.max_hp, { vertical: true }) + '</div>' + status + trusteeTag +
             SGS.cornersHTML();
     }
 
@@ -541,6 +548,7 @@
                     else cls.push('dim');
                 }
             }
+            if (!cls.includes('selected') && c.id && G.peekIds.has(c.id)) cls.push('peek');
             return SGS.cardHTML(c, { cls: cls.join(' '), asName: asName, attrs: 'data-index="' + i + '" role="button" tabindex="0"' });
         }).join('');
         box.querySelectorAll('.card').forEach(el => {
@@ -574,16 +582,29 @@
         setTimeout(() => el.classList.remove('nudge'), 320);
     }
 
-    /** 点手牌：响应模式 → 选候选；技能模式 → 增减用牌；普通出牌 → 选中/取消这张牌。 */
+    /**
+     * 抬起来看 / 收回（批次 2，用户要求"点一下出去，再点一下回来"）：
+     * 不能用于当前操作的牌、不是我行动的时候，点牌只把它抬起来看清楚，再点一下落回，不会打出去。
+     * 按牌的 id 记住，重绘后保持；牌离开手牌后自然失效。
+     */
+    function togglePeek(i) {
+        const c = G.hand[i];
+        if (!c || !c.id) return;
+        if (G.peekIds.has(c.id)) G.peekIds.delete(c.id); else G.peekIds.add(c.id);
+        const el = document.querySelector('#hand [data-index="' + i + '"]');
+        if (el) el.classList.toggle('peek', G.peekIds.has(c.id));
+    }
+
+    /** 点手牌：响应模式 → 选候选；技能模式 → 增减用牌；普通出牌 → 选中/取消这张牌；其余情况 → 抬起来看。 */
     function onCardClick(i) {
         const reqMap = reqHandMap();
         if (reqMap) {
             if (reqMap.has(i)) togglePick(reqMap.get(i));
-            else { nudgeCard(i); toast('这张牌不能用于此次响应', { bad: true }); }
+            else togglePeek(i);
             return;
         }
         if (!isMyPlay()) {
-            if (G.req) toast('请先在下方操作条里作出选择');
+            togglePeek(i);
             return;
         }
         if (G.sel && G.sel.kind === 'skill') {
@@ -591,7 +612,7 @@
             const at = sel.cards.indexOf(i);
             if (at >= 0) sel.cards.splice(at, 1);
             else if (skillSelectableCards().has(i)) sel.cards.push(i);
-            else { nudgeCard(i); toast('这张牌不能用于【' + sel.name + '】', { bad: true }); return; }
+            else { togglePeek(i); return; }
             refreshSkillAction();
             renderAll();
             return;
@@ -603,11 +624,14 @@
         }
         const action = playActionFor(i) || recastActionFor(i);
         if (!action) {
+            // 现在不能出的牌：抬起来看；第一次抬起时提示一句为什么出不了，落回时不再打扰
             const c = G.hand[i] || {};
-            nudgeCard(i);
-            toast(c.name === '闪' || c.name === '无懈可击' ? '【' + c.name + '】只能在需要时打出' : '【' + (c.name || '这张牌') + '】现在不能使用', { bad: true });
+            const wasUp = c.id && G.peekIds.has(c.id);
+            togglePeek(i);
+            if (!wasUp) toast(c.name === '闪' || c.name === '无懈可击' ? '【' + c.name + '】只能在需要时打出' : '【' + (c.name || '这张牌') + '】现在不能使用');
             return;
         }
+        if (G.hand[i] && G.hand[i].id) G.peekIds.delete(G.hand[i].id);
         G.sel = { kind: 'card', index: i, action: action, targets: [] };
         renderAll();
     }
@@ -958,13 +982,25 @@
         wrap.classList.toggle('urgent', left < 5000);
     }
 
+    /**
+     * 暂停时服务器冻结了倒计时（批次 4），本地圆盘也要停：暂停期间每一拍都把截止时间往后推同样的时长，
+     * 继续后自然按剩余时间接着走。
+     */
+    function holdDeadlineWhilePaused() {
+        const now = Date.now();
+        if (G.paused && G.lastTick) G.reqDeadline += now - G.lastTick;
+        G.lastTick = now;
+    }
+
     function startRequestTimer(seconds) {
         clearInterval(G.reqTimer);
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
         const wrap = document.getElementById('abTimer');
+        G.lastTick = Date.now();
         const tick = () => {
             if (!G.req) { clearInterval(G.reqTimer); return; }
+            holdDeadlineWhilePaused();
             const left = G.reqDeadline - Date.now();
             paintTimer(wrap, left, total);
             if (left <= 0) {
@@ -1460,6 +1496,21 @@
         renderActionBar();
         renderShownPool();
         renderPostDeath();
+        measureSeatRow();
+    }
+
+    /**
+     * 手机竖屏：出牌区要落在"对手一排底边"和"操作条顶边"中间。两者高度随屏幕和武将框大小变化，
+     * 所以每次重绘后量一次，写成 #field 上的 CSS 变量，样式表用它定位。
+     */
+    function measureSeatRow() {
+        const field = document.getElementById('field');
+        const opp = document.getElementById('opponents');
+        if (!field || !opp) return;
+        const f = field.getBoundingClientRect();
+        let bottom = 0;
+        opp.querySelectorAll('.seat').forEach(el => { bottom = Math.max(bottom, el.getBoundingClientRect().bottom); });
+        if (bottom > 0) field.style.setProperty('--seats-b', Math.round(bottom - f.top) + 'px');
     }
 
     function renderPostDeath() {
@@ -1627,6 +1678,8 @@
 
     /** 整份状态更新。 */
     gameClient.onStateUpdate = function (s) {
+        // 状态快照里带暂停标记（批次 4）：错过了 pause_status 广播时，以快照为准收起遮罩
+        if (s && typeof s.paused === 'boolean' && s.paused !== G.paused && !s.paused) gameClient.onPauseStatus({ paused: false });
         const prevMap = G.prev;
         G.state = s;
         if (s.post_death && s.post_death.mode === 'spectator') G.postDeathMode = 'spectator';
@@ -1768,6 +1821,8 @@
         if (status && status.enabled) clearIdleWatch();
         else if (G.turn || G.req) beginIdleWatch();
         renderTrusteeStatus();
+        G.seatSig.me = '';
+        renderMyArea();
     };
 
     gameClient.onChatRejected = function (data) {
@@ -1868,6 +1923,8 @@
     /** 对局结束：保存结算快照（结算页读取）、更新本机战绩与身份卡、弹出胜负印。 */
     gameClient.onGameEnd = function (data) {
         G.ended = true;
+        clearInterval(G.pauseTicker);
+        document.getElementById('pauseOverlay').hidden = true;
         gameClient.autoReconnect = false;
         store.sset('activeGame', null);
         setReconnectBanner('');
@@ -2106,8 +2163,10 @@
         const total = Math.max(1, Number(seconds) || 30) * 1000;
         G.reqDeadline = Date.now() + total;
         const wrap = document.getElementById('abTimer');
+        G.lastTick = Date.now();
         const tick = () => {
             if (!G.turn || G.req || G.ended) { clearInterval(G.reqTimer); return; }
+            holdDeadlineWhilePaused();
             const left = G.reqDeadline - Date.now();
             paintTimer(wrap, left, total);
             if (left <= 0) clearInterval(G.reqTimer);
@@ -2165,6 +2224,80 @@
         });
     }
 
+    /** 点"离开"：打开离开弹窗。默认是托管代打；暂停后离开；结束本局走原来的中断流程。 */
+    function openLeaveDialog() {
+        if (G.ended) { location.href = 'index.html'; return; }
+        const round = (G.state && G.state.round) || 0;
+        const mine = G.players.find(p => !p.is_ai);
+        const iAmDead = !!mine && mine.alive === false;
+        document.getElementById('leaveEndNote').textContent = (round > 2 && !iAmDead)
+            ? '记为中断，不计胜负；已过第 2 轮，连胜会清零' : '记为中断，不计胜负';
+        // 阵亡后"托管代打"没有意义，改成后台结算的说法
+        document.querySelector('#leaveTrustee b').textContent = iAmDead ? '离开，后台打完' : '离开，托管代打';
+        document.querySelector('#leaveTrustee span').textContent = iAmDead ? 'AI 把这局打完，结果写进战绩' : '默认 · 武将牌上会标“托管中”';
+        document.getElementById('leaveStatus').textContent = '';
+        ['leaveTrustee', 'leavePause', 'leaveEnd'].forEach(id => { document.getElementById(id).disabled = false; });
+        document.getElementById('leaveModal').showModal();
+    }
+
+    function leaveGame(mode) {
+        if (G.leavePending) return;
+        G.leavePending = mode;
+        ['leaveTrustee', 'leavePause', 'leaveEnd'].forEach(id => { document.getElementById(id).disabled = true; });
+        document.getElementById('leaveStatus').textContent = mode === 'pause' ? '正在暂停…' : '正在交给托管…';
+        gameClient.send({ type: (Protocol.INBOUND.LEAVE_GAME || 'leave_game'), mode: mode });
+        // 服务器没回音（旧版本服务器不认识这条消息）：5 秒后恢复按钮，提示改用结束本局
+        clearTimeout(G.leaveTimer);
+        G.leaveTimer = setTimeout(() => {
+            if (!G.leavePending) return;
+            G.leavePending = '';
+            ['leaveTrustee', 'leavePause', 'leaveEnd'].forEach(id => { document.getElementById(id).disabled = false; });
+            document.getElementById('leaveStatus').textContent = '服务器没有回应，请稍后再试，或选择结束本局。';
+        }, 5000);
+    }
+
+    gameClient.onLeaveGameResult = function (data) {
+        clearTimeout(G.leaveTimer);
+        const mode = G.leavePending || (data && data.mode);
+        G.leavePending = '';
+        if (!data || data.ok === false) {
+            ['leaveTrustee', 'leavePause', 'leaveEnd'].forEach(id => { document.getElementById(id).disabled = false; });
+            document.getElementById('leaveStatus').textContent = (data && data.message) || '没能离开，请重试。';
+            return;
+        }
+        gameClient.autoReconnect = false;
+        store.sset('postDeathNotice', mode === 'pause'
+            ? '对局已暂停，15 分钟内回来点"继续上一局"可以接着打，超时本局结束。'
+            : '你的座位已交给托管，对局在继续；点大厅的"继续上一局"可以回来接管。');
+        window.location.href = 'index.html';
+    };
+
+    // ------------------------------------------------------------------ 暂停
+    function setPause(paused) {
+        gameClient.send({ type: (Protocol.INBOUND.SET_PAUSE || 'set_pause'), paused: !!paused });
+    }
+
+    /** 服务器广播的暂停状态：显示/收起暂停遮罩，按截止时间倒数；暂停时禁用发言。 */
+    gameClient.onPauseStatus = function (data) {
+        G.paused = !!(data && data.paused);
+        const overlay = document.getElementById('pauseOverlay');
+        overlay.hidden = !G.paused || G.ended;
+        document.body.classList.toggle('game-paused', G.paused);
+        const input = document.getElementById('chatInput');
+        if (input) { input.disabled = G.paused; input.placeholder = G.paused ? '暂停中不能发言' : '说点什么…'; }
+        clearInterval(G.pauseTicker);
+        if (!G.paused) return;
+        const deadline = data.deadline_ts ? data.deadline_ts * 1000 : Date.now() + (data.remaining_seconds || 900) * 1000;
+        // 本机时钟可能和服务器差几秒：用服务器给的剩余秒数校准
+        const offset = data.remaining_seconds != null ? (Date.now() + data.remaining_seconds * 1000) - deadline : 0;
+        const tick = () => {
+            const left = Math.max(0, Math.round((deadline + offset - Date.now()) / 1000));
+            document.getElementById('pauseClock').textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+        };
+        tick();
+        G.pauseTicker = setInterval(tick, 1000);
+    };
+
     async function quitGame() {
         if (G.ended) { location.href = 'index.html'; return; }
         // 与服务端战绩规则一致：前两轮内结束不影响连胜，之后结束会清零连胜。
@@ -2194,7 +2327,11 @@
     /** 牌桌配色（W8）：夜幕江山（默认）或江山暮色，写到 .battle 的 data-palette 上，CSS 变量随之切换。 */
     function applyTablePalette() {
         const battle = document.getElementById('battle');
-        if (battle) battle.dataset.palette = settings().table_palette === 'jade' ? 'jade' : 'night';
+        if (!battle) return;
+        const s = settings();
+        battle.dataset.palette = ['shan', 'night', 'jade'].includes(s.table_palette) ? s.table_palette : 'shan';
+        const dim = Number(s.table_dim);
+        battle.style.setProperty('--table-dim', String(Number.isFinite(dim) ? Math.max(0, Math.min(0.6, dim)) : 0.15));
     }
 
     function bindUI() {
@@ -2210,7 +2347,21 @@
         document.getElementById('postDeathSpectate').addEventListener('click', () => postDeathAction('spectate'));
         document.getElementById('postDeathBackground').addEventListener('click', () => postDeathAction('background'));
         document.getElementById('postDeathEnd').addEventListener('click', () => postDeathAction('end'));
-        document.getElementById('quitBtn').addEventListener('click', quitGame);
+        document.getElementById('quitBtn').addEventListener('click', openLeaveDialog);
+        document.getElementById('leaveTrustee').addEventListener('click', () => {
+            const mine = G.players.find(p => !p.is_ai);
+            // 阵亡后离开 = 原来的"后台结算"
+            if (mine && mine.alive === false && G.state && G.state.post_death && G.state.post_death.available) {
+                document.getElementById('leaveModal').close(); postDeathAction('background'); return;
+            }
+            leaveGame('trustee');
+        });
+        document.getElementById('leavePause').addEventListener('click', () => leaveGame('pause'));
+        document.getElementById('leaveEnd').addEventListener('click', () => { document.getElementById('leaveModal').close(); quitGame(); });
+        document.getElementById('pauseBtn').addEventListener('click', () => { if (!G.ended) setPause(true); });
+        document.getElementById('resumeBtn').addEventListener('click', () => setPause(false));
+        document.getElementById('logToggle').addEventListener('click', () => ChatPanel.open('log'));
+        window.addEventListener('resize', measureSeatRow);
         document.getElementById('sbtn').addEventListener('click', () => window.openGlobalSettings && window.openGlobalSettings());
         document.getElementById('trusteeBtn').addEventListener('click', openTrusteeDialog);
         document.getElementById('trusteeSource').addEventListener('change', trusteeSourceChanged);

@@ -155,6 +155,13 @@ class GameClient {
             case Protocol.OUTBOUND.END_GAME_ACCEPTED:
                 if (this.onEndGameAccepted) this.onEndGameAccepted(data);
                 break;
+            // 批次 4：暂停与离开（协议常量由服务端生成；旧版 protocol.js 没有时用字面值兜底）
+            case (Protocol.OUTBOUND.PAUSE_STATUS || 'pause_status'):
+                if (this.onPauseStatus) this.onPauseStatus(data);
+                break;
+            case (Protocol.OUTBOUND.LEAVE_GAME_RESULT || 'leave_game_result'):
+                if (this.onLeaveGameResult) this.onLeaveGameResult(data);
+                break;
             case Protocol.OUTBOUND.POST_DEATH_ACTION_RESULT:
                 if (this.onPostDeathActionResult) this.onPostDeathActionResult(data);
                 break;

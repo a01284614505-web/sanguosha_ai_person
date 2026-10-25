@@ -12,7 +12,9 @@
         animation_ms: 1100,
         show_ai_thinking: true,
         show_decision_trace: true,
-        table_palette: 'night',
+        table_palette: 'shan',
+        table_dim: 0.15,
+        bolt_style: 'mix',
         worldbook_enabled: true,
         custom_worldbook_enabled: true,
         default_provider: 'deepseek',
@@ -47,25 +49,36 @@
         style.id = 'globalSettingsStyle';
         style.textContent = `
             #globalSettingsLauncher{position:fixed;top:10px;right:10px;z-index:3000;width:38px;height:38px;border-radius:50%;border:1px solid #c9a35a;background:radial-gradient(circle at 50% 35%,#3b2a1c,#1c140e);color:#f1d898;font-size:18px;display:grid;place-items:center;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.5)}
-            #globalSettingsOverlay{display:none;position:fixed;inset:0;z-index:8000;background:rgba(5,3,2,.74);padding:12px;align-items:center;justify-content:center;color:#eadcbf;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+            /* 批次 3：小窗设置换成对局页/大厅同一套外观——宋体系衬线字、暖色毛玻璃面板、分组卡片；手机上从底部升起 */
+            #globalSettingsOverlay{display:none;position:fixed;inset:0;z-index:8000;background:rgba(5,3,2,.6);padding:12px;align-items:center;justify-content:center;color:#f1e6cf;font-family:"Noto Serif SC","Songti SC","STSong","SimSun",serif}
             #globalSettingsOverlay.show{display:flex}
-            .gs-card{width:min(94vw,600px);max-height:92dvh;overflow:auto;background:linear-gradient(180deg,#2f2117,#241911);border:1px solid #6e5229;border-radius:8px;padding:18px 20px;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35),inset 0 0 0 4px rgba(201,163,90,.28),0 18px 55px rgba(0,0,0,.7)}
-            .gs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-            .gs-head h3{margin:0;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:22px;color:#f1d898}
-            .gs-head button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:1px solid #6e5229;background:#1c140e;color:#f1d898;cursor:pointer}
-            .gs-section{border-top:1px solid rgba(201,163,90,.22);padding:12px 0 4px}
-            .gs-section h4{margin:0 0 6px;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:16px;color:#f1d898;font-weight:600}
-            .gs-row{display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;margin:8px 0;font-size:14px}
+            .gs-card{width:min(94vw,600px);max-height:92dvh;overflow:auto;overscroll-behavior:contain;background:rgba(30,22,14,.94);border-radius:16px;padding:16px 18px 18px;box-shadow:inset 0 0 0 1px rgba(255,236,196,.2),0 18px 55px rgba(0,0,0,.7)}
+            @supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){#globalSettingsOverlay{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}.gs-card{background:rgba(30,22,14,.8)}}
+            .gs-head{position:sticky;top:-16px;z-index:1;display:flex;justify-content:space-between;align-items:center;margin:-16px -18px 8px;padding:14px 18px 10px;background:inherit;border-radius:16px 16px 0 0}
+            .gs-head h3{margin:0;font-weight:700;font-size:19px;letter-spacing:2px;color:#fbe7b0}
+            .gs-head button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:0;background:rgba(0,0,0,.35);box-shadow:inset 0 0 0 1px rgba(255,240,210,.22);color:#f1e6cf;cursor:pointer}
+            .gs-section{margin:10px 0 0;padding:6px 12px 8px;border-radius:12px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,240,210,.08)}
+            .gs-section[hidden]{display:none}
+            .gs-section h4{margin:6px 0 4px;font-size:13px;letter-spacing:2px;color:#e3c27a;font-weight:700}
+            .gs-row{display:grid;grid-template-columns:118px 1fr;gap:10px;align-items:center;margin:0;padding:9px 0;font-size:14px;border-top:1px solid rgba(255,240,210,.06)}
+            .gs-section h4+.gs-row{border-top:0}
             .gs-row[hidden]{display:none}
-            .gs-row>span:first-child{color:#d9c7a0}
-            .gs-row input:not([type=checkbox]):not([type=range]),.gs-row select{min-width:0;width:100%;background:rgba(8,5,3,.55);border:1px solid #5d4730;color:#eadcbf;border-radius:5px;padding:7px 9px}
-            .gs-row input[type=checkbox]{width:16px;height:16px;accent-color:#a8261c;vertical-align:-3px;margin-right:6px}
-            .gs-row input[type=range]{width:100%;accent-color:#c9a35a}
-            .gs-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:12px;margin-top:6px}.gs-stat{background:rgba(0,0,0,.25);border-radius:5px;padding:7px;color:#a89577}.gs-stat b{display:block;color:#f1e4c3;font-size:15px}
+            .gs-row>span:first-child{color:#d9c49a}
+            .gs-row small{color:#a89577}
+            .gs-row input:not([type=checkbox]):not([type=range]),.gs-row select{min-width:0;width:100%;min-height:36px;background:rgba(0,0,0,.4);border:0;box-shadow:inset 0 0 0 1px rgba(255,240,210,.18);color:#f1e6cf;border-radius:8px;padding:6px 10px;font:inherit;font-size:14px}
+            .gs-row input[type=checkbox]{width:18px;height:18px;accent-color:#57a85c;vertical-align:-4px;margin-right:8px}
+            .gs-row input[type=range]{width:100%;accent-color:#e3c27a}
+            .gs-row :focus-visible,.gs-actions button:focus-visible,.gs-head button:focus-visible{outline:2px solid #fbe7b0;outline-offset:2px}
+            .gs-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:12px;margin:6px 0 4px}.gs-stat{background:rgba(0,0,0,.3);border-radius:8px;padding:7px;color:#a89577}.gs-stat b{display:block;color:#f1e4c3;font-size:15px}
             .gs-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin-top:14px}
-            .gs-actions button{min-height:36px;border:1px solid #c9a35a;border-radius:6px;padding:6px 16px;cursor:pointer;font-family:"STKaiti","KaiTi","Kaiti SC","楷体",serif;font-size:15px;font-weight:600;letter-spacing:.1em;color:#2a1a0b;background:linear-gradient(180deg,#d8b25e,#9b7330)}
-            .gs-actions .secondary{color:#f1d898;background:linear-gradient(180deg,#3a2a1d,#241911)}
-            @media(max-width:520px){.gs-row{grid-template-columns:1fr;gap:4px}.gs-stats{grid-template-columns:1fr 1fr}}
+            .gs-actions button{min-height:38px;border:0;border-radius:9px;padding:6px 18px;cursor:pointer;font:inherit;font-size:15px;font-weight:700;letter-spacing:.1em;color:#2a1a06;background:linear-gradient(180deg,#f6dc95,#c9952e);box-shadow:inset 0 0 0 1px #fff2bf}
+            .gs-actions .secondary{color:#f1e6cf;background:rgba(0,0,0,.4);box-shadow:inset 0 0 0 1px rgba(255,240,210,.22)}
+            @media(max-width:520px){
+                #globalSettingsOverlay{padding:0;align-items:flex-end}
+                .gs-card{width:100%;max-height:86dvh;border-radius:18px 18px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+                .gs-row{grid-template-columns:1fr;gap:5px}
+                .gs-stats{grid-template-columns:1fr 1fr}
+            }
         `;
         document.head.appendChild(style);
     }
@@ -107,7 +120,9 @@
                     <label class="gs-row"><span>界面主题</span><select id="gsTheme"><option value="dark">夜墨（深色）</option><option value="light">暖纸（浅色）</option><option value="system">跟随系统</option></select></label>
                     <label class="gs-row"><span>出牌动画</span><select id="gsAnimation"><option value="800">轻快 0.8 秒</option><option value="1100">标准 1.1 秒</option><option value="1600">从容 1.6 秒</option></select></label>
                     <label class="gs-row"><span>AI 思考提示</span><span><input id="gsThinking" type="checkbox">在武将框上显示“思考中”，并把思考摘要写进战报</span></label>
-                    <label class="gs-row" id="gsPaletteRow" hidden><span>牌桌配色</span><select id="gsTablePalette"><option value="night">夜幕江山（默认）</option><option value="jade">江山暮色</option></select></label>
+                    <label class="gs-row" id="gsPaletteRow" hidden><span>牌桌背景</span><select id="gsTablePalette"><option value="shan">千里江山（默认）</option><option value="night">夜幕江山</option><option value="jade">江山暮色</option></select></label>
+                    <label class="gs-row" id="gsDimRow" hidden><span>背景压暗</span><input id="gsTableDim" type="range" min="0" max="0.6" step="0.05" aria-label="背景压暗程度，越往右越暗"></label>
+                    <label class="gs-row" id="gsBoltRow" hidden><span>闪电效果</span><select id="gsBoltStyle"><option value="mix">电弧加电粒子（默认）</option><option value="arc">电弧跳动</option><option value="particle">电粒子环绕</option><option value="off">关闭</option></select></label>
                     <label class="gs-row"><span>决策轨迹</span><span><input id="gsDecisionTrace" type="checkbox">在战报中显示可展开的简略与完整决策记录</span></label>
                     <label class="gs-row"><span>音效</span><span><input id="gsSfx" type="checkbox">开启出牌、受伤、回复音效</span></label>
                     <label class="gs-row"><span>语音播报</span><span><input id="gsSpeech" type="checkbox">朗读公开对局事件（仅此设备播放，默认关闭）<small class="muted" style="display:block;margin-top:4px">依赖浏览器语音合成和设备已安装的中文语音；无可用语音时静默跳过，不连接外部语音服务。</small></span></label>
@@ -214,8 +229,10 @@
         // 热闹程度只在对局页出现；显示的是服务器确认过的当前档位（window.currentChatLevel 由对局页随状态更新）。
         const inGame = !!document.getElementById('battle');
         // 牌桌配色只在对局页出现，保存后立即生效（game_main.js 监听 global-settings-changed）
-        document.getElementById('gsTablePalette').value = s.table_palette === 'jade' ? 'jade' : 'night';
-        document.getElementById('gsPaletteRow').hidden = !inGame;
+        document.getElementById('gsTablePalette').value = ['shan', 'night', 'jade'].includes(s.table_palette) ? s.table_palette : 'shan';
+        document.getElementById('gsTableDim').value = String(Number.isFinite(Number(s.table_dim)) ? s.table_dim : 0.15);
+        document.getElementById('gsBoltStyle').value = ['mix', 'arc', 'particle', 'off'].includes(s.bolt_style) ? s.bolt_style : 'mix';
+        ['gsPaletteRow', 'gsDimRow', 'gsBoltRow'].forEach(id => { document.getElementById(id).hidden = !inGame; });
         document.getElementById('gsChatSection').hidden = !inGame;
         if (inGame) document.getElementById('gsChatLevel').value = window.currentChatLevel || 'normal';
         loadStats();
@@ -229,6 +246,8 @@
             show_ai_thinking: document.getElementById('gsThinking').checked,
             show_decision_trace: document.getElementById('gsDecisionTrace').checked,
             table_palette: document.getElementById('gsTablePalette').value,
+            table_dim: Number(document.getElementById('gsTableDim').value) || 0,
+            bolt_style: document.getElementById('gsBoltStyle').value,
             sfx_enabled: document.getElementById('gsSfx').checked,
             sfx_volume: Number(document.getElementById('gsVolume').value),
             speech_enabled: document.getElementById('gsSpeech').checked,

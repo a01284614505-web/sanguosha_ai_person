@@ -398,9 +398,16 @@ class ChatDirector:
             self._queue.sort(key=lambda t: (t.priority, t.created_at))
             del self._queue[QUEUE_MAX:]
 
+    def _paused(self) -> bool:
+        return getattr(self.engine, "paused", False) is True
+
+    def on_resume(self):
+        """暂停结束：冷场起点重置为现在，暂停期间的沉默不算冷场，继续后不会立刻冒出一句。"""
+        self._idle_anchor = self.now()
+
     def tick(self):
         """冷场检测 + 队列推进。后台任务每隔 POLL_SECONDS 调一次；测试可直接调用。"""
-        if not self._active():
+        if not self._active() or self._paused():
             return
         self._flush_human()
         self._track_hp()
@@ -447,8 +454,8 @@ class ChatDirector:
                 or (task.source == "chain" and task.chain_depth > self.params["chain_max"]))
 
     def _pump(self):
-        """同步地把队列里能开跑的任务开起来；不 await 任何东西。"""
-        if self._closed or not self._queue:
+        """同步地把队列里能开跑的任务开起来；不 await 任何东西。暂停期间不开新任务。"""
+        if self._closed or not self._queue or self._paused():
             return
         now = self.now()
         self._queue = [t for t in self._queue if not self._stale(t, now)]
@@ -506,6 +513,10 @@ class ChatDirector:
         if task.must_reply:
             reason += "\n本次你被真人点名，请给出非空回应。"
         text = await self.run_chat_turn(player, reason)
+        # 暂停期间回来的发言先扣住：继续后若仍未过期再发，暂停中不让 AI 开口。
+        wait = getattr(self.engine, "wait_if_paused", None)
+        if self._paused() and callable(wait):
+            await wait()
         if text == "" and task.must_reply:
             text = "我听到了，先看场上的行动。"
         if not text or self._stale(task, self.now()):

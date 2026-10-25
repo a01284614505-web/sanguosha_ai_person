@@ -17,12 +17,13 @@ from .card_table import CARD_TABLE, card_label
 from .card_text import CARD_TEXT, NATURE_CARD_TEXT
 from . import hero_draft
 from .hero_registry import HeroRegistry
-from .mode_registry import get_mode
+from .mode_registry import get_mode, identity_name
 from .protocol import PROVIDERS
 from .public_situation import (
     build_private_situation,
     build_public_situation,
     compact_public_situation,
+    localize_identities,
 )
 
 
@@ -150,7 +151,7 @@ class WorldbookManager:
 
     def build_static_worldbook(self, player, game_state=None) -> str:
         """L1 角色层：整局不变，单个玩家专属。"""
-        sections = [f"你是{player.name}，身份：{player.identity or '未知'}"]
+        sections = [f"你是{player.name}，身份：{identity_name(player.identity)}"]
         hero_text = self.get_hero_worldbook(self._hero_id(player))
         if hero_text:
             sections.append(hero_text)
@@ -201,7 +202,7 @@ class WorldbookManager:
         for p in game_state.players:
             if p.alive and p.id != player.id:
                 hero = p.hero or {}
-                identity = p.identity if getattr(p, "identity_revealed", False) else "身份未公开"
+                identity = identity_name(p.identity) if getattr(p, "identity_revealed", False) else "身份未公开"
                 skills = "、".join(
                     f"{s.get('name')}[{s.get('implementation_status', 'data_only')}]"
                     for s in hero.get('skills', []) if isinstance(s, dict)
@@ -238,6 +239,9 @@ class AIDecision:
         self.last_failure: Dict[int, Optional[str]] = {}
         self.last_reasoning: Dict[int, str] = {}
         self.last_meta: Dict[int, Dict] = {}
+        # 模型 AI 这次决策没调用模型的原因（设计内的本地处理）：决策日志据此区分
+        # “没配模型/Key”与“有模型但这类决策本来就不问模型”，不再一律记成 rules_no_provider。
+        self.last_local_reason: Dict[int, Optional[str]] = {}
         # 每个 AI 上次决策时已读到的桌面发言序号，保证同一句话只注入一次。
         self._chat_seen: Dict[int, int] = {}
         self.notes_diagnostics: List[Dict] = []
@@ -398,8 +402,14 @@ class AIDecision:
         os.replace(self.cache_stats_path, target)
         logger.info(f"  🗂 缓存统计已轮转: {target}（新文件随后建立）")
 
+    async def _pause_gate(self):
+        """暂停闸门：暂停中不发起新的模型请求，已在路上的结果也先扣住到继续后再用。"""
+        if getattr(self.engine, "paused", False) is True:
+            await self.engine.wait_if_paused()
+
     async def _call_with_session(self, player, kind: str, content: str) -> str:
         """统一的带会话窗口调用：追加L2 → 调API → 追加assistant → 记账。"""
+        await self._pause_gate()
         messages = self.push_user(player, content)
         capture(self.engine, player, kind, messages)
         started = time.perf_counter()
@@ -431,6 +441,7 @@ class AIDecision:
                 "worldbook_hits": self._public_worldbook_hits(player),
                 "situation_version": self.last_situation_versions.get(player.id),
             }
+        await self._pause_gate()
         self.push_assistant(player, reply)
         self._note_usage(player, kind, usage, failed=False)
         self._log_cache_stats(player, kind, usage)
@@ -462,14 +473,15 @@ class AIDecision:
         self.last_situation_versions[player.id] = public["state_version"]
         return (
             "【引擎权威当前公开状态】\n"
-            + compact_public_situation(public)
+            + compact_public_situation(localize_identities(public))
             + "\n【仅你可见的当前状态】\n"
-            + compact_public_situation(private)
+            + compact_public_situation(localize_identities(private))
             + "\n若历史摘要与这里冲突，以本区块为准。"
         )
 
     async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
         api_key = player.ai_config.get("api_key", "")
+        self.last_local_reason[player.id] = None
         if not api_key or api_key == "test_key":
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = ""
@@ -539,7 +551,7 @@ class AIDecision:
                              if p.id != player.id and not p.identity_revealed]
             notes_rule = ('\nnotes 必填：每次输出对每个身份未公开的座位的完整判断，每轮重新看证据、重写理由。'
                           + '本次需要判断的座位号：' + '、'.join(unknown_seats) + '；'
-                          '猜不出写 unknown 并说明理由；键是座位号（3号写"3"）；guess 取 lord/loyalist/rebel/spy/unknown，'
+                          '猜不出写 unknown 并说明理由；键是座位号（3号写"3"）；guess 取 lord(主公)/loyalist(忠臣)/rebel(反贼)/spy(内奸)/unknown(未知)，'
                           'conf 取 高/中/低，why 不超过20字；已公开身份的座位由引擎填写。')
         output.update({"plan": {"style": "本轮打法，如潜伏/速攻/平衡/自定义", "why": "维持或改变打法的原因"},
                        "how_others_see_me": "这步之后别人会怎么看我",
@@ -981,6 +993,7 @@ class AIDecision:
     async def make_response_decision(self, player, request: Dict) -> Optional[int]:
         """回合外响应的AI真决策。返回候选索引；None 表示不响应。"""
         api_key = player.ai_config.get("api_key", "")
+        self.last_local_reason[player.id] = None
         if not api_key or api_key == "test_key":
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = ""
@@ -990,6 +1003,7 @@ class AIDecision:
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = ""
             self.last_meta[player.id] = {}
+            self.last_local_reason[player.id] = "response_ai_disabled"
             return self.simple_response_decision(player, request)
 
         try:
@@ -1270,7 +1284,7 @@ class AIDecision:
         for identity in spec.identities:
             counts[identity] = counts.get(identity, 0) + 1
         composition = "、".join(f"{hero_draft.IDENTITY_LABEL.get(k, k)}{v}" for k, v in counts.items())
-        identity_text = hero_draft.IDENTITY_LABEL.get(player.identity, player.identity or "未知")
+        identity_text = identity_name(player.identity)
         seat = seat_of(self.engine.game_state, player.id)
         lines = [f"【选将】{spec.mode_id}（{composition}）。你是{seat}号位，身份：{identity_text}。"]
         lord_hero = draft.get("lord_hero")
@@ -1307,6 +1321,7 @@ class AIDecision:
                                           "并严格按要求返回 JSON。"},
             {"role": "user", "content": self._hero_draft_prompt(player, request)},
         ]
+        await self._pause_gate()
         capture(self.engine, player, "choice", messages)
         started = time.perf_counter()
         usage = {}
@@ -1318,6 +1333,7 @@ class AIDecision:
             )
             self._note_usage(player, "choice", usage, failed=False)
             counted = True
+            await self._pause_gate()
             self.last_meta[player.id] = {
                 "model": player.ai_config.get("model"),
                 "elapsed_ms": round((time.perf_counter() - started) * 1000),
@@ -1349,6 +1365,7 @@ class AIDecision:
         if request.get("kind") == "choose_hero":
             return await self._make_hero_draft_decision(player, request)
         api_key = player.ai_config.get("api_key", "")
+        self.last_local_reason[player.id] = None
         if not api_key or api_key == "test_key":
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = ""
@@ -1358,6 +1375,7 @@ class AIDecision:
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = ""
             self.last_meta[player.id] = {}
+            self.last_local_reason[player.id] = "choice_ai_disabled"
             return self.simple_choice_decision(player, request)
 
         options = request.get("options") or []
@@ -1371,6 +1389,9 @@ class AIDecision:
             self.last_failure[player.id] = None
             self.last_reasoning[player.id] = ""
             self.last_meta[player.id] = {}
+            # 设计内的本地决策（如张辽【突袭】抽对手手牌：牌面全暗置，问模型没有信息量），
+            # 并非“没配模型”，决策日志里要如实标注。
+            self.last_local_reason[player.id] = "hidden_candidates_local_random"
             return sorted(self.rng.sample(range(len(options)), count))
         visible = [{"index": i, "label": player_label(self.engine.game_state, option["player_id"])
                     if option.get("player_id") is not None else str(option.get("label", i))}

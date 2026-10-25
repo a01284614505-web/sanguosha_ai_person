@@ -1,0 +1,515 @@
+<title>三国杀酒馆手机牌桌</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Ma+Shan+Zheng&display=swap">
+<link rel="stylesheet" href="css/sgs.css">
+<style>
+/* 布局：竖屏一屏到底。顶栏 → 对手一排 → 牌桌（弹性，占剩余高度）→ 我的区域（武将+装备 | 技能+手牌）。全部按可用高度与宽度自适应。 */
+:root{
+  --gold:#e3c27a; --gold-hi:#fbe7b0; --gold-deep:#8a6424; --ink:#120d08; --ink-2:#1e160e;
+  --paper:#f4e8cb; --text:#f1e6cf; --text-dim:#b9a98a; --red:#c8402c; --jade:#57c05a;
+  --glass:rgba(24,18,12,.52); --glass-line:rgba(255,240,210,.16); --glass-grey:rgba(60,62,66,.42);
+  --f-serif:"Noto Serif SC","Songti SC","STSong","SimSun",serif; --f-brush:"Ma Shan Zheng","STKaiti","KaiTi",serif;
+  --font-kai:var(--f-serif); --font-ui:var(--f-serif); --font-brush:var(--f-brush);
+  color-scheme:dark;
+}
+html,body{height:100%;background:#0b0907;color:var(--text);font-family:var(--f-serif)}
+body{padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px));overflow:hidden}
+button{font-family:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--gold-hi);outline-offset:2px}
+
+.stage{position:relative;height:100%;max-width:480px;margin:0 auto;display:grid;grid-template-rows:auto auto 1fr auto;overflow:hidden;
+  --cw:clamp(54px,15.2vw,70px); --hc:clamp(78px,21vw,98px);}
+@media (min-width:481px){.stage{box-shadow:0 0 0 1px #2a2016,0 0 60px rgba(0,0,0,.8)}}
+
+/* ---------- 背景：千里江山（亮度可调）/ 夜幕 ---------- */
+.bg{position:absolute;inset:0;z-index:0;pointer-events:none}
+.bg svg{position:absolute;inset:0;width:100%;height:100%}
+.bg::after{content:"";position:absolute;inset:0;background:
+  radial-gradient(120% 70% at 50% 42%,rgba(0,0,0,0) 45%,rgba(0,0,0,.4) 100%),rgba(0,0,0,var(--dim,.25));transition:background .3s}
+.stage[data-pal="shan"]{--sky1:#4f8a93;--sky2:#7cae9c;--sky3:#3a6a5f;--m1:#93c3a2;--m2:#5c968b;--m3:#2f5f57;--haze:#e9d29a;--panel:rgba(14,26,26,.82)}
+.stage[data-pal="night"]{--sky1:#1a120b;--sky2:#2a1c12;--sky3:#120c07;--m1:#4e3826;--m2:#3a2818;--m3:#22170e;--haze:#ffcf96;--panel:rgba(20,13,8,.86)}
+
+/* ---------- 顶栏 ---------- */
+.top{position:relative;z-index:5;display:flex;align-items:center;gap:6px;padding:6px 8px 4px}
+.info{display:flex;flex-direction:column;gap:1px;padding:3px 9px;border-radius:8px;background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-line);font-size:12px;line-height:1.35;white-space:nowrap}
+.info b{color:var(--gold-hi);font-weight:700}
+.info small{color:var(--text-dim);font-size:10.5px}
+.tools{margin-left:auto;display:flex;gap:5px}
+.ib{width:34px;height:34px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-line);position:relative}
+.ib svg{width:17px;height:17px}
+.ib.on{background:rgba(87,192,90,.28);box-shadow:inset 0 0 0 1px rgba(150,230,150,.5)}
+.ib .dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--red)}
+.mock-btn{position:absolute;left:8px;top:calc(var(--mock-top,0px));z-index:9;height:26px;padding:0 8px;border-radius:13px;border:1px dashed rgba(255,230,180,.45);background:rgba(0,0,0,.35);font-size:11px;color:var(--gold-hi)}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  .info,.ib,.abar,.peek,.thinkpop,.sheet,.modal-card,.pausecard,.caption{-webkit-backdrop-filter:blur(10px) saturate(140%);backdrop-filter:blur(10px) saturate(140%)}
+}
+
+/* ---------- 对手一排 ---------- */
+.opps{position:relative;z-index:4;display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(5px,1.8vw,9px);padding:2px 9px 0}
+.seat{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.sf{position:relative;width:100%;aspect-ratio:3/4;border-radius:7px;overflow:visible;
+  background:#1a130c;box-shadow:0 0 0 1.5px #1c1105,0 0 0 3px var(--gold),0 0 0 4px #1c1105,0 6px 12px rgba(0,0,0,.55)}
+.sf .art{position:absolute;inset:0;border-radius:7px;overflow:hidden}
+.sf .art img{width:100%;height:100%;object-fit:cover;object-position:50% 18%;display:block}
+.sf .art::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,0) 30%,rgba(0,0,0,0) 62%,rgba(0,0,0,.78))}
+.seal2{position:absolute;top:4px;width:clamp(17px,4.8vw,21px);height:clamp(17px,4.8vw,21px);border-radius:50%;display:grid;place-items:center;
+  font:700 clamp(10px,2.8vw,12px)/1 var(--f-serif);color:#fff;box-shadow:0 0 0 1.5px var(--gold),0 1px 3px rgba(0,0,0,.6);z-index:2}
+.seal2.fac{left:4px} .seal2.idn{right:4px}
+.fac-wei{background:#3a5fa5}.fac-shu{background:#a3392b}.fac-wu{background:#3a7d3c}
+.id-lord{background:#b88a2e}.id-rebel{background:#417f3b}.id-unk{background:#4b4136;color:#d9cbb0}.id-spy{background:#3f5f9f}.id-loyal{background:#c4a447}
+.hpcol{position:absolute;right:3px;top:30%;display:flex;flex-direction:column;gap:1px;padding:2px 1px;border-radius:6px;background:rgba(0,0,0,.45);z-index:2}
+.hpcol .gy{width:clamp(9px,2.5vw,11px);height:clamp(9px,2.5vw,11px)}
+.plate{position:absolute;left:0;right:0;bottom:0;height:24%;display:flex;align-items:center;justify-content:space-between;padding:0 5px;z-index:2}
+.plate .hn{font:900 clamp(12px,3.4vw,15px)/1 var(--f-serif);color:#fff6dc;text-shadow:0 1px 2px #000;letter-spacing:1px;white-space:nowrap}
+.hc{width:clamp(14px,3.8vw,17px);height:clamp(19px,5vw,22px);border-radius:3px;display:grid;place-items:center;font:700 11px/1 var(--f-serif);color:#fff;
+  background:repeating-linear-gradient(45deg,#6b665f 0 3px,#59544e 3px 6px);box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+.nm{max-width:100%;font-size:clamp(10px,2.75vw,11.5px);line-height:1.2;color:var(--text);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 5px;border-radius:8px;background:rgba(0,0,0,.42)}
+.nm b{color:var(--gold-hi);font-weight:700;margin-right:2px}
+.eqs{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;min-height:15px}
+.eqs span{font-size:9.5px;line-height:14px;padding:0 4px;border-radius:3px;background:rgba(0,0,0,.5);color:#e8dcc2;box-shadow:inset 0 0 0 1px rgba(255,240,210,.12)}
+.cur .sf{box-shadow:0 0 0 1.5px #1c1105,0 0 0 3px var(--gold-hi),0 0 0 4px #1c1105,0 0 18px 4px rgba(255,214,120,.55);transform:translateY(-2px)}
+.ribbon{position:absolute;top:3px;left:50%;transform:translateX(-50%);z-index:3;padding:1px 6px;border-radius:3px;font:700 9.5px/1.4 var(--f-serif);color:#fff2c8;background:linear-gradient(180deg,#b5452f,#7a1d12);box-shadow:0 0 0 1px #f1d898;white-space:nowrap}
+.tag-ts{position:absolute;left:50%;bottom:26%;transform:translateX(-50%);z-index:3;padding:1px 6px;border-radius:9px;font:700 10px/1.5 var(--f-serif);color:#eafff0;background:rgba(40,120,70,.82);box-shadow:0 0 0 1px rgba(170,240,180,.6);white-space:nowrap}
+/* 查看 AI 思考：灰色毛玻璃，不描金边 */
+.peek{position:absolute;right:-4px;top:4px;transform:translateX(50%);z-index:4;width:20px;height:20px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--glass-grey);color:#e6e6e6;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.thinking .peek{animation:breathe 1.6s ease-in-out infinite}
+@keyframes breathe{50%{background:rgba(120,124,130,.6)}}
+.thinkpop{position:absolute;z-index:30;max-width:min(78vw,300px);padding:9px 11px;border-radius:12px;background:rgba(48,50,54,.7);color:#eee;font-size:12.5px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.thinkpop b{display:block;color:#fff;margin-bottom:2px;font-size:12px}
+/* 判定区菱形 */
+.jdg{position:absolute;left:3px;top:28%;display:flex;flex-direction:column;gap:7px;z-index:3}
+.dia{position:relative;width:clamp(15px,4.2vw,18px);height:clamp(15px,4.2vw,18px);transform:rotate(45deg);border-radius:3px;display:grid;place-items:center;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+.dia>i{transform:rotate(-45deg);font:700 10px/1 var(--f-serif);font-style:normal;color:#fff}
+.dia.le{background:linear-gradient(135deg,#ffb3d6,#d24b8c 55%,#7e1f4f)}
+.dia.dian{background:linear-gradient(135deg,#8f80ff,#4a2aa8 55%,#2a145e)}
+.dia canvas{position:absolute;left:50%;top:50%;width:64px;height:64px;transform:translate(-50%,-50%) rotate(-45deg);pointer-events:none}
+/* 阵亡 */
+.dead .art img{filter:grayscale(1) brightness(.55)}
+.stamp{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%) rotate(-14deg);z-index:3;padding:2px 6px;border:2px solid #c8402c;border-radius:4px;color:#e0533c;font:400 clamp(16px,4.6vw,20px)/1 var(--f-brush);background:rgba(30,6,4,.35);text-shadow:0 0 6px rgba(0,0,0,.6);white-space:nowrap}
+.cn{position:absolute;width:14px;height:14px;z-index:3;pointer-events:none}
+.cn.tl{left:-5px;top:-5px}.cn.tr{right:-5px;top:-5px;transform:scaleX(-1)}.cn.bl{left:-5px;bottom:-5px;transform:scaleY(-1)}.cn.br{right:-5px;bottom:-5px;transform:scale(-1,-1)}
+.bubble{position:absolute;z-index:6;top:calc(100% + 30px);left:50%;transform:translateX(-50%);width:max-content;max-width:150px;padding:6px 9px;border-radius:10px;background:linear-gradient(180deg,#fffaf0,#f1e4c4);color:#2a1d10;font-size:11.5px;line-height:1.45;box-shadow:0 0 0 1px #8a6b3a,0 6px 14px rgba(0,0,0,.45)}
+.bubble::before{content:"";position:absolute;top:-6px;left:50%;margin-left:-6px;border:6px solid transparent;border-top:0;border-bottom-color:#8a6b3a}
+
+/* ---------- 牌桌 ---------- */
+.field{position:relative;z-index:3;min-height:0}
+.pile{position:absolute;left:50%;top:36%;transform:translate(-50%,-50%);width:200px;height:120px}
+.pile .card{position:absolute;left:50%;top:50%;--w:clamp(52px,14.5vw,64px)}
+.caption{position:absolute;left:50%;top:calc(36% + 70px);transform:translateX(-50%);max-width:88%;padding:3px 11px;border-radius:12px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-line)}
+.aim{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+/* 操作条：一行、浮在牌桌底部 */
+.abar{position:absolute;left:8px;right:8px;bottom:6px;z-index:8;display:flex;align-items:center;gap:8px;min-height:50px;padding:6px 6px 6px 11px;border-radius:12px;background:rgba(36,26,16,.62);box-shadow:inset 0 0 0 1px rgba(255,236,196,.2),0 6px 18px rgba(0,0,0,.45)}
+.abar p{flex:1;min-width:0;margin:0;font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dial{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 13px/1 var(--f-serif);color:var(--gold-hi);background:conic-gradient(var(--gold) var(--p,70%),rgba(255,255,255,.12) 0);position:relative}
+.dial::before{content:"";position:absolute;inset:3px;border-radius:50%;background:#1c140c}
+.dial span{position:relative}
+.dial.urgent{background:conic-gradient(#e0533c var(--p,20%),rgba(255,255,255,.12) 0)}
+.bt{flex:none;height:38px;padding:0 13px;border-radius:9px;border:0;font:700 14px/1 var(--f-serif)}
+.bt.ok{background:linear-gradient(180deg,#f6dc95,#c9952e);color:#2a1a06;box-shadow:inset 0 0 0 1px #fff2bf}
+.bt.no{background:rgba(0,0,0,.45);color:var(--text);box-shadow:inset 0 0 0 1px rgba(255,240,210,.25)}
+.bt:disabled{filter:grayscale(1) brightness(.6);cursor:default}
+
+/* ---------- 我的区域 ---------- */
+.mine{position:relative;z-index:6;display:grid;grid-template-columns:var(--hc) 1fr;gap:8px;padding:8px 8px 10px;background:linear-gradient(180deg,rgba(0,0,0,0),var(--panel) 18%);}
+.mine::before{content:"";position:absolute;left:10%;right:10%;top:2px;height:1px;background:linear-gradient(90deg,transparent,rgba(241,207,120,.55),transparent)}
+.mycol{display:flex;flex-direction:column;gap:6px;min-width:0}
+.mycol .sf{width:100%}
+.eqlist{display:flex;flex-direction:column;gap:3px}
+.eqi{display:flex;align-items:center;gap:4px;height:20px;padding:0 4px 0 2px;border-radius:5px;background:rgba(0,0,0,.42);font-size:11px;white-space:nowrap;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,240,210,.1)}
+.eqi i{flex:none;font-style:normal;width:17px;height:15px;border-radius:3px;display:grid;place-items:center;font-size:9.5px;background:#5a4426;color:#ffe6a8}
+.eqi.empty{opacity:.4}
+.rcol{display:flex;flex-direction:column;gap:6px;min-width:0}
+.meta{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.ph{display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden}
+.ph span{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:10px;color:#cdbb95;background:rgba(0,0,0,.4);box-shadow:inset 0 0 0 1px rgba(227,194,122,.4)}
+.ph span.done{background:#5c4523;color:#e9d29a;box-shadow:none}
+.ph span.now{width:23px;height:23px;background:radial-gradient(circle at 40% 35%,#fff0b8,#d9a540 60%,#8a5d16);color:#2a1a06;font-weight:700;box-shadow:0 0 10px rgba(255,210,110,.7)}
+.ph em{font-style:normal;font-size:11px;color:var(--text-dim);margin-left:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-btn{top:8px}
+.hcnt{font-size:11px;color:var(--text-dim);white-space:nowrap}
+.hcnt b{color:var(--text)}
+/* 技能：两种方案 */
+.skills{display:flex;gap:6px}
+.sk{flex:1;min-width:0;height:30px;border:0;border-radius:6px;display:flex;align-items:center;justify-content:center;gap:5px;font:700 14px/1 var(--f-serif);letter-spacing:3px;color:#d8c8a6;
+  background:linear-gradient(180deg,#3b2a19,#22170d);box-shadow:0 0 0 1.5px #8a6a35,0 0 0 3px #120c06}
+.sk small{font:500 9.5px/1 var(--f-serif);letter-spacing:0;color:#a8956f}
+.sk.ready{color:#fff2c4;background:linear-gradient(180deg,#7a2a1a,#4a140c);box-shadow:0 0 0 2px #f1cf78,0 0 0 3.5px #120c06,0 0 12px rgba(255,200,100,.45);animation:skg 2s ease-in-out infinite}
+.sk.ready small{color:#ffd98a}
+.sk.on{background:linear-gradient(180deg,#f6dc95,#c9952e);color:#2a1a06}
+.sk.on small{color:#5a3a0a}
+@keyframes skg{50%{box-shadow:0 0 0 2px #f1cf78,0 0 0 3.5px #120c06,0 0 18px rgba(255,200,100,.7)}}
+.stage[data-sk="pill"] .sk{flex:none;height:26px;padding:0 12px;border-radius:13px;letter-spacing:1px;font-size:13px;box-shadow:inset 0 0 0 1px #6d5636;background:rgba(0,0,0,.4)}
+.stage[data-sk="pill"] .sk small{display:none}
+.stage[data-sk="pill"] .sk.ready{box-shadow:inset 0 0 0 1px #c9a35a,0 0 8px rgba(241,216,152,.35);background:linear-gradient(180deg,#4a3220,#2a1b10);animation:none}
+/* 手牌 */
+.hand{position:relative;height:calc(var(--cw) * 1.4 + 6px);margin-top:12px}
+.hand .card{position:absolute;bottom:0;--w:var(--cw);transition:transform .22s cubic-bezier(.34,1.56,.64,1),filter .2s,box-shadow .2s;touch-action:manipulation}
+.hand .card.up{transform:translateY(-18px) scale(1.04);box-shadow:0 0 0 2px #ffe08a,0 0 16px 3px rgba(255,210,110,.6),0 10px 18px rgba(0,0,0,.6)}
+.hand .card.dim{filter:brightness(.55) saturate(.6)}
+.hand .card.dim.up{filter:none}
+.hand .card.nudge{animation:nudge .3s}
+@keyframes nudge{25%{translate:-4px 0}75%{translate:4px 0}}
+.hint{font-size:10.5px;color:var(--text-dim);text-align:center;margin-top:-2px}
+
+/* 阵亡后的面板 */
+.deadpanel{grid-column:1/-1;display:grid;grid-template-columns:var(--hc) 1fr;gap:10px;align-items:start}
+.deadpanel h3{margin:0 0 4px;font-size:15px;color:var(--gold-hi)}
+.deadpanel p{margin:0 0 8px;font-size:12px;color:var(--text-dim);line-height:1.5}
+.choices{display:grid;gap:6px}
+.choice{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:7px 10px;border-radius:9px;border:0;text-align:left;background:rgba(0,0,0,.42);box-shadow:inset 0 0 0 1px rgba(255,240,210,.18)}
+.choice b{font-size:13.5px}.choice span{font-size:11px;color:var(--text-dim)}
+.choice.pri{background:rgba(87,192,90,.22);box-shadow:inset 0 0 0 1px rgba(150,230,150,.5)}
+.choice.danger b{color:#ff9a86}
+
+/* 弹层 */
+.scrim{position:absolute;inset:0;z-index:40;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:16px}
+.modal-card,.pausecard{width:min(100%,340px);padding:16px;border-radius:16px;background:rgba(30,22,14,.78);box-shadow:inset 0 0 0 1px rgba(255,236,196,.2),0 16px 40px rgba(0,0,0,.6)}
+.modal-card h2,.pausecard h2{margin:0 0 4px;font-size:18px;color:var(--gold-hi)}
+.modal-card p{margin:0 0 12px;font-size:12.5px;color:var(--text-dim);line-height:1.55}
+.pausecard{text-align:center}
+.pausecard .big{font:400 54px/1.1 var(--f-brush);color:var(--gold-hi);margin:6px 0}
+.pausecard .clock{font:700 26px/1 var(--f-serif);font-variant-numeric:tabular-nums;color:#fff;margin-bottom:6px}
+.pausecard p{font-size:12px;color:var(--text-dim);line-height:1.6;margin:0 0 12px}
+.detail{position:absolute;z-index:35;width:216px;padding:9px 10px;border-radius:12px;background:rgba(30,22,14,.86);box-shadow:inset 0 0 0 1px rgba(255,236,196,.22),0 10px 26px rgba(0,0,0,.6);font-size:12px;line-height:1.55}
+.detail .dh{display:flex;gap:8px;align-items:center;margin-bottom:5px}
+.detail .dh img{width:34px;height:34px;border-radius:6px;object-fit:cover;background:#3a2a18}
+.detail .dh b{display:block;font-size:15px;color:var(--gold-hi)}
+.detail .dh small{color:var(--text-dim);font-size:11px}
+
+/* 设计稿控制面板 */
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:50;max-height:78%;overflow:auto;padding:12px 14px 18px;border-radius:16px 16px 0 0;background:rgba(22,17,12,.9);box-shadow:0 -10px 30px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,236,196,.2)}
+.sheet h4{margin:10px 0 6px;font-size:12px;color:var(--gold-hi);letter-spacing:1px}
+.sheet .row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{height:30px;padding:0 11px;border-radius:15px;border:0;font-size:12.5px;background:rgba(0,0,0,.42);box-shadow:inset 0 0 0 1px rgba(255,240,210,.2)}
+.chip[aria-pressed="true"]{background:linear-gradient(180deg,#f6dc95,#c9952e);color:#2a1a06;box-shadow:none}
+.sheet input[type=range]{width:100%}
+.sheet .note{font-size:11.5px;color:var(--text-dim);line-height:1.6;margin:6px 0 0}
+.bolt-prev{display:flex;gap:12px;justify-content:space-around;margin-top:4px}
+.bolt-prev figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px}
+.bolt-prev canvas{width:96px;height:96px;border-radius:10px;background:radial-gradient(circle,#2a2238,#120e18)}
+.sheet .close{float:right;height:28px;padding:0 12px;border-radius:14px;border:0;background:rgba(255,255,255,.08);font-size:12px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="stage" id="stage" data-pal="shan" data-sk="strip">
+  <div class="bg" aria-hidden="true">
+    <svg viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--sky1)"/><stop offset=".55" style="stop-color:var(--sky2)"/><stop offset="1" style="stop-color:var(--sky3)"/></linearGradient>
+        <filter id="b1" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+        <filter id="b2" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter>
+        <radialGradient id="sun" cx=".5" cy=".38" r=".5"><stop offset="0" style="stop-color:var(--haze)" stop-opacity=".45"/><stop offset="1" style="stop-color:var(--haze)" stop-opacity="0"/></radialGradient>
+      </defs>
+      <rect width="400" height="800" fill="url(#sky)"/>
+      <ellipse cx="200" cy="300" rx="260" ry="200" fill="url(#sun)"/>
+      <path d="M-40 330 C 20 250 70 230 120 270 S 200 170 250 230 S 330 190 440 250 L440 800 L-40 800Z" style="fill:var(--m1)" opacity=".75" filter="url(#b2)"/>
+      <path d="M-40 420 C 40 350 90 340 150 380 S 260 300 300 350 S 380 330 440 360 L440 800 L-40 800Z" style="fill:var(--m2)" opacity=".85" filter="url(#b1)"/>
+      <rect x="-40" y="400" width="480" height="60" style="fill:var(--haze)" opacity=".10" filter="url(#b2)"/>
+      <path d="M-40 520 C 60 470 130 480 200 500 S 330 460 440 490 L440 800 L-40 800Z" style="fill:var(--m3)" opacity=".9" filter="url(#b1)"/>
+    </svg>
+  </div>
+
+  <header class="top">
+    <div class="info"><span>第 <b>2</b> 轮 · 牌堆 <b>88</b></span><small>主1 忠1 反2 内1 · 你是反贼</small></div>
+        <div class="tools">
+      <button class="ib" type="button" aria-label="席间聊天" data-act="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span class="dot"></span></button>
+      <button class="ib" type="button" aria-label="战报" data-act="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg></button>
+      <button class="ib" type="button" aria-label="暂停" data-act="pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3.4" height="14" rx="1"/><rect x="13.6" y="5" width="3.4" height="14" rx="1"/></svg></button>
+      <button class="ib" type="button" aria-label="托管" data-act="trustee" id="tsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg></button>
+      <button class="ib" type="button" aria-label="设置" data-act="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M5.6 18.4l1.7-1.7M16.7 7.3l1.7-1.7"/></svg></button>
+      <button class="ib" type="button" aria-label="退出" data-act="exit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14"/><path d="M10 8l-4 4 4 4M6 12h10"/></svg></button>
+    </div>
+  </header>
+
+  <section class="opps" id="opps"></section>
+  <section class="field" id="field"></section>
+  <section class="mine" id="mine"></section>
+</div>
+
+<script src="js/card_info.js"></script>
+<script src="js/sgs_common.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+const ST = { mode:'play', handN:4, bolt:'A', ups:new Set(), skillOn:false, trustee:false, dim:.12 };
+try { const saved = JSON.parse(localStorage.getItem('mockState')||'null'); if (saved) Object.assign(ST, saved, {ups:new Set()}); } catch(e) {}
+function save(){ try{ localStorage.setItem('mockState', JSON.stringify({mode:ST.mode,handN:ST.handN,bolt:ST.bolt,dim:ST.dim,pal:stage.dataset.pal,sk:stage.dataset.sk})); }catch(e){} }
+try { const s = JSON.parse(localStorage.getItem('mockState')||'null'); if (s){ if(s.pal) stage.dataset.pal=s.pal; if(s.sk) stage.dataset.sk=s.sk; } } catch(e) {}
+
+const CORNER = '<path d="M3 22V10a7 7 0 0 1 7-7h12" fill="none" stroke="#1c1105" stroke-width="4.4"/><path d="M3 22V10a7 7 0 0 1 7-7h12" fill="none" stroke="#f1cf78" stroke-width="2"/><circle cx="22" cy="3" r="1.9" fill="#f1cf78"/><circle cx="3" cy="22" r="1.9" fill="#f1cf78"/>';
+const corners = () => ['tl','tr','bl','br'].map(k=>'<svg class="cn '+k+'" viewBox="0 0 24 24" aria-hidden="true">'+CORNER+'</svg>').join('');
+const GY = c => '<svg class="gy" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 .4A5.6 5.6 0 0 1 6 11.6A2.8 2.8 0 0 1 6 6A2.8 2.8 0 0 0 6 .4Z" fill="'+c+'" stroke="rgba(0,0,0,.6)" stroke-width=".8"/><circle cx="6" cy="8.8" r="1" fill="rgba(0,0,0,.45)"/></svg>';
+const hpCol = (hp,max) => { const r = hp/max, c = r>.66?'url(#cgG)':(r>.34?'url(#cgY)':'url(#cgR)'); let s=''; for(let i=0;i<max;i++) s+=GY(i<hp?c:'#3b342e'); return '<div class="hpcol">'+s+'</div>'; };
+document.body.insertAdjacentHTML('beforeend','<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>'+
+ '<radialGradient id="cgG" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#d6ffc8"/><stop offset=".45" stop-color="#57c05a"/><stop offset="1" stop-color="#1d5a1f"/></radialGradient>'+
+ '<radialGradient id="cgY" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#fff6c4"/><stop offset=".45" stop-color="#e4c24a"/><stop offset="1" stop-color="#7a5c10"/></radialGradient>'+
+ '<radialGradient id="cgR" cx="35%" cy="70%" r="75%"><stop offset="0" stop-color="#ffd2c6"/><stop offset=".45" stop-color="#e0503a"/><stop offset="1" stop-color="#7a1a10"/></radialGradient></defs></svg>');
+
+// 示例对局（演示数据）
+const SEATS = [
+  {seat:1,name:'酒馆常客',hero:'guanyu',hn:'关羽',fac:'shu',idn:'lord',hp:3,max:5,hc:3,eq:['八卦阵','大宛']},
+  {seat:5,name:'小乔我老婆',hero:'guojia',hn:'郭嘉',fac:'wei',idn:'unk',hp:2,max:3,hc:4,eq:['白银狮子'],think:'2号上轮打了主公两次，像反贼；我手里还有无懈，先不急着亮。',bubble:'主公小心 2 号。'},
+  {seat:4,name:'曹操的粉丝',hero:'zhangliao',hn:'张辽',fac:'wei',idn:'unk',hp:4,max:4,hc:4,eq:['寒冰剑','绝影'],judge:['dian','le']},
+  {seat:3,name:'诸葛村夫',hero:'simayi',hn:'司马懿',fac:'wei',idn:'rebel',hp:0,max:3,hc:0,eq:[],dead:true}
+];
+const ME = {seat:2,name:'你',hero:'zhenji',hn:'甄姬',fac:'wei',idn:'rebel',hp:3,max:3};
+const FAC = {wei:'魏',shu:'蜀',wu:'吴'}, IDN = {lord:'主',rebel:'反',unk:'?',spy:'内',loyal:'忠'};
+const SUITS = ['heart','spade','diamond','club'];
+const POOL = [['闪','diamond',6],['杀','spade',7],['桃','heart',3],['铁索连环','club',12],['闪','heart',2],['过河拆桥','spade',3],['杀','club',9],['无懈可击','spade',11],['酒','spade',9],['决斗','diamond',1],['闪','diamond',11],['火攻','heart',12],['杀','heart',10],['南蛮入侵','spade',13]];
+const TYPE = n => ({'铁索连环':'trick','过河拆桥':'trick','无懈可击':'trick','决斗':'trick','火攻':'trick','南蛮入侵':'trick'})[n] || 'basic';
+
+function seatHTML(s, opts){
+  opts = opts || {};
+  const cls = ['seat']; if (s.dead) cls.push('dead');
+  const curSeat = ST.mode==='respond' ? 1 : (ST.mode==='idle'||ST.mode==='trustee' ? 5 : (ST.mode==='play'?2:0));
+  if (s.seat===curSeat) cls.push('cur');
+  const thinking = s.think && (ST.mode==='idle'||ST.mode==='trustee');
+  if (thinking) cls.push('thinking');
+  let j = '';
+  if (s.judge) j = '<div class="jdg">'+s.judge.map(k=> k==='dian' ? '<span class="dia dian" title="闪电"><canvas class="boltc" width="128" height="128"></canvas><i>⚡︎</i></span>' : '<span class="dia le" title="乐不思蜀"><i>乐</i></span>').join('')+'</div>';
+  const idn = s.dead ? 'rebel' : s.idn;
+  return '<div class="'+cls.join(' ')+'" data-seat="'+s.seat+'">'+
+    '<div class="sf"><div class="art"><img src="assets/heroes/'+s.hero+'.jpg" alt="'+s.hn+'"></div>'+
+      '<span class="seal2 fac fac-'+s.fac+'">'+FAC[s.fac]+'</span><span class="seal2 idn id-'+idn+'">'+IDN[idn]+'</span>'+
+      (s.seat===curSeat?'<span class="ribbon">'+'出牌中'+'</span>':'')+
+      (s.dead?'':hpCol(s.hp,s.max)) + j +
+      (s.dead?'<span class="stamp">阵亡</span>':'')+
+      '<div class="plate"><span class="hn">'+s.hn+'</span>'+(opts.mine?'':'<span class="hc">'+s.hc+'</span>')+'</div>'+
+      (opts.mine && ST.mode==='trustee' ? '<span class="tag-ts">托管中</span>' : '')+
+      (s.think ? '<button class="peek" type="button" aria-label="查看 '+s.hn+' 的思考" data-peek="'+s.seat+'">思</button>' : '')+
+      corners()+
+      (s.bubble && (ST.mode==='idle'||ST.mode==='trustee') ? '<div class="bubble">'+s.bubble+'</div>' : '')+
+    '</div>'+
+    (opts.mine ? '' : '<div class="nm"><b>'+s.seat+'号</b>'+s.name+'</div><div class="eqs">'+s.eq.map(e=>'<span>'+e+'</span>').join('')+'</div>')+
+  '</div>';
+}
+
+function renderOpps(){ $('#opps').innerHTML = SEATS.map(s=>seatHTML(s)).join(''); }
+
+function renderField(){
+  const f = $('#field');
+  let pile = '', cap = '', bar = '';
+  const played = ST.mode==='respond' ? [['杀','spade',7]] : (ST.mode==='play' ? [['过河拆桥','spade',3],['桃','heart',3]] : [['桃','heart',3],['杀','club',9],['闪','heart',2]]);
+  const tilts = [-9,6,-3,4];
+  pile = played.map((c,i)=>{ const card={name:c[0],suit:c[1],rank:c[2],card_type:TYPE(c[0])}; const last = i===played.length-1;
+    return SGS.cardHTML(card,{noDetail:true,attrs:'style="transform:translate(calc(-50% + '+(i-(played.length-1)/2)*22+'px),-50%) rotate('+tilts[i%4]+'deg)'+(last?' scale(1.12)':'')+';'+(last?'box-shadow:0 0 0 2px #ffb070,0 0 18px rgba(255,140,60,.5)':'filter:brightness(.8)')+'"'}); }).join('');
+  cap = ST.mode==='respond' ? '酒馆常客 对 你 使用【杀】' : (ST.mode==='play' ? '你使用【桃】，回复 1 点体力' : '小乔我老婆 打出【闪】');
+  if (ST.mode==='play'){
+    const n = ST.ups.size;
+    bar = '<div class="abar"><p>出牌阶段：选一张牌'+(n?'，再点"出牌"':'')+'</p><button class="bt ok" type="button" '+(n?'':'disabled')+'>出牌</button><button class="bt no" type="button">结束</button></div>';
+  } else if (ST.mode==='respond'){
+    bar = '<div class="abar"><p>关羽对你使用【杀】，是否打出【闪】？</p><div class="dial" style="--p:62%"><span>18</span></div><button class="bt ok" type="button" '+(ST.ups.size?'':'disabled')+'>打出</button><button class="bt no" type="button">不出</button></div>';
+  }
+  const aim = ST.mode==='respond' ? '<svg class="aim" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ag" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff0b8" stop-opacity=".2"/><stop offset="1" stop-color="#ff6a3a"/></linearGradient></defs><path d="M12 0 C 18 40, 10 70, 12 100" fill="none" stroke="url(#ag)" stroke-width="1.4" stroke-dasharray="4 2.5" vector-effect="non-scaling-stroke" style="stroke-width:4px"/></svg>' : '';
+  f.innerHTML = aim + '<div class="pile">'+pile+'</div><div class="caption">'+cap+'</div>' + bar + '<button class="mock-btn" id="mockBtn" type="button">设计稿选项</button>';
+}
+
+function eqHTML(){
+  const rows = [['武','丈八蛇矛'],['防','藤甲'],['+1','爪黄飞电'],['-1','紫骍'],['宝','']];
+  return '<div class="eqlist">'+rows.map(r=>'<div class="eqi'+(r[1]?'':' empty')+'"><i>'+r[0]+'</i>'+(r[1]||'空')+'</div>').join('')+'</div>';
+}
+function handCards(){ const out=[]; for(let i=0;i<ST.handN;i++){ const c=POOL[i%POOL.length]; out.push({name:c[0],suit:c[1],rank:c[2],card_type:TYPE(c[0])}); } return out; }
+function renderMine(){
+  const m = $('#mine');
+  if (ST.mode==='dead'){
+    m.innerHTML = '<div class="deadpanel"><div class="mycol">'+seatHTML(Object.assign({},ME,{dead:true,hp:0}),{mine:true})+'</div>'+
+      '<div><h3>你已阵亡 · 身份反贼</h3><p>阵亡后可以留下观战，也可以离开。AI 会继续把这局打完。</p><div class="choices">'+
+      '<button class="choice pri" type="button"><b>留下观战</b><span>看完这一局，可在席间发言</span></button>'+
+      '<button class="choice" type="button"><b>退出，AI 后台打完</b><span>结果稍后出现在历史记录</span></button>'+
+      '<button class="choice danger" type="button"><b>结束整局</b><span>本局记为中断</span></button></div></div></div>';
+    return;
+  }
+  const phases = [['准','done'],['判','done'],['摸','done'],['出',ST.mode==='play'?'now':''],['弃',''],['结','']];
+  const phaseOwner = ST.mode==='play' ? '你的回合' : (ST.mode==='respond' ? '酒馆常客的回合' : '小乔我老婆的回合');
+  const ready = ST.mode==='play';
+  const sk = '<div class="skills"><button class="sk'+(ST.skillOn?' on':'')+'" type="button" data-sk="洛神">洛神<small>触发技</small></button><button class="sk'+(ready&&!ST.skillOn?' ready':'')+'" type="button" data-sk="倾国">倾国<small>'+(ready?'可发动':'')+'</small></button></div>';
+  const cards = handCards();
+  m.innerHTML = '<div class="mycol">'+seatHTML(ME,{mine:true})+eqHTML()+'</div>'+
+    '<div class="rcol"><div class="meta"><div class="ph">'+phases.map(p=>'<span class="'+p[1]+'">'+p[0]+'</span>').join('')+'<em>'+phaseOwner+'</em></div><span class="hcnt">手牌 <b>'+cards.length+'</b>/3</span></div>'+
+    sk+'<div class="hand" id="hand"></div><div class="hint">点牌抬起 · 再点收回 · 长按看说明</div></div>';
+  if (ST.mode==='play' || ST.mode==='respond'){ /* 当前回合在我身上时，ribbon 已由 seatHTML 处理 */ }
+  layoutHand(cards);
+}
+function playable(card){ if (ST.mode==='play') return card.name!=='闪' && card.name!=='无懈可击'; if (ST.mode==='respond') return card.name==='闪'; return false; }
+function layoutHand(cards){
+  const h = $('#hand'); if (!h) return;
+  const W = h.clientWidth, cw = parseFloat(getComputedStyle(stage).getPropertyValue('--cw')) || 64;
+  const cardW = h.querySelector('.card') ? h.querySelector('.card').offsetWidth : cw;
+  const step = cards.length>1 ? Math.min(cw+4, (W - cw) / (cards.length-1)) : 0;
+  h.innerHTML = cards.map((c,i)=>{ const can = playable(c); const cls = [ST.ups.has(i)?'up':'', (ST.mode==='play'||ST.mode==='respond') && !can ? 'dim':''].join(' ');
+    return SGS.cardHTML(c,{noDetail:true,cls,attrs:'data-i="'+i+'" data-can="'+(can?1:0)+'" style="left:'+(i*step)+'px;z-index:'+(i+1)+'"'}); }).join('');
+}
+function renderAll(){ renderOpps(); renderField(); renderMine(); $('#tsBtn').classList.toggle('on', ST.mode==='trustee'); startBolts(); save(); }
+
+// ---------- 交互 ----------
+let pressT = null, longFired = false;
+document.addEventListener('pointerdown', e => {
+  closePops(e);
+  const c = e.target.closest('#hand .card'); if (!c) return;
+  longFired = false;
+  pressT = setTimeout(()=>{ longFired = true; showDetail(c); }, 450);
+});
+document.addEventListener('pointerup', () => clearTimeout(pressT));
+document.addEventListener('pointercancel', () => clearTimeout(pressT));
+document.addEventListener('contextmenu', e => { const c = e.target.closest('#hand .card'); if (c){ e.preventDefault(); showDetail(c); } });
+document.addEventListener('click', e => {
+  const card = e.target.closest('#hand .card');
+  if (card){
+    if (longFired){ longFired = false; return; }
+    const i = +card.dataset.i;
+    if (ST.mode==='respond' || ST.mode==='play'){
+      if (card.dataset.can==='0' && !ST.ups.has(i)){ /* 不能出的牌：照样抬起来看，但不算选中 */ }
+      if (ST.ups.has(i)) ST.ups.delete(i); else { if (card.dataset.can==='1'){ [...ST.ups].forEach(k=>{ const el=document.querySelector('#hand [data-i="'+k+'"]'); if(el && el.dataset.can==='1') ST.ups.delete(k); }); } ST.ups.add(i); }
+      renderField(); renderMineKeep();
+    } else { ST.ups.has(i) ? ST.ups.delete(i) : ST.ups.add(i); card.classList.toggle('up'); }
+    return;
+  }
+  const sk = e.target.closest('.sk'); if (sk){ if (sk.classList.contains('ready')||sk.classList.contains('on')){ ST.skillOn=!ST.skillOn; renderMineKeep(); } else showSkillTip(sk); return; }
+  const pk = e.target.closest('[data-peek]'); if (pk){ showThink(pk); return; }
+  const act = e.target.closest('[data-act]'); if (act){ onAct(act.dataset.act); return; }
+  if (e.target.closest('#mockBtn')){ openSheet(); return; }
+});
+function renderMineKeep(){ renderMine(); }
+function closePops(e){ document.querySelectorAll('.thinkpop,.detail').forEach(p=>{ if(!p.contains(e.target)) p.remove(); }); }
+function place(pop, anchor){
+  stage.appendChild(pop);
+  const a = anchor.getBoundingClientRect(), s = stage.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = a.left - s.left + a.width/2 - pw/2; left = Math.max(8, Math.min(left, s.width - pw - 8));
+  let top = a.top - s.top - ph - 8; if (top < 8) top = a.bottom - s.top + 8;
+  pop.style.left = left+'px'; pop.style.top = top+'px';
+}
+function showDetail(c){
+  const i = +c.dataset.i, card = handCards()[i]; const info = (window.SGS_CARD_INFO||{})[card.name] || {};
+  const p = document.createElement('div'); p.className='detail';
+  const art = SGS.cardArtURL(card.name);
+  p.innerHTML = '<div class="dh">'+(art?'<img src="'+art+'" alt="">':'')+'<div><b>'+card.name+'</b><small>'+(info.type||'')+' · '+({heart:'♥',spade:'♠',diamond:'♦',club:'♣'})[card.suit]+card.rank+'</small></div></div>'+(info.text||'');
+  place(p, c);
+}
+function showThink(btn){
+  const s = SEATS.find(x=>x.seat==+btn.dataset.peek);
+  const p = document.createElement('div'); p.className='thinkpop'; p.innerHTML = '<b>'+s.seat+'号 '+s.name+' 的思考（作弊模式）</b>'+s.think; place(p, btn);
+}
+function showSkillTip(sk){
+  const p = document.createElement('div'); p.className='detail';
+  p.innerHTML = sk.dataset.sk==='洛神' ? '<b style="color:var(--gold-hi)">洛神</b> 准备阶段，你可以判定，若为黑色则获得此牌，并可重复直到出现红色。' : '<b style="color:var(--gold-hi)">倾国</b> 你可以将一张黑色手牌当【闪】使用或打出。';
+  place(p, sk);
+}
+function onAct(a){
+  if (a==='pause') return openPause();
+  if (a==='exit') return openExit();
+  if (a==='trustee'){ ST.mode = ST.mode==='trustee' ? 'idle' : 'trustee'; ST.ups.clear(); renderAll(); return; }
+  if (a==='chat'||a==='log'||a==='set'){ toast(a==='chat'?'席间抽屉（沿用现有）':a==='log'?'战报抽屉（原来浮在 3 号身上的按钮移到这里）':'设置'); }
+}
+function toast(t){ const d=document.createElement('div'); d.className='caption'; d.style.cssText='position:absolute;top:56px;left:50%;transform:translateX(-50%);z-index:60'; d.textContent=t; stage.appendChild(d); setTimeout(()=>d.remove(),1800); }
+
+function openExit(){
+  const s = document.createElement('div'); s.className='scrim';
+  s.innerHTML = '<div class="modal-card" role="dialog" aria-label="离开对局"><h2>离开对局</h2><p>直接离开时，你的座位交给托管继续打，随时回来都能接回。想让整桌停下等你，先暂停再离开。</p><div class="choices">'+
+   '<button class="choice pri" type="button" data-x="ts"><b>离开，托管代打</b><span>默认选项 · 武将牌上会标"托管中"</span></button>'+
+   '<button class="choice" type="button" data-x="pause"><b>暂停后离开</b><span>整桌停下，最多 15 分钟，超时结束本局</span></button>'+
+   '<button class="choice danger" type="button" data-x="end"><b>结束本局</b><span>记为中断，不计胜负</span></button>'+
+   '<button class="choice" type="button" data-x="cancel"><b>回到牌桌</b></button></div></div>';
+  s.addEventListener('click', e => { const b = e.target.closest('[data-x]'); if (!b && e.target!==s) return; s.remove();
+    if (b && b.dataset.x==='ts'){ ST.mode='trustee'; renderAll(); } if (b && b.dataset.x==='pause') openPause(); });
+  stage.appendChild(s);
+}
+let pauseTimer = null;
+function openPause(){
+  const s = document.createElement('div'); s.className='scrim'; let left = 15*60;
+  s.innerHTML = '<div class="pausecard" role="dialog" aria-label="已暂停"><div class="big">暂停</div><div class="clock" id="pclock">15:00</div><p>整桌已停下，倒计时冻结，AI 不行动，席间不能发言。<br>15 分钟内不继续，本局自动结束。</p><button class="bt ok" type="button" id="resume">继续对局</button></div>';
+  stage.appendChild(s);
+  pauseTimer = setInterval(()=>{ left--; const el=document.getElementById('pclock'); if(!el){clearInterval(pauseTimer);return;} el.textContent = String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0'); }, 1000);
+  s.querySelector('#resume').addEventListener('click', ()=>{ clearInterval(pauseTimer); s.remove(); });
+}
+
+// ---------- 设计稿选项 ----------
+function openSheet(){
+  const old = document.querySelector('.sheet'); if (old){ old.remove(); return; }
+  const sh = document.createElement('div'); sh.className='sheet';
+  const chip = (g,v,t,cur) => '<button class="chip" type="button" data-g="'+g+'" data-v="'+v+'" aria-pressed="'+(cur===v)+'">'+t+'</button>';
+  sh.innerHTML = '<button class="close" type="button" data-close>收起</button><h4>局面</h4><div class="row">'+
+    chip('mode','play','我出牌',ST.mode)+chip('mode','respond','我响应杀',ST.mode)+chip('mode','idle','别人回合',ST.mode)+chip('mode','trustee','我托管中',ST.mode)+chip('mode','dead','我已阵亡',ST.mode)+'</div>'+
+    '<h4>手牌数</h4><div class="row">'+chip('hand','4','4 张',String(ST.handN))+chip('hand','8','8 张',String(ST.handN))+chip('hand','12','12 张',String(ST.handN))+'</div>'+
+    '<h4>背景</h4><div class="row">'+chip('pal','shan','千里江山',stage.dataset.pal)+chip('pal','night','夜幕江山',stage.dataset.pal)+'</div>'+
+    '<label for="dimR" class="note">背景压暗程度（越往右越暗）</label><input type="range" id="dimR" min="0" max="60" value="'+Math.round(ST.dim*100)+'">'+
+    '<h4>技能样式</h4><div class="row">'+chip('sk','strip','加重边框长条',stage.dataset.sk)+chip('sk','pill','旧版小圆角',stage.dataset.sk)+'</div>'+
+    '<h4>闪电效果（4 号张辽判定区）</h4><div class="row">'+chip('bolt','A','A 电弧跳动',ST.bolt)+chip('bolt','B','B 电粒子环绕',ST.bolt)+chip('bolt','C','C 电弧+粒子',ST.bolt)+'</div>'+
+    '<div class="bolt-prev"><figure><canvas class="prevc" data-m="A" width="192" height="192"></canvas>A</figure><figure><canvas class="prevc" data-m="B" width="192" height="192"></canvas>B</figure><figure><canvas class="prevc" data-m="C" width="192" height="192"></canvas>C</figure></div>'+
+    '<p class="note">这是设计稿，数据都是演示用的。可以直接点牌（点一下抬起、再点收回、长按看说明）、点技能、点右上角的暂停 / 托管 / 退出。</p>';
+  sh.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')){ sh.remove(); return; }
+    const b = e.target.closest('[data-g]'); if (!b) return;
+    const g = b.dataset.g, v = b.dataset.v;
+    if (g==='mode'){ ST.mode=v; ST.ups.clear(); ST.skillOn=false; }
+    if (g==='hand') ST.handN=+v;
+    if (g==='pal') stage.dataset.pal=v;
+    if (g==='sk') stage.dataset.sk=v;
+    if (g==='bolt') ST.bolt=v;
+    sh.querySelectorAll('[data-g="'+g+'"]').forEach(x=>x.setAttribute('aria-pressed', String(x===b)));
+    renderAll();
+  });
+  sh.querySelector('#dimR').addEventListener('input', e => { ST.dim = e.target.value/100; stage.style.setProperty('--dim', ST.dim); save(); });
+  stage.appendChild(sh);
+  startBolts();
+}
+
+// ---------- 闪电粒子（Canvas） ----------
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function bolt(ctx, x1,y1,x2,y2, spread, depth){
+  if (depth<=0 || Math.hypot(x2-x1,y2-y1)<4){ ctx.lineTo(x2,y2); return; }
+  const mx=(x1+x2)/2+(Math.random()-.5)*spread, my=(y1+y2)/2+(Math.random()-.5)*spread;
+  bolt(ctx,x1,y1,mx,my,spread/2,depth-1); bolt(ctx,mx,my,x2,y2,spread/2,depth-1);
+}
+function drawBolt(cv, mode, t){
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height, cx=W/2, cy=H/2, R=W*.22;
+  ctx.clearRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  const flick = .6 + .4*Math.sin(t/90) * Math.sin(t/37);
+  const g = ctx.createRadialGradient(cx,cy,0,cx,cy,W*.48); g.addColorStop(0,'rgba(170,150,255,'+(.35*flick)+')'); g.addColorStop(1,'rgba(90,60,200,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  if (mode==='A'||mode==='C'){
+    const n = mode==='A'?3:2;
+    for(let k=0;k<n;k++){
+      if (Math.random()<.35 && mode==='C') continue;
+      const a = Math.random()*Math.PI*2, r2 = W*(.34+Math.random()*.12);
+      ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*R*.6, cy+Math.sin(a)*R*.6);
+      bolt(ctx, cx+Math.cos(a)*R*.6, cy+Math.sin(a)*R*.6, cx+Math.cos(a+.5)*r2, cy+Math.sin(a+.5)*r2, W*.18, 5);
+      ctx.strokeStyle='rgba(150,130,255,.55)'; ctx.lineWidth=W*.035; ctx.stroke();
+      ctx.strokeStyle='rgba(235,240,255,.95)'; ctx.lineWidth=W*.012; ctx.stroke();
+    }
+  }
+  if (mode==='B'||mode==='C'){
+    const n = mode==='B'?22:14;
+    for(let i=0;i<n;i++){
+      const a = t/ (380+i*23) + i*2.4, rr = R*(1.05 + .45*Math.sin(t/260+i));
+      const x = cx+Math.cos(a)*rr, y = cy+Math.sin(a)*rr*.92, s = W*(.012+.012*((i*7)%3));
+      ctx.fillStyle='rgba(210,220,255,.9)'; ctx.beginPath(); ctx.arc(x,y,s,0,7); ctx.fill();
+      ctx.strokeStyle='rgba(140,120,255,.45)'; ctx.lineWidth=s*.9; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(cx+Math.cos(a-.25)*rr, cy+Math.sin(a-.25)*rr*.92); ctx.stroke();
+    }
+    if (Math.random()<.18){ const a=Math.random()*7; ctx.strokeStyle='rgba(240,244,255,.9)'; ctx.lineWidth=W*.01; ctx.beginPath(); ctx.moveTo(cx,cy); bolt(ctx,cx,cy,cx+Math.cos(a)*R*1.4,cy+Math.sin(a)*R*1.4,W*.1,4); ctx.stroke(); }
+  }
+  ctx.globalCompositeOperation='source-over';
+}
+let rafId = 0, lastFrame = 0;
+function startBolts(){
+  cancelAnimationFrame(rafId);
+  const loop = t => {
+    if (t - lastFrame > (reduce?100000:66)){ lastFrame = t;
+      document.querySelectorAll('.boltc').forEach(c=>drawBolt(c, ST.bolt, t));
+      document.querySelectorAll('.prevc').forEach(c=>drawBolt(c, c.dataset.m, t));
+    }
+    if (!document.hidden) rafId = requestAnimationFrame(loop);
+  };
+  rafId = requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) startBolts(); });
+
+stage.style.setProperty('--dim', ST.dim);
+window.addEventListener('resize', () => renderMine());
+renderAll();
+})();
+</script>
