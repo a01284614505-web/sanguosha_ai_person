@@ -537,11 +537,7 @@
     }
 
 
-    /**
-     * 给“模型名称”输入框加一个【拉取】按钮：向服务器请求该服务商的模型列表，
-     * 结果显示在输入框下方，点选即可填入；仍可手动输入任意模型名。
-     * getParams() 返回 {provider, api_url, api_key, ...}，调用时才读取，保证用的是表单当前值。
-     */
+    /** 拉取后在独立窗口里搜索、选择服务商返回的全部模型。 */
     function attachModelPicker(input, getParams) {
         if (!input || input.dataset.modelPicker) return;
         input.dataset.modelPicker = '1';
@@ -552,28 +548,34 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn small model-pick-btn';
-        btn.textContent = '拉取';
+        btn.textContent = '拉取模型';
         btn.title = '从服务商拉取可用模型列表';
         wrap.appendChild(btn);
-        const list = document.createElement('div');
-        list.className = 'model-list';
-        list.hidden = true;
-        list.setAttribute('role', 'listbox');
-        wrap.appendChild(list);
+        const dialog = document.createElement('dialog');
+        dialog.className = 'sgs-dialog model-select-dialog';
+        dialog.setAttribute('aria-label', '选择模型');
+        dialog.innerHTML = '<div class="frame dialog-body"><div class="dialog-head"><h2>选择模型</h2>' +
+            '<button class="icon-btn model-close" type="button" aria-label="关闭">×</button></div>' +
+            '<p class="model-status" role="status"></p>' +
+            '<input class="model-search" type="search" placeholder="搜索模型名称" aria-label="搜索模型名称">' +
+            '<div class="model-dialog-list" role="listbox"></div></div>';
+        document.body.appendChild(dialog);
+        const status = dialog.querySelector('.model-status');
+        const search = dialog.querySelector('.model-search');
+        const list = dialog.querySelector('.model-dialog-list');
         let models = [];
-        let filterOn = false;
 
         function render() {
-            const q = filterOn ? input.value.trim().toLowerCase() : '';
+            const q = search.value.trim().toLowerCase();
             const shown = q ? models.filter(m => m.toLowerCase().includes(q)) : models;
-            if (!shown.length) { list.hidden = true; return; }
-            list.innerHTML = shown.slice(0, 300).map(m =>
+            status.textContent = '显示 ' + shown.length + ' / ' + models.length + ' 个模型';
+            list.innerHTML = shown.map(m =>
                 '<button type="button" role="option" class="model-opt' + (m === input.value.trim() ? ' on' : '') +
                 '" data-model="' + esc(m) + '">' + esc(m) + '</button>').join('');
-            list.hidden = false;
+            if (!shown.length) list.textContent = '没有匹配的模型';
         }
-        function hide() { list.hidden = true; }
         function showMessage(message, providerValue) {
+            status.textContent = message;
             list.textContent = message;
             const provider = (typeof Protocol !== 'undefined' ? Protocol.PROVIDERS : []).find(p => p.value === providerValue);
             if (provider && provider.default_model) {
@@ -584,12 +586,15 @@
                 fallback.textContent = '使用默认模型：' + provider.default_model;
                 list.appendChild(fallback);
             }
-            list.hidden = false;
         }
 
         btn.addEventListener('click', async (e) => {
             e.preventDefault();
             models = [];
+            search.value = '';
+            list.textContent = '';
+            status.textContent = '正在连接服务商，最多等待 12 秒…';
+            dialog.showModal();
             btn.disabled = true;
             btn.textContent = '拉取中…';
             let params = {};
@@ -597,7 +602,6 @@
             const timer = setTimeout(() => controller.abort(), 12000);
             try {
                 params = getParams() || {};
-                showMessage('正在连接服务商，最多等待 12 秒…');
                 const data = await fetchJSON('/api/models', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -611,9 +615,7 @@
                     return;
                 }
                 models = data.models || [];
-                filterOn = false;
                 render();
-                toast('拉取到 ' + models.length + ' 个模型，点选即可');
             } catch (err) {
                 const message = err.name === 'AbortError' ? '拉取超时，请检查 API 地址或手动填写模型名' : '连不上游戏服务，无法拉取模型';
                 showMessage(message, params.provider);
@@ -621,7 +623,7 @@
             } finally {
                 clearTimeout(timer);
                 btn.disabled = false;
-                btn.textContent = '拉取';
+                btn.textContent = '拉取模型';
             }
         });
         list.addEventListener('click', (e) => {
@@ -630,15 +632,13 @@
             e.preventDefault();
             input.value = opt.dataset.model;
             input.dispatchEvent(new Event('change', { bubbles: true }));
-            hide();
+            dialog.close();
         });
-        input.addEventListener('input', () => { if (models.length) { filterOn = true; render(); } });
-        input.addEventListener('focus', () => { if (models.length) { filterOn = false; render(); } });
-        input.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !list.hidden) { e.stopPropagation(); e.preventDefault(); hide(); } });
-        document.addEventListener('pointerdown', (e) => { if (!wrap.contains(e.target)) hide(); });
-        input.addEventListener('picker-reset', () => { models = []; hide(); });
-        // 换了服务商/地址/Key，旧列表就不再可信。
-        return { reset() { models = []; hide(); } };
+        search.addEventListener('input', render);
+        dialog.querySelector('.model-close').addEventListener('click', () => dialog.close());
+        dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+        input.addEventListener('picker-reset', () => { models = []; if (dialog.open) dialog.close(); });
+        return { reset() { models = []; if (dialog.open) dialog.close(); } };
     }
 
     /**

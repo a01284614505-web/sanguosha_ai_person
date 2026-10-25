@@ -88,6 +88,8 @@
             this.modelPicker = SGS.attachModelPicker(f.model, () => ({
                 provider: f.provider.value, api_url: f.apiUrl.value.trim(), api_key: f.apiKey.value.trim()
             }));
+            ConnectionLibrary.attach(f.apiKey, 'keys', () => f.provider.value);
+            ConnectionLibrary.attach(f.apiUrl, 'urls', () => f.provider.value);
             ['provider', 'apiUrl', 'apiKey'].forEach(n => f[n].addEventListener('change', () => this.modelPicker && this.modelPicker.reset()));
             document.getElementById('syncBtn').addEventListener('click', () => this.syncAPIConfig());
 

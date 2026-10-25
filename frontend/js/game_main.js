@@ -2381,6 +2381,8 @@
         const trusteePicker = SGS.attachModelPicker(document.getElementById('trusteeModel'), () => ({
             provider: val('trusteeProvider'), api_url: val('trusteeUrl'), api_key: val('trusteeKey')
         }));
+        ConnectionLibrary.attach(document.getElementById('trusteeKey'), 'keys', () => val('trusteeProvider'));
+        ConnectionLibrary.attach(document.getElementById('trusteeUrl'), 'urls', () => val('trusteeProvider'));
         // 局内调整 AI 时 Key 可留空：服务器按本局 game_id + 座位沿用已保存的 Key（Key 不会回传给页面）。
         const aiPicker = SGS.attachModelPicker(document.getElementById('aiSettingModel'), () => {
             const active = store.sget('activeGame') || {};
@@ -2388,6 +2390,8 @@
                 game_id: active.game_id || gameClient.gameId, profile_id: active.profile_id,
                 player_id: parseInt(val('aiSettingPlayerId'), 10) };
         });
+        ConnectionLibrary.attach(document.getElementById('aiSettingKey'), 'keys', () => val('aiSettingProvider'));
+        ConnectionLibrary.attach(document.getElementById('aiSettingUrl'), 'urls', () => val('aiSettingProvider'));
         ['trusteeProvider', 'trusteeUrl', 'trusteeKey'].forEach(id => document.getElementById(id).addEventListener('change', () => trusteePicker && trusteePicker.reset()));
         ['aiSettingProvider', 'aiSettingUrl', 'aiSettingKey'].forEach(id => document.getElementById(id).addEventListener('change', () => aiPicker && aiPicker.reset()));
         document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
