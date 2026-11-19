@@ -38,6 +38,7 @@ def main():
     args = parser.parse_args()
     run("-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider")
     run("scripts/check_frontend_js.py")
+    subprocess.run(["node", "tests/hero_search.test.cjs"], cwd=ROOT, check=True)
     run("-c", "from scripts.gen_protocol_js import generate_js, OUTPUT_PATH; "
         "import sys; ok = OUTPUT_PATH.read_text(encoding='utf-8') == generate_js(); "
         "print('protocol sync:', 'OK' if ok else 'MISMATCH'); sys.exit(0 if ok else 1)")

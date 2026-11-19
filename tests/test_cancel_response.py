@@ -125,6 +125,30 @@ class CancelResponse(unittest.TestCase):
 
         asyncio.run(scenario())
 
+    def test_wuxie_pass_through_real_chain_preserves_card(self):
+        """A decline on the actual wuxie request must finish this layer without consuming its card."""
+        source = self.engine.game_state.players[1]
+        self.engine.game_state.current_player = source
+        wuxie = card("wuxie_declined", "无懈可击", "trick")
+        trick = card("trick_for_wuxie", "无中生有", "trick")
+        self.human.hand.append(wuxie)
+        receipts = []
+
+        async def decline(**data):
+            self.assertEqual(data["kind"], "wuxie")
+            self.assertTrue(data["selection"]["cancelable"])
+            receipts.append(self.engine.submit_action(
+                {"type": "response", "request_id": data["request_id"], "cancel": True}, []))
+
+        self.engine.on("require_response", decline)
+        canceled = asyncio.run(self.engine.card_system.ask_wuxie(trick, source, [source]))
+        self.assertFalse(canceled)
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(receipts[0]["status"], "accepted")
+        self.assertIn(wuxie, self.human.hand)
+        self.assertNotIn(wuxie, self.engine.game_state.discard_pile)
+        self.assertEqual(self.engine._pending_requests, {})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,8 +59,7 @@
     function renderGrid() {
         const box = $('skHeroGrid');
         const q = query.trim();
-        const list = heroes.filter(h => (!faction || h.faction === faction) &&
-            (!q || shortName(h).includes(q) || String(h.title || '').includes(q)));
+        const list = heroes.filter(h => (!faction || h.faction === faction) && HeroSearch.matches(h, q));
         if (!list.length) { box.innerHTML = '<p class="muted">没有符合条件的武将。</p>'; return; }
         box.innerHTML = list.map(h => {
             const changed = !!state.selection[h.id];
