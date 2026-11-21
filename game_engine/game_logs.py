@@ -111,7 +111,8 @@ def build_game_log(engine, game_end: Dict, *, include_thinking: bool) -> Dict:
         decisions = [dict(d) for d in getattr(engine, "decision_log", [])]
     else:
         # 不含思考过程：只保留“谁在第几轮做了什么”，去掉理由。
-        decisions = [{k: v for k, v in d.items() if k != "reason"} for d in getattr(engine, "decision_log", [])]
+        decisions = [{k: v for k, v in d.items() if k not in {"reason", "tactical_result"}}
+                     for d in getattr(engine, "decision_log", [])]
     return redact({
         "prompt_traces": [trace for traces in getattr(getattr(engine, "ai_decision", None), "prompt_traces", {}).values() for trace in traces] if include_thinking else [],
         "schema": LOG_SCHEMA,

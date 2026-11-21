@@ -259,7 +259,9 @@ class WeiSkillHandler(FactionSkillHandler):
                     await self.manager.on_card_gained(target, [card], "奸雄")
                     if self._finished():
                         return
-                    await self.manager.draw_cards(target, 1, "奸雄")
+                    drawn = await self.manager.draw_cards(target, 1, "奸雄")
+                    self.state.observe_tactic("damage_skill", target, source=getattr(source, "id", None),
+                                              skill="奸雄", gained=1 + len(drawn))
                     await self.manager.announce(target, "奸雄", f"{target.name}发动【奸雄】获得伤害牌并摸一张牌")
 
         for _ in range(amount):
@@ -288,6 +290,8 @@ class WeiSkillHandler(FactionSkillHandler):
                         if move is not None:
                             self.manager.ledger_record("反馈", target, source)
                             await self.manager.on_card_gained(target, [stolen], "反馈")
+                            self.state.observe_tactic("damage_skill", target, source=source.id,
+                                                      skill="反馈", gained=1)
                             await self.manager.announce(target, "反馈", f"{target.name}发动【反馈】获得{source.name}一张牌")
 
             if self._finished():
@@ -358,6 +362,8 @@ class WeiSkillHandler(FactionSkillHandler):
                     await self.manager.on_cards_lost(target, [give], "遗计")
                     await self.manager.on_card_gained(receiver, [give], "遗计")
                     moved += 1
+                self.state.observe_tactic("damage_skill", target, source=getattr(source, "id", None),
+                                          skill="遗计", gained=len(drawn), distributed=moved)
                 await self.manager.announce(target, "遗计", f"{target.name}发动【遗计】摸两张并分配{moved}张牌")
 
     async def on_card_gained(self, player, cards, reason="unknown"):
@@ -410,16 +416,9 @@ class WeiSkillHandler(FactionSkillHandler):
             for card, index, zone in self.response_card_entries(player):
                 if card_color(card) == "black":
                     options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "倾国", "owner": player, "source_zone": zone})
-        if requested_name == "闪" and self.has(player, "护驾") and player.identity == "lord" :
-            for donor in self.state.players:
-                if not donor.alive or donor is player or hero_faction(donor) != "wei":
-                    continue
-                candidate = next(((card, index, zone) for card, index, zone in self.response_card_entries(donor)
-                                  if card.name == "闪"), None)
-                if candidate:
-                    card, index, zone = candidate
-                    options.append({"card": card, "card_index": index, "as_name": "闪", "skill_name": "护驾", "owner": donor, "source_zone": zone})
-                    break
+        if requested_name == "闪" and self.has(player, "护驾") and player.identity == "lord":
+            options.append({"invitation": True, "as_name": "闪", "skill_name": "护驾",
+                            "label": "发动【护驾】，询问魏势力角色是否提供【闪】"})
         return options
 
     async def on_card_responded(self, player, card, as_name, context=None):

@@ -8,7 +8,7 @@ from typing import Dict, List
 
 from . import card_flow
 from .game_stats import clear_damage_source, record_stat
-from .skill_runtime_core import card_color, hero_id, reset_turn_flags
+from .skill_runtime_core import card_color, hero_faction, hero_id, reset_turn_flags
 from .skill_runtime_state import SkillStateStore
 from .skill_runtime_core import RuntimeSkill
 from .skill_dsl import (SkillDSLRuntime, compile_skill, evaluate_condition,
@@ -688,10 +688,40 @@ class SkillManager:
         return count
 
     async def request_lord_sha(self, player, first_donor):
-        for handler in self.handlers:
-            request = getattr(handler, "request_jijiang_response", None)
-            if request is not None:
-                return await request(player, first_donor)
+        return await self.request_lord_card(player, "激将", first_donor=first_donor)
+
+    async def request_lord_card(self, lord, skill, *, first_donor=None, context=None):
+        """Ask in seat order. Only the donor gets to inspect or select a physical card."""
+        faction, name = {"激将": ("shu", "杀"), "护驾": ("wei", "闪")}[skill]
+        context = {**(context or {}), "lord_request": True}
+        if not lord.alive or lord.identity != "lord" or not self.has_skill(lord, skill):
+            return None
+        seats = self.engine.game_state.players
+        start = seats.index(first_donor) if first_donor in seats else seats.index(lord) + 1
+        for donor in seats[start:] + seats[:start]:
+            if self.engine.game_aborted or not lord.alive:
+                return None
+            if donor is lord or not donor.alive or hero_faction(donor) != faction:
+                continue
+            if not await self.ask_confirm(donor, f"是否为{lord.name}的【{skill}】提供【{name}】？",
+                                          skill_name=skill, context=context, default=False):
+                continue
+            if self.engine.game_aborted:
+                return None
+            options = self.engine.card_system.build_response_options(donor, lambda c: c.name == name, name)
+            options = [o for o in options if o.get("card") is not None and o.get("owner") is donor]
+            if not options:
+                continue
+            selected = await self.ask_choose_cards(
+                donor, f"【{skill}】：选择一张可作【{name}】的牌", [o["card"] for o in options],
+                places=[(donor, o.get("source_zone", "hand")) for o in options],
+                skill_name=skill, context=context, cancelable=True,
+            )
+            if selected and not self.engine.game_aborted:
+                chosen = next((o for o in options if o["card"] is selected[0]), None)
+                if chosen:
+                    return {**chosen, "source_zone": chosen.get("source_zone", "hand"),
+                            "bool": True, "skill_name": skill}
         return None
 
     def target_error(self, source, target, card_name):
@@ -872,6 +902,9 @@ class SkillManager:
     async def on_cards_lost(self, player, cards, reason="unknown", *, record=True, event=None):
         if not cards or (self.engine is not None and self.engine.game_aborted):
             return
+        if event is None and self.engine is not None:
+            # Legacy and batched loss hooks may lack a public source zone or face.
+            self.engine.game_state.note_hand_outflow(player)
         if record:
             record_stat(self.engine, player, "cards_lost", len(cards))
         if self.engine is not None:

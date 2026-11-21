@@ -915,6 +915,7 @@ class MainEngine:
                 break
             actions = self.get_available_actions(player)
             if self._trustee_active:
+                actions = self._after_unanswered_invitation(player, actions)
                 generation = self._trustee_generation
                 decision = await self._trustee_make_decision(player, actions)
                 await self.wait_if_paused()       # 托管的模型结果同样先扣住
@@ -924,12 +925,14 @@ class MainEngine:
                     continue
                 action = decision.get("action") or {"type": "end_phase"}
                 if action.get("type") == "end_phase":
-                    await self._emit_decision_trace(player, "play", len(actions), action, "accepted")
+                    await self._emit_decision_trace(player, "play", len(actions), action, "accepted",
+                                                    before=self._play_trace_input(player, []))
                     break
                 target_ids = decision.get("target_ids") or []
+                before = self._play_trace_input(player, target_ids)
                 ok = await self.execute_action(player, action, target_ids)
                 await self._emit_decision_trace(player, "play", len(actions), action,
-                                                "accepted" if ok else "invalid")
+                                                "accepted" if ok else "invalid", before=before)
                 if not self.game_aborted:
                     await self.emit(ENGINE_EVENT.ACTION_RESULT, success=ok, trustee=True)
                     await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
@@ -1033,7 +1036,7 @@ class MainEngine:
             await self.wait_if_paused()
             if self.game_state.game_over:
                 break
-            actions = self.get_available_actions(player)
+            actions = self._after_unanswered_invitation(player, self.get_available_actions(player))
             if len(actions) <= 1:
                 break
 
@@ -1053,7 +1056,7 @@ class MainEngine:
 
             if action.get("type") == "end_phase":
                 await self._emit_decision_trace(player, "play", len(actions), action,
-                                                "accepted")
+                                                "accepted", before=self._play_trace_input(player, []))
                 break
 
             if action.get("type") == "play_card":
@@ -1066,10 +1069,11 @@ class MainEngine:
                         card_name=player.hand[index].name,
                     )
 
+            before = self._play_trace_input(player, target_ids)
             ok = await self.execute_action(player, action, target_ids)
             self._record_ai_outcome(player, action, target_ids, ok)
             await self._emit_decision_trace(player, "play", len(actions), action,
-                                            "accepted" if ok else "invalid")
+                                            "accepted" if ok else "invalid", before=before)
             if not ok:
                 logger.info("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
                 break
@@ -1148,16 +1152,32 @@ class MainEngine:
         names = [p.name for p in self.game_state.players if p.id in (target_ids or [])]
         target_text = f"，目标：{'、'.join(names)}" if names else ""
         verdict = "已生效" if ok else "被引擎判定为非法，未生效"
+        if action.get("skill_name") == "激将" and player.flags.get("jijiang_unanswered"):
+            verdict = "已询问，无人供杀，未消耗出杀次数"
         recorder(player, f"【引擎执行结果】你的操作 {action.get('type')}{target_text} {verdict}。")
 
-    async def _emit_decision_trace(self, player, kind, candidate_count, choice, validation):
+    def _play_trace_input(self, player, targets):
+        # Executing this action can synchronously ask the same model a *different* question.
+        ai = self.ai_decision
+        return {
+            "meta": dict(getattr(ai, "last_meta", {}).get(player.id) or {}),
+            "reason": getattr(ai, "last_reasoning", {}).get(player.id, ""),
+            "failure": getattr(ai, "last_failure", {}).get(player.id),
+            "local_reason": getattr(ai, "last_local_reason", {}).get(player.id),
+            "version": build_public_situation(self)["state_version"],
+            "targets": list(targets or []),
+            "public_totals": {p.id: [p.hp, p.get_hand_count()] for p in self.game_state.players},
+        }
+
+    async def _emit_decision_trace(self, player, kind, candidate_count, choice, validation, *, before=None):
         """Publish only information already visible to the human client."""
         own_decision = player is self.human_player()
-        meta = getattr(self.ai_decision, "last_meta", {}).get(player.id) or {}
+        meta = before["meta"] if before else getattr(self.ai_decision, "last_meta", {}).get(player.id) or {}
         if own_decision and (self._trustee_source == "rules" or self._trustee_degraded):
             meta = {}
-        failure = getattr(self.ai_decision, "last_failure", {}).get(player.id)
-        private_reason = getattr(self.ai_decision, "last_reasoning", {}).get(player.id, "") if meta else ""
+        failure = before["failure"] if before else getattr(self.ai_decision, "last_failure", {}).get(player.id)
+        private_reason = (before["reason"] if before else getattr(
+            self.ai_decision, "last_reasoning", {}).get(player.id, "")) if meta else ""
         # 作弊模式（开局锁定）下，AI 的公开理由也推给真人；否则只公开真人自己托管的理由。
         reveal = own_decision or (self.cheat_mode and player.is_ai)
         reason = private_reason if reveal else ""
@@ -1166,10 +1186,11 @@ class MainEngine:
         else:
             full_choice = choice.get("type", "") if isinstance(choice, dict) else ("放弃" if choice is None else str(choice)[:100])
         public_situation = build_public_situation(self)
-        situation_version = public_situation["state_version"]
+        result_version = public_situation["state_version"]
+        situation_version = (meta.get("situation_version") or before["version"]) if before else result_version
         # 没走模型有两种：没配模型/Key（rules_no_provider），或有模型但这类决策本来就在本地处理
         # （last_local_reason，如全暗置候选的随机选择）。后者不能记成“没配模型”。
-        local_reason = getattr(self.ai_decision, "last_local_reason", {}).get(player.id)
+        local_reason = before["local_reason"] if before else getattr(self.ai_decision, "last_local_reason", {}).get(player.id)
         fallback_reason = failure or (None if meta.get("model") else local_reason or "rules_no_provider")
         # 局后日志：不论是否作弊都记录完整理由，对局结束后才按设置写入。
         self.decision_log.append({
@@ -1186,6 +1207,13 @@ class MainEngine:
             "chosen_summary": str(full_choice)[:200],
             "validation_status": validation,
             "fallback_reason": fallback_reason,
+            **({"target_ids": before["targets"], "result_version": result_version,
+                "public_changes": [{"seat": p["seat"], "before": before["public_totals"][p["id"]],
+                                    "after": [p["hp"], p["hand_count"]]}
+                                   for p in public_situation["players"]
+                                   if before["public_totals"][p["id"]] != [p["hp"], p["hand_count"]]]}
+               if before else {}),
+            **({"tactical_result": meta["tactical_result"]} if meta.get("tactical_result") else {}),
         })
         if not reason:
             reason = "模型结果已由引擎复核" if meta.get("model") and not failure else "按规则选择合法候选"
@@ -1274,8 +1302,9 @@ class MainEngine:
             "owner_name": getattr(owner, "name", None),
             "as_name": option.get("as_name"),
             "skill_name": option.get("skill_name"),
-            "is_pass": card is None,
+            "is_pass": card is None and not option.get("invitation", False),
             "hidden": hidden,
+            **({"invitation": True} if option.get("invitation") else {}),
         }
 
     @staticmethod
@@ -1285,7 +1314,7 @@ class MainEngine:
         masked["options"] = [
             {key: value for key, value in option.items() if key not in ("owner", "card", "card_index")}
             | {"card": None if option.get("hidden") else option.get("card"),
-               "available": option.get("card") is not None,
+               "available": option.get("card") is not None or bool(option.get("invitation")),
                "label": option_label(option)}
             for option in request.get("options") or []
         ]
@@ -1399,6 +1428,13 @@ class MainEngine:
         if not isinstance(index, int) or not 0 <= index < len(options):
             return {"bool": False}
         option = options[index]
+        if option.get("invitation"):
+            allowed = request.get("allowed_names") or [request.get("requested_name")]
+            name, skill = option["as_name"], option["skill_name"]
+            if player.alive and name in allowed and any(
+                    o.get("invitation") and o["skill_name"] == skill for o in self.skill_manager.response_options(player, name)):
+                return {"bool": True, "invitation": True, "skill_name": skill, "as_name": name}
+            return {"bool": False}
         card = option.get("card")
         if card is None:
             return {"bool": False}
@@ -1505,7 +1541,7 @@ class MainEngine:
     async def request_response(self, player: Player, request: Dict) -> Dict:
         """场外响应统一入口。返回值契约与旧 choose_to_respond 一致。"""
         options = list(request.get("options") or [])
-        if not any(option.get("card") is not None for option in options):
+        if not any(option.get("card") is not None or option.get("invitation") for option in options):
             return {"bool": False}
         return await self._ask_index(player, request, self._resolve_option)
 
@@ -1514,7 +1550,9 @@ class MainEngine:
         recorder = getattr(self.ai_decision, "record_outcome", None)
         if recorder is None:
             return
-        if resolved.get("bool"):
+        if resolved.get("invitation"):
+            text = f"你发动了【{resolved['skill_name']}】，等待其他角色提供【{resolved['as_name']}】。"
+        elif resolved.get("bool"):
             text = f"你打出了【{resolved.get('as_name')}】响应「{request.get('prompt', '')}」。"
         else:
             text = f"你没有响应「{request.get('prompt', '')}」（未选择或被引擎复核驳回）。"
@@ -2561,9 +2599,17 @@ class MainEngine:
 
     # ---------- 执行操作 ----------
 
+    @staticmethod
+    def _after_unanswered_invitation(player, actions):
+        """Automated players can take another action before asking the same table again."""
+        if player.flags.get("jijiang_unanswered"):
+            return [a for a in actions if a.get("skill_name") != "激将"]
+        return actions
+
     async def execute_action(self, player: Player, action: Dict, target_ids: List = None) -> bool:
         if self.game_aborted or player != self.game_state.current_player or not player.alive:
             return False
+        player.flags.pop("jijiang_unanswered", None)
         action_type = action.get("type")
         try:
             if action_type == "play_card":

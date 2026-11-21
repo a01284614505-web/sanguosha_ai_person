@@ -86,6 +86,9 @@ async def release_shown(engine, state, card, to_zone: str, *, to_owner=None,
         state.discard_pile.append(card)
     elif to_zone == "hand" and to_owner is not None:
         to_owner.hand.append(card)
+        if reason == "五谷丰登":
+            state.observe_tactic("public_pick", to_owner, card_name=card.name,
+                                 suit=card.suit, rank=card.rank)
 
 
 async def take_judge_replacement(engine, state, owner, judged, replacement,

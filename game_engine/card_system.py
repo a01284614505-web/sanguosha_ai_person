@@ -653,6 +653,9 @@ class CardSystem:
         for name in names:
             skill_options.extend(self.trigger_manager.response_options(player, name))
         for option in skill_options:
+            if option.get("invitation"):
+                options.append(option)
+                continue
             card = option.get("card")
             if card is None:
                 continue
@@ -717,12 +720,21 @@ class CardSystem:
         if requested_names:
             request["allowed_names"] = list(requested_names)
         result = await self.responder(player, request)
-        if result and result.get("bool") and result.get("skill_name") == "激将":
-            offered = await self.trigger_manager.request_lord_sha(player, result.get("owner"))
+        if result and result.get("bool") and result.get("invitation"):
+            skill = result["skill_name"]
+            offered = await self.trigger_manager.request_lord_card(player, skill, context=context)
             if offered and not (self.engine and self.engine.game_aborted):
+                if self.engine:
+                    self.engine.ai_decision.record_outcome(player, f"【引擎执行结果】{offered['owner'].name}为{skill}提供了【{offered['as_name']}】。")
                 return offered
             # 供牌者都拒绝后，主公仍可选择自己的合法响应牌。
-            own_options = [option for option in options if option.get("skill_name") != "激将"]
+            if self.engine and self.engine.game_aborted:
+                return {"bool": False}
+            if self.engine:
+                self.engine.ai_decision.record_outcome(player, f"【引擎执行结果】{skill}无人供牌。")
+            own_options = [o for o in self.build_response_options(
+                player, card_filter, requested_name, requested_names=requested_names)
+                if not o.get("invitation")]
             if any(option.get("card") is not None for option in own_options):
                 return await self.responder(player, {**request, "options": own_options})
             return {"bool": False}
@@ -862,6 +874,9 @@ class CardSystem:
             if propagate:
                 target.chained = False
             target.hp -= amount
+            if context.get("unanswered_group_card"):
+                self.game_state.observe_tactic("unanswered_damage", target,
+                    card_name=context["unanswered_group_card"], damage=amount)
             # 统计按修正后的最终伤害值计；自伤（如闪电）只记受到伤害，不记造成伤害。
             record_stat(self.engine, target, "damage_taken", amount)
             if source is not None and source is not target:
@@ -966,6 +981,8 @@ class CardSystem:
                 if self.engine is not None and self.engine.game_aborted:
                     return
                 player.hp += 1
+                self.game_state.observe_tactic("rescue", player, source=owner.id,
+                                              as_name=result.get("as_name") or card.name)
                 record_stat(self.engine, owner, "healing", 1)
                 # 治疗归属与统计一致：记给实际提供桃的角色（owner），不是被询问者。
                 await self.trigger_manager.on_recover(player, 1, owner, 'dying_rescue')
@@ -1289,7 +1306,8 @@ class CardSystem:
             if await self._consume_response(victim, result, card.name, context):
                 continue
             await self.damage(source, victim, 1, card=card,
-                              context={"reason": card.name, "effect_context": effect_context})
+                              context={"reason": card.name, "effect_context": effect_context,
+                                       "unanswered_group_card": card.name})
         return True
 
     async def use_nanman(self, player, card: Card, *, effect_context=None):
@@ -1433,29 +1451,23 @@ class CardSystem:
             context={"source": player, "target": victim, "card": card},
         )
         response = result.get("card") if result and result.get("bool") else None
-        response_owner = (result.get("owner") or weapon_owner) if response else None
-        if response and response_owner and response in response_owner.hand:
-            response_index = response_owner.hand.index(response)
-            response_owner.hand.remove(response)
-            self.game_state.discard_pile.append(response)
-            await self.notify_card_to_discard(
-                response_owner, response, "respond", response_index,
-                f"{response_owner.name}打出【杀】响应借刀杀人",
-            )
-            await self.trigger_manager.on_cards_lost(response_owner, [response], "借刀杀人")
-            self._record_played(response_owner)
-            await self.trigger_manager.on_card_discarded(response_owner, response, "借刀杀人")
+        if response and await self._consume_response(
+                weapon_owner, result, "借刀杀人", {"source": player, "target": victim}):
+            slash = response if response.name == "杀" else Card(
+                f"jiedao:{response.id}", "杀", response.suit, response.rank, "basic")
             event = {
-                "name": "useCard", "card": response, "player": weapon_owner,
+                "name": "useCard", "card": slash, "player": weapon_owner,
                 "target": victim, "baseDamage": 1, "shanRequired": 1,
-                "nature": getattr(response, "nature", None),
+                "nature": slash.nature,
                 "borrowed_by": player,
             }
-            await self.trigger_manager.before_sha(weapon_owner, victim, response, event)
+            await self.trigger_manager.before_sha(weapon_owner, victim, slash, event)
             await self._sha_effect(event)
             return True
 
         if self.engine is not None:
+            if self.engine.game_aborted:
+                return False
             if await self.engine.move_card(
                 weapon, "equipment", "hand", from_owner=weapon_owner,
                 to_owner=player, reason="借刀杀人", actor_id=player.id,
@@ -1467,6 +1479,8 @@ class CardSystem:
             player.hand.append(weapon)
             await self.trigger_manager.on_cards_lost(weapon_owner, [weapon], "借刀杀人")
         await self.trigger_manager.on_card_gained(player, [weapon], "借刀杀人")
+        self.game_state.observe_tactic("borrow_weapon", weapon_owner, source=player.id,
+                                       victim=victim.id, weapon=weapon.name)
         return True
 
     async def use_shandian(self, player, card: Card):

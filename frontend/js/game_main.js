@@ -817,6 +817,10 @@
             // 候选不全在我手里（他人的牌等）→ 在操作条里列出候选牌
             opts.innerHTML = options.map((o, i) => {
                 if (o.is_pass) return '';
+                if (o.invitation) {
+                    const selected = G.picked.includes(i) ? ' picked' : '';
+                    return '<button type="button" class="opt-chip' + selected + '" data-opt="' + i + '">' + esc(o.label) + '</button>';
+                }
                 const label = r.kind === 'wuxie' ? (G.picked.includes(i) ? '已选中' : '点选此牌')
                     : (o.skill_name ? '（' + o.skill_name + '）' : (o.hidden ? '暗置手牌' : (o.detail || '')));
                 const owner = o.owner_name && o.owner_id !== G.meId ? o.owner_name + '的' : '';

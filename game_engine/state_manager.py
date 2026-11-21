@@ -133,6 +133,7 @@ class GameState:
         self.deck: List[Card] = []
         self.discard_pile: List[Card] = []
         self.card_move_events: List[CardMoveEvent] = []
+        self.tactical_observations: List[Dict] = []
         self._card_move_sequence: int = 0
         self.deck_id: str = "standard"
         self.initial_deck_count: int = 0
@@ -290,6 +291,7 @@ class GameState:
         """弃牌"""
         if card in player.hand:
             player.hand.remove(card)
+            self.note_hand_outflow(player, public_card=card)
             self.discard_pile.append(card)
 
     def move_card(
@@ -445,7 +447,36 @@ class GameState:
             sequence=self._card_move_sequence,
         )
         self.card_move_events.append(event)
+        open_zones = {"equipment", "judge", "shown", "discard"}
+        if from_zone == "hand":
+            face_visible = visibility == "public" and to_zone in open_zones
+            self.note_hand_outflow(from_owner, public_card=card if face_visible else None)
+        if (from_zone == "shown" and to_zone == "hand" and reason == "五谷丰登"
+                and visibility == "public"):
+            self.observe_tactic("public_pick", to_owner, card_name=card.name,
+                                suit=card.suit, rank=card.rank, holding="known")
         return event
+
+    def note_hand_outflow(self, owner, *, public_card=None):
+        """An anonymous outgoing card could be any known pick in this player's hand."""
+        for row in self.tactical_observations:
+            if row["kind"] != "public_pick" or row["player"] != owner.id:
+                continue
+            if not owner.get_hand_count():
+                row["holding"] = "left"
+            elif row.get("holding") == "known" and (public_card is None or (
+                    row["card_name"], row["suit"], row["rank"]) == (
+                    public_card.name, public_card.suit, public_card.rank)):
+                # Two cards can have identical printed faces. Their engine IDs are private.
+                row["holding"] = "uncertain"
+
+    def observe_tactic(self, kind, player, **public_fields):
+        """Only committed public effects belong here, never a response menu or a private refusal."""
+        self.tactical_observations.append({
+            "kind": kind, "round": self.round_number, "player": player.id,
+            "hand_count": player.get_hand_count(), "move_seq": self._card_move_sequence, **public_fields,
+        })
+        del self.tactical_observations[:-64]
 
     def card_move_event_dicts(self) -> List[Dict[str, Any]]:
         """取得按提交顺序排列、可直接 JSON 序列化的移动事件快照。"""

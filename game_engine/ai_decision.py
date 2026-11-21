@@ -54,7 +54,8 @@ def model_call_kwargs(player) -> Dict[str, Any]:
 
 from .seats import seat_of, player_of, player_label
 from .prompt_trace import capture
-from .tactical_context import goal_block, clean_plan, feedback
+from .tactical_context import RISK_GUIDANCE, goal_block, clean_plan, feedback
+from . import tactical_evidence
 from .strategy_library import select_examples, examples_prompt
 
 
@@ -478,12 +479,17 @@ class AIDecision:
         public = build_public_situation(self.engine)
         private = build_private_situation(self.engine, player)
         self.last_situation_versions[player.id] = public["state_version"]
+        history = ""
+        if tactical_evidence.history_enabled(self.engine):
+            history = (tactical_evidence.history_block(self.engine.game_state)
+                       + tactical_evidence.previous_decision(self.engine, player))
         return (
             "【引擎权威当前公开状态】\n"
             + compact_public_situation(localize_identities(public))
             + "\n【仅你可见的当前状态】\n"
             + compact_public_situation(localize_identities(private))
             + "\n若历史摘要与这里冲突，以本区块为准。"
+            + history
         )
 
     async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
@@ -497,21 +503,41 @@ class AIDecision:
 
         try:
             examples = select_examples(self.engine, player, self.rng) if len(available_actions) > 1 and player.is_ai else []
+            can_query = tactical_evidence.enabled(self.engine) and bool(tactical_evidence.slash_targets(available_actions))
+            hint = "\n" + tactical_evidence.QUERY_HINT if can_query else ""
+            initial = self.build_decision_turn_message(player, available_actions, reflection_only=bool(examples))
+            response = await self._call_with_session(player, "decision", initial + hint)
+            query = self._requested_tactic(response) if can_query else None
+            if not examples and query is None:
+                return self.parse_ai_response(response, player, available_actions)
+            content = initial if not examples else self.build_decision_turn_message(player, available_actions)
             if examples:
-                # 两个真正分开的请求：先生成自己的判断，再看示例。每次最多一次复核，不递归。
-                await self._call_with_session(
-                    player, "decision", self.build_decision_turn_message(player, available_actions, reflection_only=True))
-                content = examples_prompt(examples) + "\n" + self.build_decision_turn_message(player, available_actions)
+                content = examples_prompt(examples) + "\n" + content
                 content += "\n上一条是你在没看示例前的独立判断。现在有没有更好的做法？可维持原判断，也可修改；最终选择只执行这次的 action_index。"
-            else:
-                content = self.build_decision_turn_message(player, available_actions)
+            if query is not None:
+                answer = tactical_evidence.answer_query(self.engine, player, available_actions, query)
+                # 工具只回答模型提出的条件问题。复核时仍可押注进攻、改选目标或留牌。
+                content += "\n【假设验算】" + answer + "\n本次验算结束。请按你的身份目标权衡收益与风险，自主选定一个合法行动。"
             response = await self._call_with_session(player, "decision", content)
+            if query is not None:
+                self.last_meta.setdefault(player.id, {})["tactical_result"] = answer
             return self.parse_ai_response(response, player, available_actions)
         except Exception as exc:
             self.last_failure[player.id] = _failure_label(exc)
             self.last_reasoning[player.id] = ""
             logger.warning("  ⚠️ AI调用失败，切换规则AI: %s", type(exc).__name__)
             return self.simple_ai_decision(player, available_actions)
+
+    @staticmethod
+    def _requested_tactic(response):
+        match = re.search(r"\{.*\}", response, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0) if match else response)
+        except ValueError:
+            return None
+        if isinstance(payload, dict) and "action_index" not in payload:
+            return payload.get("tactical_query")
+        return None
 
     def _custom_worldbook_text(self, player) -> str:
         """自定义世界书按关键词命中，内容随手牌/阶段变化，因此归 L2 而不进前缀。"""
@@ -567,20 +593,21 @@ class AIDecision:
         if reflection_only:
             output.pop("target_ids")
             output.pop("action_index")
+        evidence = "" if reflection_only else tactical_evidence.decision_block(self.engine, player, available_actions)
         json_example = json.dumps(output, ensure_ascii=False)
         choice_instruction = ("【独立判断阶段】先只写自己的局势判断、笔记与打算，稍后再给老玩家示例；本次不选择操作。"
                               if reflection_only else "按下列字段顺序输出JSON，先想后选，action_index 放最后，target_ids 填合法目标的座位号：")
         return f"""{situation}
 
 当前局势：第{self.engine.game_state.round_number}轮，你的体力为{player.hp}/{player.max_hp}。
-{goal_block(player)}{ledger_block}{self._build_evidence_block()}{chat_block}{notes_block}{self._build_plan_block(player)}{feedback(self.engine, player)}
+{goal_block(player)}{ledger_block}{self._build_evidence_block()}{chat_block}{notes_block}{self._build_plan_block(player)}{feedback(self.engine, player)}{evidence}
 合法操作列表（索引从0开始）：
 {chr(10).join(action_lines)}
 
 谁最可能是你的敌人？证据是什么？如果你是主公会怀疑谁？这一步别人会怎样解读？
 {choice_instruction}
 {json_example}
-把推理用于比较行动，并说明为什么采取这一打法。{notes_rule}"""
+{RISK_GUIDANCE if len(available_actions) > 1 else "简述选择理由。"}{notes_rule}"""
 
     def _build_plan_block(self, player) -> str:
         plan = self.plans.get(player.id) if getattr(player, "is_ai", False) else None
@@ -954,12 +981,13 @@ class AIDecision:
         if "card_source" in context and context["card_source"] is None:
             parts.append("锦囊原始来源：引擎未记录")
         for key, title in (("card_source", "锦囊原始来源"), ("source", "当前来源"),
-                           ("target", "目标"), ("dying", "濒死者")):
+                           ("target", "目标"), ("dying", "濒死者"), ("judged_player", "判定角色")):
             if context.get(key) is not None:
                 parts.append(title + "：" + label(context[key]))
         if context.get("targets"):
             parts.append("目标：" + "、".join(label(p) for p in context["targets"]))
-        for key in ("card_name", "layer", "reason", "intent", "skill_name", "amount", "nature", "pool_slots"):
+        for key in ("card_name", "layer", "reason", "intent", "skill_name", "amount", "nature", "pool_slots",
+                    "judge_type", "judge_suit", "judge_rank"):
             value = context.get(key)
             if value is not None and isinstance(value, (str, int, float, bool, list)):
                 parts.append(f"{key}：{value}")
@@ -994,6 +1022,7 @@ class AIDecision:
 候选列表（索引从0开始，最后一项是放弃响应）：
 {chr(10).join(option_lines)}
 
+{RISK_GUIDANCE if len(options) > 1 else ""}
 只返回JSON：
 {{"reasoning": "身份立场、响应收益与代价", "option_index": 0}}"""
 
@@ -1060,7 +1089,9 @@ class AIDecision:
 
     @staticmethod
     def _judgement_good(judge_type, suit, rank):
-        """Only the three delayed cards have a stable rule-AI replacement policy."""
+        """Whether the current result benefits the judged player."""
+        if judge_type == "洛神":
+            return suit in ("spade", "club")
         if judge_type == "乐不思蜀":
             return suit == "heart"
         if judge_type == "兵粮寸断":
@@ -1164,6 +1195,12 @@ class AIDecision:
             default = bool(request.get("default", False))
             skill_name = request.get("skill_name")
             context = request.get("context") or {}
+            if skill_strategy and context.get("lord_request") and skill_name in {"激将", "护驾"}:
+                # The provider may decline even with a suitable card, using its own allegiance.
+                target = context.get("target") or {}
+                target_id = target.get("id") if isinstance(target, dict) else getattr(target, "id", None)
+                help_lord = player.identity == "loyalist" and (skill_name == "护驾" or target_id != player.id)
+                return [0] if help_lord else [1]
             if skill_strategy and skill_name in {
                     "闭月", "奸雄", "天妒", "遗计", "集智"}:
                 # 这些技能没有资源成本；遗计的分配仍由后续选择单独决策。

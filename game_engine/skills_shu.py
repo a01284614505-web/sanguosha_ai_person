@@ -45,10 +45,9 @@ class ShuSkillHandler(FactionSkillHandler):
 
         # 激将：主公向其他蜀势力角色征用一张杀。
         if self.has(player, "激将") and player.identity == "lord":
-            donors = [p for p in alive_others(self.state, player) if hero_faction(p) == "shu"
-                      and any(card.name == "杀" for card, _index, _zone in self.response_card_entries(p))]
             targets = self._sha_targets(player)
-            if donors and targets and player.sha_count < player.max_sha:
+            unlimited = getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
+            if targets and (unlimited or player.sha_count < player.max_sha):
                 actions.append(self._action("激将", "borrow_sha", [], targets, True, "令蜀势力角色打出【杀】"))
 
         # 武圣：红色牌当杀；方片无距离限制。
@@ -128,33 +127,16 @@ class ShuSkillHandler(FactionSkillHandler):
         if name == "激将" and variant == "borrow_sha":
             if not target:
                 return False
-            donor_entry = None
-            for donor in alive_others(self.state, player):
-                if hero_faction(donor) != "shu":
-                    continue
-                options = [(card, zone) for card, _index, zone in self.response_card_entries(donor)
-                           if card.name == "杀"]
-                if not options:
-                    continue
-                if not await self.manager.ask_confirm(
-                    donor, f"是否响应{player.name}的【激将】，打出一张【杀】？",
-                    skill_name="激将", default=False,
-                ) or self.engine.game_aborted:
-                    continue
-                cards = await self.manager.ask_choose_cards(
-                    donor, "请选择交给【激将】的一张【杀】", [item[0] for item in options],
-                    skill_name="激将", cancelable=True,
-                    places=[(donor, zone) for _card, zone in options],
-                )
-                if cards and not self.engine.game_aborted:
-                    card = cards[0]
-                    source_zone = next(zone for candidate, zone in options if candidate is card)
-                    donor_entry = (donor, card, source_zone)
-                    break
-            if donor_entry is None:
+            offer = await self.manager.request_lord_card(player, "激将", context={"source": player, "target": target})
+            if self.engine.game_aborted:
                 return False
-            donor, card, source_zone = donor_entry
-            virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic")
+            if offer is None:
+                player.flags["jijiang_unanswered"] = True
+                await self.engine.card_system._notify_gain(f"{player.name}发动【激将】，无人供杀")
+                return True
+            donor, card, source_zone = offer["owner"], offer["card"], offer["source_zone"]
+            virtual = Card(f"skill_jijiang_sha_{player.id}", "杀", card.suit, card.rank, "basic",
+                           nature=card.nature if card.name == "杀" else None)
             context = self.engine._new_effect_context(
                 player, virtual, skill_source="激将", card_cost_ids=[card.id], target=target,
             )
@@ -292,6 +274,7 @@ class ShuSkillHandler(FactionSkillHandler):
         flags = ensure_flags(player)
         flags.pop("guanxing_bottomed", None)
         flags.pop("rende_targets", None)
+        flags.pop("jijiang_unanswered", None)
         flags.pop("rende_count", None)
         flags.pop("rende_basic_available", None)
         flags.pop("rende_basic_used", None)
@@ -473,14 +456,8 @@ class ShuSkillHandler(FactionSkillHandler):
                     if card.name == "闪":
                         options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "龙胆", "owner": player, "source_zone": zone})
             if self.has(player, "激将") and player.identity == "lord":
-                for donor in alive_others(self.state, player):
-                    if hero_faction(donor) != "shu":
-                        continue
-                    candidate = next(((card, index, zone) for card, index, zone in self.response_card_entries(donor)
-                                      if card.name == "杀"), None)
-                    if candidate:
-                        card, index, zone = candidate
-                        options.append({"card": card, "card_index": index, "as_name": "杀", "skill_name": "激将", "owner": donor, "source_zone": zone})
+                options.append({"invitation": True, "as_name": "杀", "skill_name": "激将",
+                                "label": "发动【激将】，询问蜀势力角色是否提供【杀】"})
         if requested_name == "桃" and self.has(player, "龙胆"):
             for card, index, zone in self.response_card_entries(player):
                 if card.name == "酒":
@@ -490,38 +467,6 @@ class ShuSkillHandler(FactionSkillHandler):
                 if card.name == "桃":
                     options.append({"card": card, "card_index": index, "as_name": "酒", "skill_name": "龙胆", "owner": player, "source_zone": zone})
         return options
-
-    async def request_jijiang_response(self, lord, first_donor):
-        """主公提出激将后，由蜀势力角色逐个自行决定是否供牌。"""
-        if not self.has(lord, "激将") or lord.identity != "lord":
-            return None
-        donors = [p for p in alive_others(self.state, lord) if hero_faction(p) == "shu"]
-        if first_donor in donors:
-            donors = donors[donors.index(first_donor):] + donors[:donors.index(first_donor)]
-        for donor in donors:
-            entries = [(card, zone) for card, _index, zone in self.response_card_entries(donor)
-                       if card.name == "杀"]
-            if not entries:
-                continue
-            if not await self.manager.ask_confirm(
-                donor, f"是否响应{lord.name}的【激将】打出【杀】？",
-                skill_name="激将", default=False,
-            ) or self.engine.game_aborted:
-                continue
-            selected = await self.manager.ask_choose_cards(
-                donor, "【激将】：选择打出的一张【杀】", [card for card, _zone in entries],
-                places=[(donor, zone) for _card, zone in entries],
-                skill_name="激将", cancelable=True,
-            )
-            if self.engine.game_aborted:
-                return None
-            if selected:
-                card = selected[0]
-                zone = next((source_zone for candidate, source_zone in entries if candidate is card), None)
-                if zone is not None:
-                    return {"bool": True, "card": card, "owner": donor,
-                            "source_zone": zone, "as_name": "杀", "skill_name": "激将"}
-        return None
 
     async def on_card_responded(self, player, card, as_name, context=None):
         owner = (context or {}).get("owner")

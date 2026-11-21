@@ -113,6 +113,7 @@ def dump_engine(engine) -> Dict[str, Any]:
             "winner": state.winner, "last_damage_source": state.last_damage_source,
             "card_move_sequence": state._card_move_sequence,
             "card_move_events": [event.to_dict() for event in state.card_move_events],
+            "tactical_observations": list(state.tactical_observations),
         },
         "engine": _encode({
             "completed_turns": engine.completed_turns, "request_seq": engine._request_seq,
@@ -203,6 +204,7 @@ def restore_engine(payload: Dict[str, Any], engine_class):
     state.last_damage_source = {int(k): v for k, v in raw_state["last_damage_source"].items()}
     state._card_move_sequence = int(raw_state["card_move_sequence"])
     state.card_move_events = [CardMoveEvent(**row) for row in raw_state["card_move_events"]]
+    state.tactical_observations = list(raw_state.get("tactical_observations", []))[-64:]
     state.game_config = config
     if config.get("hero_draft") == "standard":
         # 正式选将的局：新建引擎时武将为空，技能没登记；存档只在选将结束后写，
