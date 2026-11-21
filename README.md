@@ -1,111 +1,74 @@
-# AI三国杀酒馆
+# 三国杀酒馆
 
-一个自托管的三国杀游戏服务器：用浏览器打开即玩，AI 对手由你自己的 API Key 驱动（8 家 Provider 可选），没有 Key 时自动回退规则 AI。
+**一个人也能开桌，和 AI 一起打三国杀。**
 
-## 项目状态
+熟悉的身份局、熟悉的武将和卡牌，外加一桌会出牌、会救人、会互相猜身份的 AI 对手。你可以试着当主公稳住局面，也可以藏好身份等反贼和忠臣先打起来——这局谁是队友，得看他们怎么出牌。
 
-当前整合分支正在完成 Stage 8 后续 A–F 计划；已实现范围、证据和剩余项见 [最新台账](logs/reports/20261020_remaining_work_ledger.md)。真实模型接口及 Windows/Android 实机验收另行进行。
+这是一个在自己电脑或服务器上运行的浏览器游戏。打开大厅、选好牌堆和武将池就能开局；不需要注册账号，也不需要装桌面客户端。想让 AI 用语言模型思考，可以填入自己使用的模型服务和 API Key；不配置时，游戏会使用内置规则 AI。模型 API 费用由你所使用的服务商决定。
 
-- ✅ 引擎与规则：5 人身份局完整流程；27 将 / 54 技能；标准牌堆 108 张 / 军争 53 张 / 合并 161 张可切换
-- ✅ 真人交互：弃牌阶段自己选；过河拆桥 / 顺手牵羊 / 五谷丰登由你选牌（他人手牌隐藏、装备与判定区明牌，被拆的牌明牌展示）
-- ✅ 真实结算统计：伤害 / 承伤 / 治疗 / 击杀 / 出牌 / 失牌 / 技能发动 + MVP，随结算页展示
-- ✅ WebSocket 协议单一真相源（`protocol.py` 生成前端 `protocol.js`）
-- ✅ 自定义武将包导入、启禁、将池与世界书生成；技能 DSL 有 active/partial/data_only 门控
-- ✅ DSL 沙箱与 5 项 Python 等价测试；33/54 项可表达声明见 [覆盖清单](data/skill_dsl_coverage.json)
-- ⏳ 武器 / 防具特效、服务端战绩持久化 —— 见 [ROADMAP.md](ROADMAP.md)
+## 一局里有什么
 
-## 快速开始
+- **五人身份局，熟悉的尔虞我诈。** 主公、忠臣、反贼、内奸各有胜利目标；身份隐藏时，谁替谁挡无懈、谁给谁递牌，都可能让你重新判断局势。
+- **27 名武将，技能让每局手感不同。** 选将不是摆设：技能会进入实际对局流程。正式选将模式下，主公先亮将，其他人再从候选武将中选择；也保留自由选将设置。
+- **牌堆可以换口味。** 可选标准 108 张、军争 53 张，或合并后的 161 张牌堆。拆牌、顺手牵羊、五谷选牌等操作由玩家亲自决定；他人手牌仍然隐藏。
+- **AI 会聊天，也会留下桌面线索。** 开局可开关席间聊天、调整热闹程度；对局中可查看战报、AI 的出牌理由和公开行为。它可能猜错身份，桌面上发生的事才是你判断的依据。
+- **不只会照着概率表出牌。** 最新战术算法让模型在出杀前按公开信息估计目标可能持有的闪、桃等资源，并比较进攻、治疗或留牌的代价。它看不到对手的暗牌：五谷取走的牌若仍能从公开记录追踪，就按已知信息处理；暗牌变化后则只能重新估计。模型也可以不验算、直接行动。
+- **每局有自己的收尾。** 结算页记录身份胜负、MVP 和伤害、治疗、击杀等数据；战绩、连胜与身份卡可以在大厅查看。
 
-> 常用命令（安装、启动、更新、停止、排错）都整理在 **[COMMANDS.md](COMMANDS.md)**，可直接复制粘贴。
+> **算法在做什么？** 比如华佗手里只剩一张关键红牌：是留着救主公，还是赌一刀先拿下对手？新算法会把公开拿过的牌、此前没挡住的万箭、可能的救援，以及赌赢赌输的后果放到同一张桌面上。它提供的是有前提的估计，不是透视，也不替玩家保证胜率。华佗、吕布、郭嘉等典型两难已有可离线重放的残局，见 [战术验算说明](TACTICAL_EVIDENCE.md)。
 
-### Windows（开发）
+## 开始玩
 
-```powershell
-pip install -r requirements.txt
-powershell -ExecutionPolicy Bypass -File start_windows.ps1              # 前台
-powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Background # 后台
-powershell -ExecutionPolicy Bypass -File start_windows.ps1 -Action stop
-```
+游戏服务运行在电脑、Linux 服务器或 Android Termux 上；玩家用同一设备的浏览器，或能访问该服务器的浏览器进入大厅。
 
-### 通用（Termux / Linux）
+### Linux / Android Termux
 
 ```bash
 pip install -r requirements.txt
-./start.sh --check  # 仅核对依赖，不启动服务
 ./start.sh
 ```
 
-浏览器打开 `http://localhost:8888`（HTTP 8888 提供页面，WebSocket 8889 负责对局）。
-在大厅配置玩家名与各座位 AI（Provider / 模型 / API 地址 / Key；Key 留空的座位使用规则 AI）。
+### Windows
 
-## 项目结构
-
-```text
-sanguosha_data/
-├── game_server.py          # 服务器：HTTP 静态服务 + WebSocket 消息泵（不含规则）
-├── game_engine/            # 引擎（唯一规则来源）
-│   ├── main_engine.py      # 对局主循环、交互原语与选择复核
-│   ├── phase_controller.py # 回合六阶段
-│   ├── card_system.py      # 卡牌效果
-│   ├── card_table.py       # 42 种牌单一牌表
-│   ├── rules_engine.py     # 规则校验与合法操作
-│   ├── skill_manager.py    # 技能统一调度及 active DSL 接线
-│   ├── skill_dsl.py        # 受限 JSON DSL 编译与运行
-│   ├── hero_package_store.py # 导入包、校验、备份与恢复
-│   ├── skills_{wei,shu,wu,qun}.py
-│   ├── state_manager.py    # 状态管理与序列化
-│   ├── identity_system.py  # 身份分配与胜负
-│   ├── deck_manager.py     # 牌堆加载与切换
-│   ├── game_stats.py       # 真实对局统计（7 项指标 + MVP）
-│   ├── ai_decision.py      # 多 Provider 决策与会话缓存
-│   └── protocol.py         # 协议单一真相源（生成前端 protocol.js）
-├── frontend/               # 原生 HTML/CSS/JS（纯 UI）
-│   ├── index.html          # 大厅
-│   ├── select_hero.html    # 选将
-│   ├── game.html           # 对局
-│   ├── result.html         # 结算（真实统计 + MVP）
-│   ├── settings.html       # 设置（牌堆切换、全局设置、数据状态）
-│   ├── hero_manager.html   # 武将包导入、编辑、启用与禁用
-│   ├── handbook.html       # 图鉴（42 种卡牌说明 + 27 将技能）
-│   ├── js/                 # protocol.js(生成) / ws_client.js / sgs_common.js / card_info.js /
-│   │                       # lobby.js / select_hero.js / game_main.js /
-│   │                       # chat_panel.js(席间聊天+战报) / result.js / settings_page.js
-│   └── css/                # sgs.css(公共主题) / pages.css / game.css（main.css 仅 hero_manager 使用）
-├── data/                   # heroes.json / skills.json / deck_*.json 与本机导入包
-├── scripts/                # gen_protocol_js.py / check_frontend_js.py / manual/ 冒烟
-├── tests/                  # pytest 回归与 Stage 8 专项
-├── logs/                   # CHRONICLE 编年史 / handover 交接 / runtime 日志 / reports 报告
-└── worldbook*, wujiang/    # 世界书与原始数据（供 AI 理解，不参与规则执行）
+```powershell
+pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File start_windows.ps1
 ```
 
-## 测试与验收
+启动后在浏览器打开：`http://localhost:8888`。如果游戏运行在另一台机器上，把 `localhost` 换成那台机器可访问的地址，并按自己的网络环境配置访问方式。
+
+进入大厅后填写称呼，选择牌堆和武将池，再开始游戏。想使用语言模型时，为对应 AI 座位填写服务商、模型、API 地址和 Key；没有 Key 的座位会使用规则 AI。**Key 是你自己的服务凭据，请只填入自己信任的服务。**
+
+更多安装、更新、停止和故障排查命令见 **[COMMANDS.md](COMMANDS.md)**。
+
+## 玩法小贴士
+
+- 想专心推演身份，就关掉席间聊天；想让牌桌热闹一点，可以调高聊天程度。聊天由模型生成，开启后可能增加模型调用与费用。
+- 不想自己每一步操作时，可以开启托管；离开后也可以让托管继续打，回来再接回对局。
+- 想复盘这一桌谁打过什么牌，打开战报；身份判断和 AI 理由是线索，不是裁判答案。
+- 大厅还提供图鉴、历史战绩和武将包管理。自定义武将包可导入、启用或禁用；具体技能能否完整执行取决于项目当前支持范围。
+
+## 现在的项目状态
+
+当前主打的是**单人对 AI 的五人身份局**。代码库中还包含 8 人身份局、2v2、斗地主等模式规则定义，但不要据此理解为它们都已经在大厅中作为成熟玩法开放。AI 聊天、外部模型服务、手机实机表现也会受你配置的模型、网络和设备影响。
+
+战术验算与残局回放已在开发分支更新，并可查看代码和测试；**真实模型对战胜率尚无结论**，离线残局通过不等于模型一定更强。该功能的当前进度见 [PR #39](https://github.com/a01284614505-web/sanguosha_ai_person/pull/39)。
+
+## 给想了解项目的人
+
+玩家可以先启动游戏体验。项目使用 Python、原生 HTML/CSS/JavaScript 与 WebSocket；AI 模型配置、安装测试和架构说明放在下面这些文档里，避免挡住玩家先开一局。
+
+- [常用命令](COMMANDS.md)
+- [战术验算与残局重放](TACTICAL_EVIDENCE.md)
+- [项目架构](ARCHITECTURE.md)
+- [开发路线图](ROADMAP.md)
+
+### 开发测试
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python scripts/verify_project.py  # pytest、前端 JS、协议同步、两项 WS 冒烟
+.venv/bin/python scripts/verify_project.py
 ```
 
-## 架构与约定
-
-- **引擎自驱**：回合推进与结算全在引擎；服务器只转发消息；前端只渲染与采集输入。详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
-- **服务端复核一切**：真人只从引擎下发的合法候选中选择，提交的数量、牌区、重复、过期与收摊状态都会被引擎复核，非法输入不落地。
-- **隐藏信息不越界**：他人手牌只下发占位，AI 决策不按牌面值评估隐藏手牌。
-- **统计在真实状态变化点记录**：口径见 `game_engine/game_stats.py`，不在 UI 层计算。
-- **自定义技能声明**：受限结构、效果白名单和限制说明见 [SKILL_DSL.md](SKILL_DSL.md)。33 项覆盖清单证明可编译表达性，5 项 parity 测试单独验证与 Python 行为等价；二者口径不同。
-
-## 相关文档
-
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 架构与当前功能边界
-- [ROADMAP.md](ROADMAP.md) — 开发路线图与下一步
-- [logs/CHRONICLE.md](logs/CHRONICLE.md) — 编年史与交接索引
-
-## 技术栈
-
-- **后端**：Python 3.12 + `websockets`（HTTP 静态服务使用标准库）+ `httpx`（AI 调用）
-- **前端**：原生 HTML / CSS / JavaScript，零框架
-- **部署**：Windows / Linux / Android Termux
-
-## 许可
-
-项目用于个人学习和娱乐。
+本项目用于个人学习和娱乐。三国杀相关角色、卡牌与规则属于其各自权利人；图片等素材的授权范围请以素材来源及项目中的说明为准。
