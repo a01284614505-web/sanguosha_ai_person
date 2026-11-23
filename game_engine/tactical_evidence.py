@@ -366,14 +366,14 @@ def _live_query(engine, viewer, target, query):
     dodge = lambda f: f.name == "闪" or (qingguo and f.suit in BLACK) or (longdan and f.name == "杀")
     no_dodge, neither, helper_chance = view.hand_branch(target.id, dodge, helper.id if helper else None)
     label = "近似估计" if view.degraded else "等权条件估计"
-    parts = [f"牌账v{state.card_knowledge.version}（{label}）：{query['target_seat']}号手里至少一张可作闪牌{1-no_dodge:.1%}，"
-             f"既无可作闪牌又无印刷桃酒{neither:.1%}。"]
+    parts = [f"牌账v{state.card_knowledge.version}（{label}）：{query['target_seat']}号手里至少一张可作闪牌{card_knowledge.pct(1-no_dodge, 1)}，"
+             f"既无可作闪牌又无印刷桃酒{card_knowledge.pct(neither, 1)}。"]
     if has(viewer, "无双"):
         rows = view.summary.get(target.id, ((1.0,),) * 8)
         dist = rows[7 if qingguo and longdan else 5 if qingguo else 6 if longdan else 1]
-        parts.append(f"若本次要求两闪，手牌够两张{sum(dist[2:]):.1%}。")
+        parts.append(f"若本次要求两闪，手牌够两张{card_knowledge.pct(1-sum(dist[:2]), 1)}。")
     if helper_chance is not None:
-        parts.append(f"仅在两者皆无的分支，{query['helper_seat']}号至少持一张印刷桃{helper_chance:.1%}。")
+        parts.append(f"仅在两者皆无的分支，{query['helper_seat']}号至少持一张印刷桃{card_knowledge.pct(helper_chance, 1)}。")
     if "decline_pct" in query:
         pct = query["decline_pct"]
         if type(pct) is not int or not 0 <= pct <= 100:

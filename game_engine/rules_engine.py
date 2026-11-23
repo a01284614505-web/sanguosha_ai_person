@@ -7,6 +7,7 @@ import logging
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
+from . import peixiu
 from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET
 
 
@@ -56,7 +57,8 @@ class RulesEngine:
         """检查是否可以出杀"""
         # 1. 检查出杀次数
         # 连弩仅放宽当前装备者的出杀次数；卸下后立即回到原限额。
-        unlimited = getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
+        unlimited = (getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
+                     or peixiu.xingtu(player, card)[1])
         if not unlimited and player.sha_count >= player.max_sha:
             return False, f"本回合已使用{player.sha_count}次杀"
         
@@ -108,7 +110,7 @@ class RulesEngine:
 
     def can_play_jiu(self, player, card) -> Tuple[bool, str]:
         """出牌阶段的酒限一次，避免先弃实体牌后结算失败。"""
-        if getattr(player, "jiu_used_this_turn", False):
+        if getattr(player, "jiu_used_this_turn", False) and not peixiu.xingtu(player, card)[1]:
             return False, "本回合已经使用过酒"
         return True, "OK"
 

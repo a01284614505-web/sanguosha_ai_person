@@ -45,6 +45,7 @@ class EffectContext:
     pending_events: Optional[List[Any]] = None
     abort_reason: Optional[str] = None
     status: str = "active"
+    ignore_use_quota: bool = False
 
     def __post_init__(self):
         self.card_cost_ids = list(self.card_cost_ids or [])

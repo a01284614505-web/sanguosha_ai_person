@@ -37,7 +37,7 @@ from .mode_registry import get_mode, identity_name, supported_modes
 
 
 logger = logging.getLogger(__name__)
-from . import hero_draft
+from . import hero_draft, peixiu
 from .hero_registry import HeroRegistry
 from .protocol import ENGINE_EVENT, PROVIDERS
 
@@ -2594,6 +2594,14 @@ class MainEngine:
                                     "text": "将两张手牌当【杀】使用"})
         # 只有运行状态为active且满足当前条件的技能才作为合法操作暴露。
         actions.extend(self.skill_manager.get_actions(player))
+        preview = peixiu.action(player) if self.game_config.get("peixiu_enabled") is True else None
+        if preview is not None:
+            actions.append(preview)
+        if peixiu.active(player):
+            for a in actions:
+                if a.get("type") == "play_card":
+                    draw, free = peixiu.xingtu(player, playable_cards[a["card_index"]])
+                    a["xingtu"] = [label for applies, label in ((draw, "摸一张"), (free, "不计次数")) if applies]
         actions.append({"type": "end_phase"})
         return actions
 
@@ -2708,6 +2716,8 @@ class MainEngine:
                 if legal.get("skill_name") == "丈八蛇矛" and legal.get("variant") == "as_sha":
                     return await self.card_system.use_zhangba(player, legal["card_indices"],
                                                               targets[0] if targets else None)
+                if legal.get("skill_name") == "爵制" and legal.get("variant") == "peixiu_preview":
+                    return await peixiu.execute(self, player)
                 return await self.skill_manager.execute(player, legal, targets)
 
             if action_type == "end_phase":

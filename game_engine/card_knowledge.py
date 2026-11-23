@@ -249,6 +249,12 @@ class CardKnowledge:
         for view in self.views.values():
             view.reveal(zone, face)
 
+    def selective_search(self):
+        # The search is rank-conditioned, not an anonymous top draw.
+        self.version += 1
+        for view in self.views.values():
+            view.degraded = True
+
     def reordered(self):
         self.version += 1
         for view in self.views.values():
@@ -328,6 +334,16 @@ def live_enabled(engine):
     return (engine.game_config.get('ai_ablation') or {}).get('live_card_knowledge', True) is not False
 
 
+def pct(probability, digits=0):
+    """Do not display a rounded estimate as a logical impossibility or certainty."""
+    step = 10 ** -digits
+    if 0 < probability < step / 200:
+        return f'<{step:g}%'
+    if 1 - step / 200 < probability < 1:
+        return f'>{100 - step:g}%'
+    return f'{min(1, max(0, probability)):.{digits}%}'
+
+
 def _face_label(f):
     suit = {'spade': '♠', 'club': '♣', 'heart': '♥', 'diamond': '♦'}.get(f.suit, f.suit)
     rank = {1: 'A', 11: 'J', 12: 'Q', 13: 'K'}.get(f.rank, f.rank)
@@ -350,15 +366,15 @@ def prompt_block(engine, viewer):
         if p.id == viewer.id or not p.alive:
             continue
         stats = view.summary.get(p.id, ((1.0,),) * 8)
-        text = f'{seat_of(state, p.id)}号 {view.capacity((p.id, "hand"))}张：' + '/'.join(f'{(1-d[0]):.0%}' for d in stats[:5])
+        text = f'{seat_of(state, p.id)}号 {view.capacity((p.id, "hand"))}张：' + '/'.join(pct(1-d[0]) for d in stats[:5])
         q, l = has(p, '倾国'), has(p, '龙胆')
         if q or l:
             d = stats[7 if q and l else 5 if q else 6]
-            text += f'；可作闪{1-d[0]:.0%}'
+            text += f'；可作闪{pct(1-d[0])}'
         else:
             d = stats[1]
         if has(viewer, '无双'):
-            text += f'；两闪{sum(d[2:]):.0%}'
+            text += f'；两闪{pct(1-sum(d[:2]))}'
         if p.flags.get('cannot_use_hand'):
             text += '；当前封手'
         faces = view.fixed.get((p.id, 'hand'), {})
@@ -367,7 +383,7 @@ def prompt_block(engine, viewer):
                      for f, n in sorted(faces.items(), key=lambda row: repr(row[0]))]
             text += '；明持' + '、'.join(known[:3]) + ('等' if len(known) > 3 else '')
         rows.append(text)
-    judge = ('下一判（八卦红/乐红桃/兵梅花/闪电中）' + '/'.join(f'{p:.0%}' for p in view.judges)
+    judge = ('下一判（八卦红/乐红桃/兵梅花/闪电中）' + '/'.join(pct(p) for p in view.judges)
              if view.judges is not None else '下一判暂不可用')
     label = '近似估计（部分约束已降级）' if view.degraded else '等权条件估计'
     return (f'\n【实时牌账 v{state.card_knowledge.version}｜{label}】他席手牌至少一张（{labels}）：\n'

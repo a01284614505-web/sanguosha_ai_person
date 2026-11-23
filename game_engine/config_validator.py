@@ -29,7 +29,7 @@ def normalize_ai(raw_ai, use_default=True):
 SERVER_ONLY_KEYS = (
     "idle_abort_seconds", "idle_check_interval", "max_turns",
     "human_action_timeout", "response_timeout", "phase_delay", "turn_delay",
-    "session_max_l2", "session_max_chars", "session_variable_max_chars",
+    "session_max_l2", "session_max_chars", "session_variable_max_chars", "peixiu_enabled",
 )
 
 
@@ -69,6 +69,12 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
     if hero_draft == "standard" and not supports_hero_draft(mode.mode_id):
         raise ValueError(f"{mode.mode_id}暂不支持正式选将，请使用自由选将")
     cfg["hero_draft"] = hero_draft
+    from .peixiu import HERO as PREVIEW_HERO
+    def canonical(candidate, seat, excluded=None):
+        hero_id = candidate.get("id") if isinstance(candidate, dict) else candidate
+        if cfg.get("peixiu_enabled") is True and hero_id == PREVIEW_HERO["id"]:
+            return copy.deepcopy(PREVIEW_HERO)
+        return heroes.canonical_hero(candidate, seat, excluded)
     selected_hero = cfg.get("selected_hero") or {}
     player_cfg = cfg.get("player") or {}
     player_cfg.setdefault("name", cfg.get("player_name", "玩家"))
@@ -78,7 +84,7 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
         player_cfg.pop("hero", None)
         cfg.pop("selected_hero", None)
     else:
-        player_cfg["hero"] = heroes.canonical_hero(
+        player_cfg["hero"] = canonical(
             player_cfg.get("hero") or selected_hero, 0
         )
     if player_cfg.get("is_ai") and not player_cfg.get("ai_config"):
@@ -91,7 +97,7 @@ def normalize_config(raw_config, project_root=None, hero_registry=None):
         if hero_draft == "standard":
             ai.pop("hero", None)
         else:
-            ai["hero"] = heroes.canonical_hero(ai.get("hero"), index, used_hero_ids)
+            ai["hero"] = canonical(ai.get("hero"), index, used_hero_ids)
             used_hero_ids.add(ai.get("hero", {}).get("id"))
         normalized_ais.append(ai)
     cfg["ais"] = normalized_ais

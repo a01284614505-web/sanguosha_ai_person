@@ -7,7 +7,7 @@ import asyncio
 import logging
 from typing import List, Callable
 
-from . import card_flow
+from . import card_flow, peixiu
 from .card_table import CARD_TABLE, NO_EXTERNAL_TARGET, card_label, damage_text
 from .game_stats import mark_damage_source, pop_kill_credit, record_stat
 from .state_manager import Card, card_to_dict
@@ -224,11 +224,21 @@ class CardSystem:
         if self.engine is not None and self.engine.game_aborted:
             return False
         spec = CARD_TABLE.get(card.name)
+        draw_xingtu = False
+        if self.engine is not None and peixiu.active(player) and spec and spec.usage != "response":
+            if effect_context is None:
+                effect_context = self.engine._new_effect_context(player, card)
+            draw_xingtu = peixiu.commit_use(player, card, effect_context=effect_context)
         entries = self._ledger_record_card(player, card, spec, targets)
         success = await self._use_card_resolve(player, card, targets, spec, effect_context)
         if not success and entries:
             # 出牌失败时牌会退回手牌，不能留下一条没发生的行为。
             self.engine.ledger.remove(entries)
+        # Preview defers the draw until the card has resolved so a pending equipment/
+        # delay card cannot be shuffled away from the resolver's staging discard.
+        if (draw_xingtu and success and player.alive and not self.engine.game_aborted
+                and not self.game_state.game_over):
+            await self.trigger_manager.draw_cards(player, 1, "行图")
         return success
 
     async def _use_card_resolve(self, player, card, targets, spec, effect_context):
@@ -258,6 +268,8 @@ class CardSystem:
                     return await method(player, card, effect_context=effect_context)
                 return await method(player, card, targets[0] if targets else None,
                                     effect_context=effect_context)
+            if resolver_name == "use_jiu" and peixiu.active(player) and effect_context is not None:
+                return await method(player, card, ignore_quota=effect_context.ignore_use_quota)
             if resolver_name in ("use_tiesuo", "use_jiedao"):
                 return await method(player, card, targets if targets else [])
             # 无显式目标的牌（桃/酒/无中生有等，NO_EXTERNAL_TARGET）不传 target 参数；其余单目标。
@@ -271,6 +283,7 @@ class CardSystem:
     async def use_sha(self, player, card: Card, target, *, effect_context=None,
                       _multi_part=False, _wine_bonus=False):
         """使用杀（完整流程）"""
+        ignore_quota = bool(getattr(effect_context, "ignore_use_quota", False))
         if isinstance(target, list):
             if len(target) == 1:
                 target = target[0]
@@ -291,7 +304,8 @@ class CardSystem:
                         return False
                     await self.use_sha(player, card, victim, effect_context=effect_context,
                                        _multi_part=True, _wine_bonus=wine_bonus)
-                player.sha_count += 1
+                if not ignore_quota:
+                    player.sha_count += 1
                 return True
         if not target:
             logger.info("杀需要指定目标")
@@ -308,7 +322,7 @@ class CardSystem:
         
         # 2. 检查出杀次数
         unlimited = getattr(player.equipment.get("weapon"), "name", None) == "诸葛连弩"
-        if not _multi_part and not unlimited and player.sha_count >= player.max_sha:
+        if not _multi_part and not (unlimited or ignore_quota) and player.sha_count >= player.max_sha:
             logger.info(f"本回合已使用{player.sha_count}次杀")
             return False
         
@@ -349,7 +363,7 @@ class CardSystem:
         success = await self._sha_effect(event)
         
         # 6. 增加出杀计数
-        if success and not _multi_part:
+        if success and not _multi_part and not ignore_quota:
             player.sha_count += 1
         
         return success
@@ -1088,16 +1102,17 @@ class CardSystem:
             if self.engine is not None:
                 await self.engine.log_event(victory["message"], important=True)
 
-    async def use_jiu(self, player, card: Card):
+    async def use_jiu(self, player, card: Card, *, ignore_quota=False):
         """使用酒"""
         # 检查本回合是否已经使用过酒（非濒死情况）
-        if hasattr(player, 'jiu_used_this_turn') and player.jiu_used_this_turn:
+        if not ignore_quota and getattr(player, 'jiu_used_this_turn', False):
             logger.info("本回合已使用过酒")
             return False
         
         # 标记酒效果：下一张杀伤害+1
         player.jiu_buff = True
-        player.jiu_used_this_turn = True
+        if not ignore_quota:
+            player.jiu_used_this_turn = True
         logger.info(f"  → {player.name} 使用【酒】，下一张杀伤害+1")
         
         return True

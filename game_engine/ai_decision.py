@@ -55,7 +55,7 @@ def model_call_kwargs(player) -> Dict[str, Any]:
 from .seats import seat_of, player_of, player_label
 from .prompt_trace import capture
 from .tactical_context import RISK_GUIDANCE, goal_block, clean_plan, feedback
-from . import card_knowledge, tactical_evidence
+from . import card_knowledge, peixiu, tactical_evidence
 from .strategy_library import select_examples, examples_prompt
 
 
@@ -491,6 +491,7 @@ class AIDecision:
             + "\n若历史摘要与这里冲突，以本区块为准。"
             + history
             + card_knowledge.prompt_block(self.engine, player)
+            + peixiu.prompt_suffix(self.engine, player)
         )
 
     async def make_decision(self, player, available_actions: List[Dict]) -> Dict:
@@ -715,7 +716,12 @@ class AIDecision:
         action_type = action.get("type", "")
         if action_type == "play_card":
             card = action.get("card") or {}
-            text = f"使用手牌#{action.get('card_index')}{card_label(card, name=card.get('name', '未知'))}"
+            suit = {'spade': '♠', 'club': '♣', 'heart': '♥', 'diamond': '♦'}.get(card.get('suit'), '')
+            rank = {1: 'A', 11: 'J', 12: 'Q', 13: 'K'}.get(card.get('rank'), card.get('rank') or '')
+            text = f"使用手牌#{action.get('card_index')}{suit}{rank}{card_label(card, name=card.get('name', '未知'))}"
+            tips = action.get('xingtu') or []
+            if tips:
+                text += '（行图：' + '、'.join(tips) + '）'
             if card.get("name") == "酒":
                 text += "（只对本回合下一张【杀】生效；手里没有能出的【杀】时使用没有收益）"
             if action.get("requires_target"):
@@ -939,6 +945,10 @@ class AIDecision:
             if low_value:
                 selected = next((a for a in playable if a.get("type") == "use_skill"
                                  and a.get("skill_name") == "制衡"), None)
+            if not selected and peixiu.active(player):
+                cheap = [i for i in low_value if player.hand[i].name not in ('闪', '桃', '无懈可击')]
+                if len(cheap) >= 2 and len(player.hand) > player.hp:
+                    selected = next((a for a in playable if a.get("skill_name") == "爵制"), None)
             if not selected and low_value and player.hp >= 3:
                 selected = next((a for a in playable if a.get("type") == "use_skill"
                                  and a.get("skill_name") == "苦肉"
@@ -953,7 +963,7 @@ class AIDecision:
             # 军争重铸：没有更优先的出牌时，把铁索连环重铸成新牌（规则 AI 不会用连环做配合，持有无益）。
             selected = next((a for a in playable if a.get("type") == "recast"), None)
         if not selected and playable:
-            safe = (a for a in playable if a.get("skill_name") not in {"制衡", "苦肉"}) if skill_strategy else iter(playable)
+            safe = (a for a in playable if a.get("skill_name") not in {"制衡", "苦肉", "爵制"}) if skill_strategy else iter(playable)
             selected = next(safe, None)
         if not selected:
             selected = next((a for a in available_actions if a.get("type") == "end_phase"), available_actions[-1])
@@ -1309,6 +1319,8 @@ class AIDecision:
                 return (-score if intent in ("gain", "obtain", "benefit") else score, index)
 
             indexed = sorted(enumerate(cand_cards), key=card_rank)
+            if request.get("skill_name") == "爵制":
+                return [i for i, _ in indexed[:min_n]]
             if skill_strategy and request.get("skill_name") in {"制衡", "清俭"}:
                 # 两项均为可取消的资源选择，避免默认 max_n 导致整手高价值牌流失。
                 cheap = [i for i, card in indexed if i not in hidden and card is not None
