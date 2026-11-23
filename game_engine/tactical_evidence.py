@@ -8,6 +8,7 @@ from functools import lru_cache
 from math import comb
 from pathlib import Path
 
+from . import card_knowledge
 from .deck_manager import DeckManager
 from .seats import player_of, seat_of
 
@@ -219,7 +220,10 @@ def decision_block(engine, viewer, actions):
     state = engine.game_state
     parts = [_reserve(engine, viewer, actions)]
     targets = slash_targets(actions)
-    if targets:
+    if targets and card_knowledge.live_enabled(engine):
+        if getattr(viewer, "jiu_buff", False):
+            parts.append("你有酒的增伤，下一张杀结算时基础伤害加一。")
+    elif targets:
         pool = unknown_cards(state, viewer)
         if pool is not None:
             double_dodge = engine.skill_manager.has_skill(viewer, "无双")
@@ -263,6 +267,8 @@ def answer_query(engine, viewer, actions, query):
     target = player_of(state, query.get("target_seat"))
     if target is None or target.id not in slash_targets(actions):
         return "目标须为本次实体杀的合法目标。"
+    if card_knowledge.live_enabled(engine):
+        return _live_query(engine, viewer, target, query)
     pool = unknown_cards(state, viewer)
     if pool is None:
         return "已见实体牌与牌表不一致，无法计算。"
@@ -342,6 +348,52 @@ def answer_query(engine, viewer, actions, query):
                     parts.append("同一观察，若当时有闪必出，持可作闪牌为0%。"
                                  f"若当时总会承伤，仍为{odds.has_dodge:.1%}。")
     parts.append("各比例描述手牌；是否响应、实际伤害、能否击杀及是否值得冒险仍需判断。")
+    return "".join(parts)
+
+
+def _live_query(engine, viewer, target, query):
+    state = engine.game_state
+    view = card_knowledge.current_view(state, viewer.id)
+    if view is None:
+        return "实时牌账暂不可用，不用旧牌池替代。"
+    if query.get("keep_target_pick") or query.get("keep_pick"):
+        return "实时牌账已计入确定仍在手中的明牌；暂不对已失定位的五谷牌加设留牌假设。"
+    helper = player_of(state, query.get("helper_seat"))
+    if "helper_seat" in query and (helper is None or helper.id in {viewer.id, target.id} or not helper.alive):
+        return "假设救援者须为另一名存活角色。"
+    has = engine.skill_manager.has_skill
+    qingguo, longdan = has(target, "倾国"), has(target, "龙胆")
+    dodge = lambda f: f.name == "闪" or (qingguo and f.suit in BLACK) or (longdan and f.name == "杀")
+    no_dodge, neither, helper_chance = view.hand_branch(target.id, dodge, helper.id if helper else None)
+    label = "近似估计" if view.degraded else "等权条件估计"
+    parts = [f"牌账v{state.card_knowledge.version}（{label}）：{query['target_seat']}号手里至少一张可作闪牌{1-no_dodge:.1%}，"
+             f"既无可作闪牌又无印刷桃酒{neither:.1%}。"]
+    if has(viewer, "无双"):
+        rows = view.summary.get(target.id, ((1.0,),) * 8)
+        dist = rows[7 if qingguo and longdan else 5 if qingguo else 6 if longdan else 1]
+        parts.append(f"若本次要求两闪，手牌够两张{sum(dist[2:]):.1%}。")
+    if helper_chance is not None:
+        parts.append(f"仅在两者皆无的分支，{query['helper_seat']}号至少持一张印刷桃{helper_chance:.1%}。")
+    if "decline_pct" in query:
+        pct = query["decline_pct"]
+        if type(pct) is not int or not 0 <= pct <= 100:
+            return "decline_pct 需为0至100的整数。"
+        event = next((r for r in reversed(state.tactical_observations)
+                      if r["kind"] == "unanswered_damage" and r["player"] == target.id
+                      and r["card_name"] == "万箭齐发"), None)
+        if not event or event["hand_count"] != target.get_hand_count() or _hand_moved_since(state, target, event):
+            parts.append("缺少可比的万箭观察或已有手牌进出，本次不更新。")
+        else:
+            weight = (1 - no_dodge) * pct / 100
+            total = no_dodge + weight
+            if total:
+                parts.append(f"假设当时至今手牌和技能不变、无其他响应来源、持闪时有{pct}%不出，"
+                             f"则观察未出后，持可作闪牌{weight/total:.1%}，两者皆无{neither/total:.1%}。")
+            else:
+                parts.append("这些假设无法解释观察到的行为。")
+    parts.append("这是手牌资源，不是响应、伤害或击杀概率。")
+    if target.flags.get("cannot_use_hand"):
+        parts.append("目标当前不能使用或打出手牌。")
     return "".join(parts)
 
 

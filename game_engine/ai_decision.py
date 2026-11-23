@@ -55,7 +55,7 @@ def model_call_kwargs(player) -> Dict[str, Any]:
 from .seats import seat_of, player_of, player_label
 from .prompt_trace import capture
 from .tactical_context import RISK_GUIDANCE, goal_block, clean_plan, feedback
-from . import tactical_evidence
+from . import card_knowledge, tactical_evidence
 from .strategy_library import select_examples, examples_prompt
 
 
@@ -490,6 +490,7 @@ class AIDecision:
             + compact_public_situation(localize_identities(private))
             + "\n若历史摘要与这里冲突，以本区块为准。"
             + history
+            + card_knowledge.prompt_block(self.engine, player)
         )
 
     async def make_decision(self, player, available_actions: List[Dict]) -> Dict:

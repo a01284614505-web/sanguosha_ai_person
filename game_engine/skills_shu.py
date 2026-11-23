@@ -342,6 +342,8 @@ class ShuSkillHandler(FactionSkillHandler):
         if self.state.deck[:count] != revealed:
             return
         self.state.deck[:] = top_cards + self.state.deck[count:] + bottom
+        if self.state.card_knowledge:
+            self.state.card_knowledge.reordered()
         if self.state.current_phase == Phase.PREPARE:
             ensure_flags(player)["guanxing_bottomed"] = not top_cards
         await self.manager.announce(player, "观星", f"{player.name}发动【观星】，调整牌堆顶{count}张牌")

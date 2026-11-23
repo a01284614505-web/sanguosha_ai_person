@@ -1528,6 +1528,10 @@ class CardSystem:
         else:
             shown = target.hand[0]
         logger.info(f"  → {target.name} 亮出【{shown}】")
+        ledger = getattr(self.game_state, "card_knowledge", None)
+        if ledger and shown in target.hand:
+            from .card_odds import face_of
+            ledger.reveal((target.id, "hand"), face_of(shown))
         # 玩家选择弃置一张同花色的手牌
         same_suit = [c for c in player.hand if c.suit == shown.suit]
         if not same_suit:

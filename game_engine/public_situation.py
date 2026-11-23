@@ -41,6 +41,9 @@ def _player_public(engine, player) -> dict[str, Any]:
             {"slot": slot, "name": card.name}
             for slot, card in sorted(equipment.items())
         ],
+        "equipment_faces": [card_to_dict(card, include_id=False) for _, card in sorted(equipment.items())],
+        "judge_faces": [card_to_dict(card, include_id=False) for card in getattr(player, "judge_area", [])],
+        "shown_faces": [card_to_dict(card, include_id=False) for card in getattr(player, "shown", [])],
         "judge_area": [card.name for card in getattr(player, "judge_area", [])],
         "shown": [card.name for card in getattr(player, "shown", [])],
         "treasure_count": len(getattr(player, "treasure_cards", [])),
@@ -85,6 +88,7 @@ def build_public_situation(engine) -> dict[str, Any]:
             "by_name": counts,
             "latest": [card.name for card in discard[-12:]],
         },
+        "discard_latest_faces": [card_to_dict(card, include_id=False) for card in discard[-12:]],
         "players": player_rows,
         "distances": distances,
     }

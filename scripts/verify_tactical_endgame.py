@@ -15,6 +15,7 @@ from game_engine.state_manager import Phase
 def table(heroes):
     cfg = MainEngine.normalize_config({
         "mode": "5人身份局", "selected_hero": {"id": heroes[0]}, "deck_id": "standard",
+        "ai_ablation": {"live_card_knowledge": False},
         "ais": [{"name": hero, "hero": {"id": hero}, "api_key": "test_key"} for hero in heroes[1:]],
     })
     engine = MainEngine(cfg)
@@ -182,7 +183,7 @@ async def report(model=None, provider="deepseek", samples=1):
                 actor.ai_config.update(model=model, provider=provider, api_key=api_key, temperature=0,
                                        api_url=os.environ.get("SANGUOSHA_TACTICS_API_URL", ""))
                 engine.ai_decision.rng = random.Random(seed)
-                engine.game_config["ai_ablation"] = {"tactical_history": True, "tactical_evidence": enabled}
+                engine.game_config["ai_ablation"] = {"tactical_history": True, "tactical_evidence": enabled, "live_card_knowledge": False}
                 start = time.perf_counter()
                 choices = engine.get_available_actions(actor)
                 decision = await engine.ai_decision.make_decision(actor, choices)

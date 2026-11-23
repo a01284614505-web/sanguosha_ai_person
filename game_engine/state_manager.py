@@ -11,6 +11,10 @@ import random
 import json
 import logging
 
+from collections import Counter
+
+from .card_knowledge import apply_move, start_ledger
+from .card_odds import face_of
 from .deck_manager import DeckManager
 from .mode_registry import get_mode
 
@@ -137,6 +141,9 @@ class GameState:
         self._card_move_sequence: int = 0
         self.deck_id: str = "standard"
         self.initial_deck_count: int = 0
+        self.card_knowledge = None
+        self._initial_faces = Counter()
+        self._initial_hands_dealt = False
         
         # 正式选将：True 表示武将、体力、起手牌都还没定（run() 里分完身份后才选将）。
         self.hero_draft_pending: bool = False
@@ -247,6 +254,7 @@ class GameState:
             for raw in raw_cards
         ]
         self.initial_deck_count = len(self.deck)
+        self._initial_faces = Counter(map(face_of, self.deck))
 
     def shuffle_deck(self):
         """洗牌"""
@@ -261,15 +269,22 @@ class GameState:
             self.deck = self.discard_pile.copy()
             self.discard_pile.clear()
             self.shuffle_deck()
+            if self.card_knowledge:
+                self.card_knowledge.refill(Counter(map(face_of, self.deck)))
         return bool(self.deck)
     
     def _deal_cards(self):
         """发牌"""
+        if self._initial_hands_dealt:
+            return
+        self._initial_hands_dealt = True
         initial_hand = get_mode(self.mode).initial_hand
         for player in self.players:
             for _ in range(initial_hand):
                 if self.deck:
                     player.hand.append(self.deck.pop(0))
+        if (self.game_config.get("ai_ablation") or {}).get("live_card_knowledge", True) is not False:
+            self.card_knowledge = start_ledger(self, self._initial_faces)
     
     def deal_initial_hands(self):
         """正式选将结束后补发起手牌（自由选将在 init_game 里已经发过）。"""
@@ -281,18 +296,16 @@ class GameState:
         drawn_cards = []
         for _ in range(count):
             if self.refill_deck_if_empty():
-                card = self.deck.pop(0)
-                player.hand.append(card)
-                drawn_cards.append(card)
+                card = self.deck[0]
+                if self.move_card(card, "deck", "hand", to_owner=player, reason="draw", visibility="owner"):
+                    drawn_cards.append(card)
         
         return drawn_cards
     
     def discard_card(self, player: Player, card: Card):
         """弃牌"""
         if card in player.hand:
-            player.hand.remove(card)
-            self.note_hand_outflow(player, public_card=card)
-            self.discard_pile.append(card)
+            self.move_card(card, "hand", "discard", from_owner=player, reason="discard")
 
     def move_card(
         self,
@@ -447,6 +460,8 @@ class GameState:
             sequence=self._card_move_sequence,
         )
         self.card_move_events.append(event)
+        if self.card_knowledge:
+            apply_move(self.card_knowledge, event, card)
         open_zones = {"equipment", "judge", "shown", "discard"}
         if from_zone == "hand":
             face_visible = visibility == "public" and to_zone in open_zones

@@ -15,6 +15,7 @@ from typing import Any, Dict
 
 from .behavior_ledger import LedgerEntry
 from .skill_runtime_state import SkillStateStore
+from .card_knowledge import CardKnowledge, start_ledger
 from .state_manager import Card, CardMoveEvent, Phase, Player, PlayerStatus
 
 
@@ -114,6 +115,7 @@ def dump_engine(engine) -> Dict[str, Any]:
             "card_move_sequence": state._card_move_sequence,
             "card_move_events": [event.to_dict() for event in state.card_move_events],
             "tactical_observations": list(state.tactical_observations),
+            "card_knowledge": state.card_knowledge.dump() if state.card_knowledge else None,
         },
         "engine": _encode({
             "completed_turns": engine.completed_turns, "request_seq": engine._request_seq,
@@ -206,6 +208,19 @@ def restore_engine(payload: Dict[str, Any], engine_class):
     state.card_move_events = [CardMoveEvent(**row) for row in raw_state["card_move_events"]]
     state.tactical_observations = list(raw_state.get("tactical_observations", []))[-64:]
     state.game_config = config
+    state._initial_hands_dealt = True
+    if (config.get("ai_ablation") or {}).get("live_card_knowledge", True) is not False:
+        saved = raw_state.get("card_knowledge")
+        if isinstance(saved, dict):
+            state.card_knowledge = CardKnowledge.load(saved)
+        else:
+            state.card_knowledge = start_ledger(state, state._initial_faces, degraded=True)
+            # Old checkpoints have no record of public or privately arranged deck order.
+            for view in state.card_knowledge.views.values():
+                view.ordered_by_skill = True
+                view._update()
+    else:
+        state.card_knowledge = None
     if config.get("hero_draft") == "standard":
         # 正式选将的局：新建引擎时武将为空，技能没登记；存档只在选将结束后写，
         # 这里按存档里的武将补登记（技能状态随后由存档整体覆盖）。
