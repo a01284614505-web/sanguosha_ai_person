@@ -168,7 +168,7 @@ class WorldbookManager:
                 f"{player_label(game_state, p.id)}/{(p.hero or {}).get('name', '未知武将')}"
                 for p in sorted(game_state.players, key=lambda p: seat_of(game_state, p.id))
             )
-            sections.append(f"你是{seat_of(game_state, player.id)}号。主公为1号，座位号整局固定；target_ids 填座位号。\n开局座次：{seats}")
+            sections.append(f"你是{seat_of(game_state, player.id)}号。座位号整局固定；target_ids 填座位号。\n开局座次：{seats}")
             # 武将技能是公开信息；只知道对手技能名而不知效果，就无法判断该不该打他、怎么防他。
             others = []
             for p in game_state.players:

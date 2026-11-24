@@ -18,7 +18,6 @@
 (function () {
     'use strict';
     const { esc, store, toast } = SGS;
-    const SEAT_COUNT = 5;
     const modelFailuresShown = new Set();
 
     // ------------------------------------------------------------------ 页面状态
@@ -83,11 +82,12 @@
     // ------------------------------------------------------------------ 座次
     /**
      * 座位相对位置：0 = 我，1 = 下家（右侧），2 = 右上，3 = 左上，4 = 上家（左侧）。
-     * 引擎按 id 递增轮转，下家坐在右边，与官方一致。
+     * 按引擎提供的顺时针名单排位；玩家 ID 只是标识，不能拿来做加减。
      */
     function seatPos(id) {
-        const n = G.players.length || SEAT_COUNT;
-        return ((id - (G.meId || 0)) % n + n) % n;
+        const index = G.players.findIndex(p => p.id === id);
+        const origin = Math.max(0, G.players.findIndex(p => p.id === G.meId));
+        return index < 0 ? -1 : (index - origin + G.players.length) % G.players.length;
     }
 
     /** 某玩家的武将框元素（做特效、画指向线时用）。 */
@@ -283,7 +283,12 @@
         const t = currentTargeting();
         const curId = G.state ? G.state.current_player_id : null;
         G.players.forEach(p => {
-            if (p.id === G.meId) return;
+            if (p.id === G.meId) {
+                G.seatEls[p.id]?.remove();
+                delete G.seatEls[p.id];
+                delete G.seatSig[p.id];
+                return;
+            }
             let el = G.seatEls[p.id];
             if (!el) {
                 el = document.createElement('div');
@@ -335,7 +340,13 @@
         const p = me();
         const zones = document.getElementById('myZones');
         const heroBox = document.getElementById('myHero');
-        if (!p) return;
+        if (!p) {
+            zones.replaceChildren();
+            heroBox.replaceChildren();
+            delete G.seatSig.me;
+            document.getElementById('handCount').textContent = '观战';
+            return;
+        }
         const eq = p.equipment || {};
         const judge = p.judge_area || [];
         // 装备槽（W5）：简称方块 + 插画缩略图 + 牌名；空槽半透明写"空"
@@ -1695,11 +1706,11 @@
         G.state = s;
         if (s.post_death && s.post_death.mode === 'spectator') G.postDeathMode = 'spectator';
         G.players = s.players || [];
+        // 新协议只认服务端下发的接收者。旧单人服务器才用兼容回退。
+        G.meId = Object.hasOwn(s, 'viewer_id') ? s.viewer_id : (G.players.find(p => !p.is_ai)?.id ?? null);
         if (window.HeroDraftPanel) HeroDraftPanel.onState(s);
         if (s.chat_level) window.currentChatLevel = s.chat_level;
         syncShownPool(s);
-        const human = G.players.find(p => !p.is_ai) || G.players.find(p => p.id === 0);
-        if (human) G.meId = human.id;
         renderTrusteeStatus();
         // 手牌换了（摸牌、被拆等）时，原来的选择作废
         if (Array.isArray(s.self_hand)) {

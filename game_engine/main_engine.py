@@ -37,6 +37,7 @@ from .mode_registry import get_mode, identity_name, supported_modes
 
 
 logger = logging.getLogger(__name__)
+_LEGACY_VIEWER = object()  # Omitted means the single-player adapter; None means public-only.
 from . import hero_draft, peixiu
 from .hero_registry import HeroRegistry
 from .protocol import ENGINE_EVENT, PROVIDERS
@@ -303,11 +304,10 @@ class MainEngine:
                 break
             drawn.append(card)
         if drawn and not self.game_aborted:
-            own = player is self.human_player()
             await self._notify_card_ui(
                 event_kind="draw", actor_id=player.id, actor_name=player.name,
                 count=len(drawn), reason=reason,
-                cards=[card_to_dict(c) for c in drawn] if own else None,
+                cards=[card_to_dict(c) for c in drawn] if not player.is_ai else None,
                 deck_count=len(self.game_state.deck),
                 message=f"{player.name}摸了{len(drawn)}张牌" + (
                     "" if reason in ("draw", "摸牌阶段") else
@@ -400,11 +400,20 @@ class MainEngine:
     def _hero_name(player: Player) -> str:
         return (player.hero or {}).get("name", "")
 
-    def serialize(self) -> Dict:
+    def _viewer(self, player_id):
+        """Resolve a server-selected player ID; public/unknown viewers get no private data."""
+        if player_id is _LEGACY_VIEWER:
+            return self.human_player()
+        if type(player_id) is not int:
+            return None
+        return next((p for p in self.game_state.players if p.id == player_id), None)
+
+    def serialize(self, *, viewer_id=_LEGACY_VIEWER) -> Dict:
         gs = self.game_state
+        viewer = self._viewer(viewer_id)
         players = []
         for p in gs.players:
-            identity_visible = p.id == 0 or p.identity_revealed or gs.game_over
+            identity_visible = p is viewer or p.identity_revealed or gs.game_over
             players.append(
                 {
                     "id": p.id,
@@ -461,11 +470,10 @@ class MainEngine:
                     },
                 }
             )
-        # serialize() 只发给真人自己的连接（AI 决策不读它），因此可以附带真人自己的手牌，
-        # 让前端在非出牌阶段也能看到手牌。他人手牌仍只有 hand_count。
-        human = self.human_player()
+        # 快照按接收者投影；旁观者无手牌，不能根据 is_ai 猜接收者。
         snapshot = {
-            "self_hand": self.get_player_hand(human) if human else [],
+            "viewer_id": viewer.id if viewer is not None else None,
+            "self_hand": self.get_player_hand(viewer) if viewer is not None else [],
             "mode": gs.mode,
             "round": gs.round_number,
             "completed_turns": self.completed_turns,
@@ -499,7 +507,7 @@ class MainEngine:
     async def set_shown_pool(self, pool):
         """更新临时展示池并推送状态：亮牌、轮到谁、谁取走了哪张，全桌可见。"""
         self.shown_pool = copy.deepcopy(pool) if pool else None
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
     @staticmethod
     def _has_model_key(player: Player) -> bool:
@@ -557,7 +565,7 @@ class MainEngine:
                 # 身份已分完、武将未定：从这里开始状态快照里带"选将中"，直到 _draft_heroes 结束。
                 self._draft = {"stage": "lord", "lord_id": first_player.id, "pending": set()}
         needs_draft = self._draft is not None
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
         # 选将期间不存档：此时没有武将与起手牌，恢复出来的半成品局没有意义；选将结束后再存。
         if self.recovery_checkpoint is not None and not needs_draft:
@@ -726,7 +734,7 @@ class MainEngine:
 
         # 1) 主公：全部主公技武将 + 随机 2 名非主公武将，选定后立刻公开。
         self._draft.update(stage="lord", pending={lord.id})
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
         lord_cards = hero_draft.lord_candidates(pool, rng)
         lord_hero = await self._draft_pick(lord, lord_cards, "lord", lord)
         if self.game_aborted:
@@ -741,7 +749,7 @@ class MainEngine:
         hands = hero_draft.deal_candidates(pool, len(others), per_player,
                                            exclude_ids=[lord_hero.get("id")], rng=rng)
         self._draft.update(stage="others", pending={p.id for p in others})
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
         async def pick_one(player, cards):
             try:
@@ -755,7 +763,7 @@ class MainEngine:
                     cards, player.identity, hero_draft.public_hero_card(lord_hero), rng)]
             self._draft["pending"].discard(player.id)
             if not self.game_aborted:
-                await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+                await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
             return chosen
 
         picks = await asyncio.gather(*(pick_one(p, cards) for p, cards in zip(others, hands)))
@@ -769,7 +777,7 @@ class MainEngine:
         # 3) 依赖武将的初始化都做完了（体力、技能、会话前缀），最后发起手牌。
         state.deal_initial_hands()
         self._draft = None
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
     # ---------- 玩家回合 ----------
 
@@ -785,7 +793,7 @@ class MainEngine:
         player.jiu_buff = False
         await self.log_event(f"{player.name}翻回正面并跳过本回合", player_id=player.id)
         if not self.game_aborted:
-            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
         return True
 
     async def _ai_turn(self, player: Player):
@@ -794,7 +802,7 @@ class MainEngine:
         logger.info(f"\n{'=' * 60}\n  [AI回合] {player.name}\n{'=' * 60}")
         await self.emit(ENGINE_EVENT.AI_ACTION, player_name=player.name, action="turn_start")
         await self._run_phases(player)
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
     def record_usage(self, player_id, kind: str, usage: Any = None, failed: bool = False):
         """累计一次模型调用的 token。usage 缺字段计入 unknown_usage_calls，不当 0。"""
@@ -890,7 +898,7 @@ class MainEngine:
         if await self._consume_turned_over_turn(player):
             return
         logger.info(f"\n{'=' * 60}\n  [人类回合] {player.name}\n{'=' * 60}")
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
         for phase in [Phase.PREPARE, Phase.JUDGE, Phase.DRAW]:
             await self.wait_if_paused()
@@ -900,11 +908,11 @@ class MainEngine:
             if self.game_aborted:
                 return
             await self._execute_phase_with_ui(phase)
-            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
         await self._enter_phase(player, Phase.PLAY)
         player.sha_count = 0
-        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+        await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
         # 乐不思蜀等效果会把出牌阶段加入跳过集合：此时不向真人下发 your_turn。
         play_skipped = await self._skip_play_phase_if_needed(player)
@@ -935,7 +943,7 @@ class MainEngine:
                                                 "accepted" if ok else "invalid", before=before)
                 if not self.game_aborted:
                     await self.emit(ENGINE_EVENT.ACTION_RESULT, success=ok, trustee=True)
-                    await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+                    await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
                 if not ok:
                     break
                 continue
@@ -946,6 +954,7 @@ class MainEngine:
             # 出牌阶段引擎同样在等真人，纳入离席计时。
             self._mark_waiting_for_human()
             payload = {
+                "player_id": player.id,
                 "player_name": player.name,
                 "hand": self.get_player_hand(player),
                 "actions": [dict(action) for action in actions],
@@ -969,7 +978,7 @@ class MainEngine:
 
             ok = await self.execute_action(player, action, target_ids)
             await self.emit(ENGINE_EVENT.ACTION_RESULT, success=ok)
-            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
         if self.game_state.game_over:
             return
@@ -982,7 +991,7 @@ class MainEngine:
             if self.game_aborted:
                 return
             await self._execute_phase_with_ui(phase)
-            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
     async def _enter_phase(self, player: Player, phase: Phase):
         """切换到新阶段，并给前端阶段栏发一条轻量通知（不附整份状态）。
@@ -1077,7 +1086,7 @@ class MainEngine:
             if not ok:
                 logger.info("  ⚠️ AI操作被引擎拒绝，结束本次出牌阶段")
                 break
-            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize())
+            await self.emit(ENGINE_EVENT.STATE_CHANGED, state=self.serialize(viewer_id=None))
 
     # ---------- 认知笔记（Stage T · T2） ----------
 
@@ -1250,7 +1259,7 @@ class MainEngine:
             return {"action": {"type": "trustee"}, "target_ids": []}
         return self._player_input or {"action": {"type": "end_phase"}, "target_ids": []}
 
-    def submit_action(self, action: Dict, target_ids: List[int]):
+    def submit_action(self, action: Dict, target_ids: List[int], *, player_id=_LEGACY_VIEWER):
         if not isinstance(action, dict):
             return {"status": "invalid", "success": False, "message": "操作格式错误"}
         if action.get("type") == "response":
@@ -1259,17 +1268,19 @@ class MainEngine:
                 selection = {"cancel": True}
             else:
                 selection = option_indices if option_indices is not None else action.get("option_index")
-            return self.submit_response_status(action.get("request_id"), selection)
+            return self.submit_response_status(action.get("request_id"), selection, player_id=player_id)
         if self.game_aborted:
             return {"status": "game_ended", "success": False, "message": "对局已结束"}
         if self._paused:
             return {"status": "paused", "success": False, "message": "暂停中，请先继续对局"}
+        actor = self._viewer(player_id)
+        if actor is None or actor.is_ai or actor is not self.game_state.current_player:
+            return {"status": "stale", "success": False, "message": "当前出牌提示不属于该玩家"}
         if self._trustee_active:
             self._note_human_input()
             return {"status": "stale", "success": False,
                     "message": "已解除托管，请等待新的出牌提示后重试"}
-        if (not self._waiting_for_action or self._player_event.is_set()
-                or self.game_state.current_player is not self.human_player()):
+        if not self._waiting_for_action or self._player_event.is_set():
             return {"status": "stale", "success": False,
                     "message": "当前没有等待中的出牌操作，请等待新的出牌提示"}
         self._note_human_input()
@@ -1393,17 +1404,20 @@ class MainEngine:
         self._open_prompts[key] = {"event": event, "payload": payload,
                                    "since": asyncio.get_running_loop().time()}
 
-    def pending_prompts(self) -> List[Dict]:
+    def pending_prompts(self, *, viewer_id=_LEGACY_VIEWER) -> List[Dict]:
         """断线重连时需要重发给真人的提示，timeout 换算成剩余秒数。"""
-        if self.game_aborted:
+        viewer = self._viewer(viewer_id)
+        if self.game_aborted or viewer is None:
             return []
         now = asyncio.get_running_loop().time()
         prompts = []
         for entry in self._open_prompts.values():
             payload = dict(entry["payload"])
+            if payload.get("player_id") != viewer.id:
+                continue
             if "hand" in payload:
                 # 出牌提示里的手牌以当前为准（等待期间可能被拆、被顺）。
-                payload["hand"] = self.get_player_hand(self.human_player())
+                payload["hand"] = self.get_player_hand(viewer)
             try:
                 remaining = float(payload.get("timeout") or 0) - (now - entry["since"])
             except (TypeError, ValueError):
@@ -2145,7 +2159,7 @@ class MainEngine:
         """兼容旧调用方：详细回执由 submit_response_status 返回。"""
         return self.submit_response_status(request_id, selection)["success"]
 
-    def submit_response_status(self, request_id, selection, *, player_id=0) -> Dict:
+    def submit_response_status(self, request_id, selection, *, player_id=_LEGACY_VIEWER) -> Dict:
         """在唤醒等待者前验证请求、类型、数量和索引；非法输入可重试。"""
         def receipt(status, message):
             return {"request_id": request_id, "kind": "response", "status": status,
@@ -2168,7 +2182,8 @@ class MainEngine:
                 return receipt("duplicate", "该请求已经应答")
             return receipt("stale", "请求已过期，请等待当前选择")
         request = self._pending_request_specs[request_id]
-        if player_id != request.get("player_id", 0):
+        viewer = self._viewer(player_id)
+        if viewer is None or viewer.id != request.get("player_id"):
             return receipt("invalid", "此请求不属于该玩家")
         kind = request.get("kind", "respond")
         is_multi = kind in ("choose_cards", "choose_players") and request.get("max_n", 1) > 1

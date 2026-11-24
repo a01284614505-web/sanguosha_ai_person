@@ -1,6 +1,6 @@
 """保守的公开事实核对：只检查完整、明确、带次数的陈述；推测、引用、条件句放行。"""
 import re
-from .seats import player_of
+from .seats import player_of, seat_of
 
 _NUMBERS = {"零": 0, "一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5,
             "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -19,7 +19,11 @@ _LABELS = {"杀": {"杀", "火杀", "雷杀"}, "拆": {"过河拆桥"}, "顺": {
 def contradiction(text, state, ledger):
     if ledger is None or re.search(r'[？?“”「」『』"]|如果|假如|可能|听说|我猜|这轮|上轮|刚才', text):
         return None
-    for clause in re.split(r"[，,。！!；;\n]", text.replace("主公", "1号")):
+    # 身份称呼只有在桌面公开时才能转换为座位；非身份局没有「主公」。
+    lord = next((p for p in state.players if p.identity == "lord" and p.identity_revealed), None)
+    if lord is not None:
+        text = text.replace("主公", f"{seat_of(state, lord.id)}号")
+    for clause in re.split(r"[，,。！!；;\n]", text):
         clause = clause.strip()
         for i, pattern in enumerate(_PATTERNS):
             match = pattern.fullmatch(clause)

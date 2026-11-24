@@ -27,6 +27,7 @@ from game_engine.game_logs import GameLogStore, build_game_log, validate_game_id
 from game_engine.identity_system import IdentitySystem
 from game_engine.mode_registry import get_mode
 from game_engine.seats import seat_of
+from game_engine.card_knowledge import sees_move_face
 from game_engine.protocol import INBOUND, OUTBOUND, ENGINE_EVENT, ENGINE_EVENT_MAP, ENGINE_EVENTS
 from game_engine.recovery import RecoveryStore, dump_engine, restore_engine
 from game_engine.skill_parity_certification import REPORT_PATH, report_is_current
@@ -371,7 +372,7 @@ class GameServer:
         if engine.paused:
             await self.send(ws, self._pause_status(gid, engine))
         if self.viewer_modes.get(gid) != "spectator":
-            for prompt in engine.pending_prompts():
+            for prompt in engine.pending_prompts(viewer_id=self._viewer_player_id(gid, engine)):
                 await self.send(ws, {"type": ENGINE_EVENT_MAP.get(prompt["event"], prompt["event"]),
                                      **prompt["payload"]})
         # 作弊局重连：补发一次最新笔记（非作弊局 cheat_notes_payload() 为 None，什么都不发）。
@@ -417,7 +418,8 @@ class GameServer:
         if not engine:
             await self.send_error(ws, "当前连接没有可操作的玩家座位")
             return
-        receipt = engine.submit_action(data.get("action", {}), data.get("target_ids", []))
+        viewer_id = self._viewer_player_id(self.ws_map[ws], engine)
+        receipt = engine.submit_action(data.get("action", {}), data.get("target_ids", []), player_id=viewer_id)
         if receipt is not None:
             await self.send(ws, {"type": OUTBOUND.ACTION_RESULT, **receipt})
     async def do_chat(self, ws, data):
@@ -452,9 +454,17 @@ class GameServer:
         else:
             await self.send_error(ws, "对局已结束")
 
+    def _viewer_player_id(self, gid, engine):
+        # 单人连接适配层。多人房间必须在这里从已认证连接解析所属玩家，
+        # 而不是相信客户端自报 ID，也不能从「第一个非 AI」推断权限。
+        if self.viewer_modes.get(gid) == "spectator" or engine is None:
+            return None
+        human = engine.human_player()
+        return human.id if human is not None else None
+
     def _client_state(self, gid, engine):
         """Add connection lifecycle data to a fresh engine snapshot."""
-        state = engine.serialize()
+        state = engine.serialize(viewer_id=self._viewer_player_id(gid, engine))
         state["paused"] = bool(engine.paused)
         human = engine.human_player()
         dead = bool(human is not None and not human.alive)
@@ -540,7 +550,7 @@ class GameServer:
         ws = self.viewers.get(gid)
         if ws is not None:
             await self.send(ws, self._pause_status(gid, engine))
-        await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
+        await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize(viewer_id=None))
 
     async def _apply_pause(self, gid, engine, paused):
         """切换暂停。幂等：状态没变时只重发一次当前状态。返回错误文本或 None。"""
@@ -644,7 +654,7 @@ class GameServer:
             await self.send_error(ws, str(exc))
             return
         # 新档位随状态快照回到界面（界面显示的是服务器确认后的值）。
-        await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
+        await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize(viewer_id=None))
 
     async def do_set_trustee(self, ws, data):
         engine = self.controller_engine_for(ws)
@@ -659,16 +669,21 @@ class GameServer:
                 config=data.get("config"),
             )
             await engine.emit(ENGINE_EVENT.TRUSTEE_STATUS, **status)
-            await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize())
+            await engine.emit(ENGINE_EVENT.STATE_CHANGED, state=engine.serialize(viewer_id=None))
         except ValueError as exc:
             await self.send_error(ws, str(exc))
     def _forward(self, gid, event):
         async def handler(**data):
             engine = self.engines.get(gid)
-            if (self.viewer_modes.get(gid) == "spectator"
-                    and event in {ENGINE_EVENT.YOUR_TURN, ENGINE_EVENT.REQUIRE_RESPONSE,
-                                  ENGINE_EVENT.SELECTION_RESULT}):
-                return
+            # Public events (including game-end persistence) don't need a seat lookup.
+            personal = {ENGINE_EVENT.YOUR_TURN, ENGINE_EVENT.REQUIRE_RESPONSE,
+                        ENGINE_EVENT.SELECTION_RESULT, ENGINE_EVENT.CARD_MOVE, OUTBOUND.CHAT}
+            viewer_id = self._viewer_player_id(gid, engine) if event in personal else None
+            # 这里的 ID 来自接收连接，不来自事件发起者或公开座位号。
+            if event in {ENGINE_EVENT.YOUR_TURN, ENGINE_EVENT.REQUIRE_RESPONSE,
+                         ENGINE_EVENT.SELECTION_RESULT}:
+                if viewer_id is None or data.get("player_id") != viewer_id:
+                    return
             if event == ENGINE_EVENT.GAME_END and engine is not None:
                 # 战绩写入不依赖是否有人在看：断线期间结束的对局同样入账。
                 try:
@@ -688,13 +703,12 @@ class GameServer:
             if event == OUTBOUND.CHAT and isinstance(data.get("from_id"), int):
                 data["seat"] = seat_of(engine.game_state, data["from_id"]) if engine else None
             if event == OUTBOUND.CHAT and data.get("kind") == "human":
-                # 旧前端靠 is_self 认出“这是我自己说的话”，保持兼容。
-                data["is_self"] = True
+                data["is_self"] = viewer_id is not None and data.get("from_id") == viewer_id
             if event == ENGINE_EVENT.CARD_MOVE and isinstance(data.get("move"), dict):
                 move = dict(data["move"])
-                owner_id = move.get("to_owner") if move.get("to_owner") is not None else move.get("from_owner")
-                # 本版本真人座位为 0；owner 可见的私密移动不能暴露 AI 手牌的实体 ID。
-                if move.get("visibility") != "public" and owner_id != 0:
+                src = (move.get("from_owner"), move.get("from_zone"))
+                dst = (move.get("to_owner"), move.get("to_zone"))
+                if not sees_move_face(viewer_id, src, dst, move.get("visibility")):
                     move["card_id"] = None
                 data["move"] = move
             if event == ENGINE_EVENT.STATE_CHANGED and engine is not None:
@@ -822,6 +836,9 @@ class GameServer:
                 if await_ui:
                     metrics["no_viewer"] += 1
                 return
+            # 摸牌动画只给摸牌者牌面，其他连接只收到张数。
+            if data.get("event_kind") == "draw" and data.get("actor_id") != self._viewer_player_id(gid, engine):
+                data["cards"] = None
             self.animation_seq += 1
             animation_id = f"{gid}-{self.animation_seq}"
             waiter = asyncio.get_running_loop().create_future()

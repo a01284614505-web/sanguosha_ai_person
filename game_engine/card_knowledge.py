@@ -386,7 +386,7 @@ class CardKnowledge:
 
 
 def capacities(state):
-    """Engine-side adapter; no identity other than seat IDs, and no hidden faces."""
+    """Engine-side adapter; no identity other than stable player IDs, and no hidden faces."""
     sizes = {DECK: len(state.deck), DISCARD: len(state.discard_pile)}
     for p in state.players:
         for z, cards in _zones(p).items():
@@ -415,12 +415,19 @@ def start_ledger(state, catalogue, *, degraded=False):
     return ledger
 
 
+def sees_move_face(viewer_id, src, dst, visibility):
+    """Only open zones or the two endpoints reveal a face; observer None owns no zone."""
+    return (visibility == 'public' or src[1] in OPEN or dst[1] in OPEN
+            or (type(viewer_id) is int and viewer_id in (src[0], dst[0])))
+
+
 def apply_move(ledger, event, card, *, top=False):
     src, dst = (event.from_owner, event.from_zone), (event.to_owner, event.to_zone)
-    public = event.visibility == 'public' or src[1] in OPEN or dst[1] in OPEN
     face = face_of(card)
-    ledger.move(event.sequence, {pid: Move(src, dst, face if public or pid in (src[0], dst[0]) else None, top)
-                                 for pid in ledger.views})
+    ledger.move(event.sequence, {
+        pid: Move(src, dst, face if sees_move_face(pid, src, dst, event.visibility) else None, top)
+        for pid in ledger.views
+    })
 
 
 def current_view(state, pid):
