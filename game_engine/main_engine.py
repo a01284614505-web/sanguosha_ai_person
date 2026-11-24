@@ -5,7 +5,6 @@ import asyncio
 from collections import deque
 import copy
 from itertools import combinations, permutations
-import logging
 import random
 import re
 import time
@@ -36,7 +35,9 @@ from .public_situation import build_public_situation
 from .mode_registry import get_mode, identity_name, supported_modes
 
 
-logger = logging.getLogger(__name__)
+from .rollout_logging import RolloutLogger, silent
+
+logger = RolloutLogger(__name__)
 _LEGACY_VIEWER = object()  # Omitted means the single-player adapter; None means public-only.
 from . import hero_draft, peixiu
 from .hero_registry import HeroRegistry
@@ -2739,6 +2740,8 @@ class MainEngine:
                 return True
             return False
         except Exception as exc:
+            if silent.get():
+                raise  # A failed rollout yields no estimate and never prints a traceback.
             logger.info(f"  ❌ 执行出错: {exc}")
             import traceback
 

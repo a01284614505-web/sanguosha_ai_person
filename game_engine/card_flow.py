@@ -11,10 +11,11 @@
 牌堆为空时先洗弃牌堆再亮牌，与摸牌共用 ``GameState.refill_deck_if_empty``。
 """
 
-import logging
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+from .rollout_logging import RolloutLogger
+
+logger = RolloutLogger(__name__)
 
 
 def engine_moves(engine, state) -> bool:

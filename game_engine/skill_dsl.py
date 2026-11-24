@@ -4,13 +4,14 @@ from __future__ import annotations
 from copy import deepcopy
 from contextvars import ContextVar
 from dataclasses import dataclass
-import logging
 from typing import Any, Dict, Iterable, List, Mapping
 
 from . import card_flow
 from .skill_runtime_core import card_color
 
-logger = logging.getLogger(__name__)
+from .rollout_logging import RolloutLogger
+
+logger = RolloutLogger(__name__)
 
 MAX_STEPS = 100
 TRIGGERS = {

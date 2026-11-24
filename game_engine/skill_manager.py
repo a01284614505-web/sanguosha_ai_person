@@ -2,7 +2,6 @@
 """54技能统一注册、合法操作和事件分发。"""
 
 import inspect
-import logging
 from importlib import import_module
 from typing import Dict, List
 
@@ -16,7 +15,9 @@ from .skill_dsl import (SkillDSLRuntime, compile_skill, evaluate_condition,
 from .skills_generated import get_all_skills, get_hero_skills
 
 
-logger = logging.getLogger(__name__)
+from .rollout_logging import RolloutLogger
+
+logger = RolloutLogger(__name__)
 
 
 class SkillManager:

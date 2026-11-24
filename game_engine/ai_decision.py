@@ -504,24 +504,35 @@ class AIDecision:
             return self.simple_ai_decision(player, available_actions)
 
         try:
+            # Lazy import: the optional rollout reuses the real engine and rule policy.
+            from . import local_tactical_simulation as simulation
+
             examples = select_examples(self.engine, player, self.rng) if len(available_actions) > 1 and player.is_ai else []
             can_query = tactical_evidence.enabled(self.engine) and bool(tactical_evidence.slash_targets(available_actions))
             hint = "\n" + tactical_evidence.QUERY_HINT if can_query else ""
+            can_simulate = simulation.enabled(self.engine) and simulation.can_query(available_actions)
+            if can_simulate:
+                hint += "\n" + simulation.HINT
             initial = self.build_decision_turn_message(player, available_actions, reflection_only=bool(examples))
             response = await self._call_with_session(player, "decision", initial + hint)
             query = self._requested_tactic(response) if can_query else None
-            if not examples and query is None:
+            rollout = self._requested_tactic(response, "simulation_query") if can_simulate else None
+            if not examples and query is None and rollout is None:
                 return self.parse_ai_response(response, player, available_actions)
             content = initial if not examples else self.build_decision_turn_message(player, available_actions)
             if examples:
                 content = examples_prompt(examples) + "\n" + content
                 content += "\n上一条是你在没看示例前的独立判断。现在有没有更好的做法？可维持原判断，也可修改；最终选择只执行这次的 action_index。"
-            if query is not None:
+            if rollout is not None:
+                result = await simulation.compare(self.engine, player, available_actions, rollout)
+                content += "\n【一步结算】" + simulation.format_result(result)
+                content += "\n请按合法菜单选最终行动，本步不再查询。"
+            elif query is not None:
                 answer = tactical_evidence.answer_query(self.engine, player, available_actions, query)
                 # 工具只回答模型提出的条件问题。复核时仍可押注进攻、改选目标或留牌。
                 content += "\n【假设验算】" + answer + "\n本次验算结束。请按你的身份目标权衡收益与风险，自主选定一个合法行动。"
             response = await self._call_with_session(player, "decision", content)
-            if query is not None:
+            if rollout is None and query is not None:
                 self.last_meta.setdefault(player.id, {})["tactical_result"] = answer
             return self.parse_ai_response(response, player, available_actions)
         except Exception as exc:
@@ -531,14 +542,14 @@ class AIDecision:
             return self.simple_ai_decision(player, available_actions)
 
     @staticmethod
-    def _requested_tactic(response):
+    def _requested_tactic(response, field="tactical_query"):
         match = re.search(r"\{.*\}", response, re.DOTALL)
         try:
             payload = json.loads(match.group(0) if match else response)
         except ValueError:
             return None
         if isinstance(payload, dict) and "action_index" not in payload:
-            return payload.get("tactical_query")
+            return payload.get(field)
         return None
 
     def _custom_worldbook_text(self, player) -> str:

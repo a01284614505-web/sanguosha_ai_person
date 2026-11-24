@@ -29,7 +29,7 @@ def normalize_ai(raw_ai, use_default=True):
 SERVER_ONLY_KEYS = (
     "idle_abort_seconds", "idle_check_interval", "max_turns",
     "human_action_timeout", "response_timeout", "phase_delay", "turn_delay",
-    "session_max_l2", "session_max_chars", "session_variable_max_chars", "peixiu_enabled",
+    "session_max_l2", "session_max_chars", "session_variable_max_chars", "peixiu_enabled", "local_tactical_simulation",
 )
 
 

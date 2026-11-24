@@ -4,7 +4,6 @@
 """
 
 import asyncio
-import logging
 from typing import List, Callable
 
 from . import card_flow, peixiu
@@ -14,7 +13,9 @@ from .state_manager import Card, card_to_dict
 from .seats import player_label
 
 
-logger = logging.getLogger(__name__)
+from .rollout_logging import RolloutLogger
+
+logger = RolloutLogger(__name__)
 
 # 可被无懈可击响应的锦囊（单一来源：CARD_TABLE.wuxie_targetable）。
 WUXIEABLE = frozenset(name for name, spec in CARD_TABLE.items() if spec.wuxie_targetable)
@@ -379,6 +380,9 @@ class CardSystem:
         
         return success
     
+    def _slash_outcome(self, target, outcome):
+        """Optional observation point for isolated one-action rollouts."""
+
     async def _sha_effect(self, event):
         """杀的效果（参考无名杀）"""
         player = event['player']
@@ -392,9 +396,9 @@ class CardSystem:
         event["resolved_base_damage"] = base_damage
         shan_required = event['shanRequired']
         armor = None if event.get("ignore_armor") else getattr(target.equipment.get("armor"), "name", None)
-        if armor == "仁王盾" and event["card"].suit in ("spade", "club"):
-            return True
-        if armor == "藤甲" and not event.get("nature"):
+        if ((armor == "仁王盾" and event["card"].suit in ("spade", "club"))
+                or (armor == "藤甲" and not event.get("nature"))):
+            self._slash_outcome(target, "immune")
             return True
         
     #     logger.info(f"  → 目标: {target.name}")
@@ -430,6 +434,7 @@ class CardSystem:
         
         # 2. 判断结果
         if shaned:
+            self._slash_outcome(target, "dodged")
             # 闪避成功
         #     logger.info(f"  ✓ 闪避成功")
             await self.trigger_manager.on_sha_dodged(player, target, event['card'], event)
