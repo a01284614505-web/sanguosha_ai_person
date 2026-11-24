@@ -37,7 +37,7 @@ async def run():
         p = state.players[i % len(state.players)]
         t = perf_counter()
         assert state.refill_deck_if_empty()
-        assert state.move_card(state.deck[0], 'deck', 'hand', to_owner=p, reason='benchmark draw', visibility='owner')
+        assert state.move_card(state.deck[0], 'deck', 'hand', to_owner=p, reason='benchmark draw', visibility='owner', deck_top=True)
         block = prompt_block(engine, p)
         assert '暂不可用。' not in block
         timings.append((perf_counter() - t) * 1000)

@@ -297,7 +297,7 @@ class GameState:
         for _ in range(count):
             if self.refill_deck_if_empty():
                 card = self.deck[0]
-                if self.move_card(card, "deck", "hand", to_owner=player, reason="draw", visibility="owner"):
+                if self.move_card(card, "deck", "hand", to_owner=player, reason="draw", visibility="owner", deck_top=True):
                     drawn_cards.append(card)
         
         return drawn_cards
@@ -322,12 +322,14 @@ class GameState:
         from_slot: Optional[str] = None,
         to_slot: Optional[str] = None,
         to_index: Optional[int] = None,
+        deck_top: bool = False,
     ) -> Optional[CardMoveEvent]:
         """校验并原子移动一张实体牌，失败时不改状态也不产生事件.
 
         Player 牌区（hand/equipment/judge/shown/temporary）必须显式传 owner；
         deck/discard 为全局牌区，owner 必须为 None。装备目标槽位由 to_slot 或
         card.sub_type 指定。牌堆目标默认放到牌堆顶，其他列表目标默认追加。
+        deck_top 只用于规则明确取堆顶的操作；定点找牌即使碰巧在堆顶也不能标记。
         """
         player_zones = {"hand", "equipment", "judge", "shown", "temporary", "treasure"}
         global_zones = {"deck", "discard"}
@@ -392,6 +394,8 @@ class GameState:
             return None
 
         source_container = locate(from_zone, from_owner, from_slot)
+        if deck_top and (from_zone != "deck" or not self.deck or self.deck[0] is not card):
+            return None
         if source_container is None:
             return None
         if from_zone == "equipment":
@@ -461,7 +465,7 @@ class GameState:
         )
         self.card_move_events.append(event)
         if self.card_knowledge:
-            apply_move(self.card_knowledge, event, card)
+            apply_move(self.card_knowledge, event, card, top=deck_top)
         open_zones = {"equipment", "judge", "shown", "discard"}
         if from_zone == "hand":
             face_visible = visibility == "public" and to_zone in open_zones

@@ -21,6 +21,8 @@ class Move:
     source: tuple
     dest: tuple
     face: Face | None
+    # This is the operation kind, not an inference from the true deck index.
+    top: bool = False
 
 
 class View:
@@ -30,6 +32,8 @@ class View:
         self.slots = {}
         self.degraded = degraded
         self.ordered_by_skill = False
+        # Zero-based offsets from the current top, known only to this seat.
+        self.positions: dict[int, Face] = {}
         self.valid = True
         for z, cap in capacities.items():
             fixed = self.fixed.get(z, Counter())
@@ -57,14 +61,43 @@ class View:
         if not self.valid:
             return
         src, dst, face = event.source, event.dest, event.face
+        anonymous_top = False
+        if src == DECK:
+            if event.top:
+                top = self.positions.get(0)
+                if top is not None:
+                    if face is not None and face != top:
+                        self.valid = False
+                        self._update()
+                        return
+                    face = top
+                elif self.positions:
+                    # A face at a later position cannot explain this draw.
+                    anonymous_top = self.fixed.get(DECK, Counter()) == Counter(self.positions.values())
+                    if not anonymous_top:
+                        self.positions.clear()
+                        self.ordered_by_skill = True
+                        self.degraded = True
+                self.positions = {i - 1: f for i, f in self.positions.items() if i}
+            else:
+                # A blind, non-positional removal can shift the entire arrangement,
+                # even if in the true world it happened to remove the top card.
+                if self.positions:
+                    self.positions.clear()
+                    self.ordered_by_skill = True
+                    self.degraded = True
+        if dst == DECK:
+            self.positions.clear()
+            self.ordered_by_skill = True
+            self.degraded = True
         known = self.fixed.setdefault(src, Counter())
-        if face is None and not self.slots.get(src) and len(known) == 1:
+        if not anonymous_top and face is None and not self.slots.get(src) and len(known) == 1:
             # A blind move out of a fully known homogeneous zone exposes no new fact.
             face = next(iter(known))
-        if face is not None and known[face] > 0:
+        if not anonymous_top and face is not None and known[face] > 0:
             known[face] -= 1
         else:
-            if face is None and known.total():
+            if not anonymous_top and face is None and known.total():
                 # Anonymous removal from a group containing known faces: retain only
                 # provable lower bounds. The relaxed model is explicitly approximate.
                 for f in list(known):
@@ -102,6 +135,54 @@ class View:
         if self.valid and not self.fixed.get(z, Counter())[face]:
             self.move(Move(z, z, face))
 
+    def peek(self, faces):
+        """Apply a private top-card reveal before asking the owner to arrange it."""
+        if not self.valid:
+            return
+        count = len(faces)
+        after = Counter(faces) + Counter(f for i, f in self.positions.items() if i >= count)
+        # Existing unordered deck facts can overlap the private peek. Keep the
+        # stronger lower bound rather than double-counting a printed face.
+        if any(self.positions[i] != f for i, f in enumerate(faces) if i in self.positions):
+            self.valid = False  # A trusted prior position contradicts this reveal.
+            self._update()
+            return
+        for f, n in (after - self.fixed.get(DECK, Counter())).items():
+            for _ in range(n):
+                self._learn_deck_face(f)
+        self.positions.update(enumerate(faces))
+        self._update()
+
+    def _learn_deck_face(self, face):
+        # A same-zone reveal turns an anonymous deck slot into a known face,
+        # without changing deck order or accidentally consuming a known copy.
+        groups = +self.slots.get(DECK, Counter())
+        compatible = [g for g in groups if self.pools[g][face] > 0]
+        if len(compatible) > 1:
+            self._collapse()
+            compatible = [0]
+        if not compatible:
+            self.valid = False
+            return
+        g = compatible[0]
+        self.slots[DECK][g] -= 1
+        self.pools[g][face] -= 1
+        self.fixed.setdefault(DECK, Counter())[face] += 1
+
+    def reorder(self, count, top=None, bottom=None):
+        if top is None:
+            # Other seats know a permutation happened, not how many went to each end.
+            self.positions.clear()
+            self.ordered_by_skill = True
+            self.degraded = True
+        elif self.valid:
+            shift = len(top) - count
+            size = self.capacity(DECK)
+            self.positions = {i + shift: f for i, f in self.positions.items() if i >= count}
+            self.positions.update(enumerate(top))
+            self.positions.update(enumerate(bottom, size - len(bottom)))
+        self._update()
+
     def refill(self, faces):
         if not self.valid:
             return
@@ -114,6 +195,7 @@ class View:
             self.slots.pop(DISCARD, None)
             self.pools[group] = faces.copy()
             self.slots[DECK] = Counter({group: faces.total()})
+            self.positions.clear()
             self.ordered_by_skill = False
         self._update()
 
@@ -129,7 +211,9 @@ class View:
             used.update(groups)
         if (any(n < 0 for pool in self.pools.values() for n in pool.values())
                 or any(pool.total() != used[g] for g, pool in self.pools.items())
-                or used.keys() - self.pools.keys()):
+                or used.keys() - self.pools.keys()
+                or Counter(self.positions.values()) - self.fixed.get(DECK, Counter())
+                or any(not 0 <= i < self.capacity(DECK) for i in self.positions)):
             self.valid = False
             return
         self.pools = {g: +cards for g, cards in self.pools.items() if used[g]}
@@ -148,8 +232,21 @@ class View:
                     dist = convolve(dist, hypergeom(self.pools[g].total(), stats[g][i], slots))
                 rows.append(dist)
             self.summary[z[0]] = tuple(rows)
-        if not self.ordered_by_skill:
-            self.judges = tuple(self.next_draw(test) for test in JUDGES)
+        top = self.positions.get(0)
+        if top is not None:
+            self.judges = tuple(float(test(top)) for test in JUDGES)
+        elif not self.ordered_by_skill:
+            # Reuse the per-pool counts already computed for the hand subscription.
+            zone = DECK if self.capacity(DECK) else DISCARD
+            fixed = self.fixed.get(zone, Counter())
+            if zone == DECK and self.positions:
+                fixed = fixed - Counter(self.positions.values())
+            slots = self.slots.get(zone, {})
+            size = fixed.total() + sum(slots.values())
+            if size:
+                known = base_counts(tuple(fixed.items()))
+                self.judges = tuple((known[i] + sum(n * stats[g][i] / self.pools[g].total()
+                                     for g, n in slots.items())) / size for i in range(8, 12))
 
     def odds(self, zones, **criteria):
         """Printed match counts over a UNION of zones, without assuming seat independence."""
@@ -186,13 +283,20 @@ class View:
         return no_dodge, neither, 1 - no_peach
 
     def next_draw(self, test):
-        if not self.valid or self.ordered_by_skill:
+        if not self.valid:
+            return None
+        if self.positions.get(0) is not None:
+            return float(test(self.positions[0]))
+        if self.ordered_by_skill:
             return None
         zone = DECK if self.capacity(DECK) else DISCARD
-        size = self.capacity(zone)
+        fixed = self.fixed.get(zone, Counter())
+        if zone == DECK:
+            fixed = fixed - Counter(self.positions.values())
+        size = fixed.total() + self.slots.get(zone, Counter()).total()
         if not size:
             return None
-        e = sum(n for f, n in self.fixed.get(zone, {}).items() if test(f))
+        e = sum(n for f, n in fixed.items() if test(f))
         for g, slots in self.slots.get(zone, {}).items():
             pool = self.pools[g]
             e += slots * sum(n for f, n in pool.items() if test(f)) / pool.total()
@@ -203,7 +307,8 @@ class View:
                 'slots': [[list(z), dict(c)] for z, c in sorted(self.slots.items(), key=lambda row: repr(row[0]))],
                 'pools': {g: list(c.items()) for g, c in self.pools.items()},
                 'next_pool': self.next_pool, 'valid': self.valid, 'degraded': self.degraded,
-                'ordered_by_skill': self.ordered_by_skill}
+                'ordered_by_skill': self.ordered_by_skill,
+                'positions': sorted(self.positions.items())}
 
     @classmethod
     def load(cls, data):
@@ -215,6 +320,7 @@ class View:
         view.valid = bool(data['valid'])
         view.degraded = bool(data['degraded'])
         view.ordered_by_skill = bool(data.get('ordered_by_skill'))
+        view.positions = {int(i): Face(*f) for i, f in data.get('positions', [])}
         view._update()
         return view
 
@@ -251,16 +357,20 @@ class CardKnowledge:
 
     def selective_search(self):
         # The search is rank-conditioned, not an anonymous top draw.
-        self.version += 1
         for view in self.views.values():
             view.degraded = True
 
-    def reordered(self):
+    def peek(self, viewer, faces):
+        # A private look must not change the version shown to other seats.
+        self.views[viewer].peek(faces)
+
+    def reordered(self, viewer, count, top, bottom):
         self.version += 1
-        for view in self.views.values():
-            view.ordered_by_skill = True
-            view.degraded = True
-            view._update()
+        for pid, view in self.views.items():
+            if pid == viewer:
+                view.reorder(count, top, bottom)
+            else:
+                view.reorder(count)
 
     def dump(self):
         return {'catalogue': list(self.catalogue.items()), 'version': self.version, 'last_move': self.last_move,
@@ -305,11 +415,11 @@ def start_ledger(state, catalogue, *, degraded=False):
     return ledger
 
 
-def apply_move(ledger, event, card):
+def apply_move(ledger, event, card, *, top=False):
     src, dst = (event.from_owner, event.from_zone), (event.to_owner, event.to_zone)
     public = event.visibility == 'public' or src[1] in OPEN or dst[1] in OPEN
     face = face_of(card)
-    ledger.move(event.sequence, {pid: Move(src, dst, face if public or pid in (src[0], dst[0]) else None)
+    ledger.move(event.sequence, {pid: Move(src, dst, face if public or pid in (src[0], dst[0]) else None, top)
                                  for pid in ledger.views})
 
 
@@ -385,6 +495,8 @@ def prompt_block(engine, viewer):
         rows.append(text)
     judge = ('下一判（八卦红/乐红桃/兵梅花/闪电中）' + '/'.join(pct(p) for p in view.judges)
              if view.judges is not None else '下一判暂不可用')
+    if 0 in view.positions and view.judges is not None:
+        judge = f'已知堆顶{_face_label(view.positions[0])}；' + judge
     label = '近似估计（部分约束已降级）' if view.degraded else '等权条件估计'
     return (f'\n【实时牌账 v{state.card_knowledge.version}｜{label}】他席手牌至少一张（{labels}）：\n'
             + '\n'.join(rows) + '\n' + judge + '；未计改判、防具、木牛、求援或响应意愿。')

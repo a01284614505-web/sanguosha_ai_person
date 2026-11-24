@@ -10,6 +10,7 @@ HERO = {
     ],
 }
 LAST_RANK = 'peixiu_preview_last_rank'
+USE_SERIAL = 'peixiu_preview_use_serial'  # Distinguishes nested uses of the same printed rank.
 
 
 def active(player):
@@ -32,13 +33,15 @@ def xingtu(player, card):
     return old % new == 0, new % old == 0
 
 
-def commit_use(player, card, *, effect_context):
+def commit_use(player, card, *, effect_context=None):
     """Record before resolving any nested use; keep the parent's quota decision on its context."""
     if not active(player):
         return False
     draw, no_quota = xingtu(player, card)
-    effect_context.ignore_use_quota = no_quota
+    if effect_context is not None:
+        effect_context.ignore_use_quota = no_quota
     player.flags[LAST_RANK] = valid_rank(card)
+    player.flags[USE_SERIAL] = player.flags.get(USE_SERIAL, 0) + 1
     return draw
 
 

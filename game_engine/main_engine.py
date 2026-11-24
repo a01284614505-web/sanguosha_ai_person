@@ -261,7 +261,7 @@ class MainEngine:
     async def move_card(
         self, card, from_zone, to_zone, *, from_owner=None, to_owner=None,
         reason, actor_id=None, effect_id=None, visibility="public",
-        from_slot=None, to_slot=None, to_index=None, project=True,
+        from_slot=None, to_slot=None, to_index=None, project=True, deck_top=False,
     ):
         """Commit a validated physical card move, then publish the same fact."""
         if self.game_aborted:
@@ -270,7 +270,7 @@ class MainEngine:
             card, from_zone, to_zone, from_owner=from_owner, to_owner=to_owner,
             reason=reason, actor_id=actor_id, effect_id=effect_id,
             visibility=visibility, from_slot=from_slot, to_slot=to_slot,
-            to_index=to_index,
+            to_index=to_index, deck_top=deck_top,
         )
         if event is None:
             return None
@@ -297,7 +297,7 @@ class MainEngine:
             card = self.game_state.deck[0]
             moved = await self.move_card(
                 card, "deck", "hand", to_owner=player, reason=reason,
-                actor_id=player.id, visibility="owner",
+                actor_id=player.id, visibility="owner", deck_top=True,
             )
             if moved is None:
                 break

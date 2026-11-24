@@ -187,3 +187,62 @@ def test_response_and_play_each_get_summary_without_extra_model_calls():
         mock.assert_awaited_once()
         assert '实时牌账 v1' in mock.call_args.args[-1]
     asyncio.run(run())
+
+
+def test_guanxing_private_order_tracks_draw_judge_bottom_and_checkpoint():
+    from game_engine.card_flow import reveal_top
+
+    async def run():
+        e = table(selected_hero={'id': 'zhugeliang'})
+        s = e.game_state
+        actor, other, *_ = s.players
+        rig_opening(e, {}, [match_face(suit='heart'), match_face(suit='spade', rank=7)])
+        seen = s.deck[:5]
+        original = s.deck[5]
+        handler = next(h for h in e.skill_manager.handlers if hasattr(h, '_guanxing'))
+        old_prompt = prompt_block(e, other)
+
+        async def choose(player, prompt, cards, **_):
+            # The order chooser can use what was just shown. No other seat can.
+            assert current_view(s, actor.id).judges[:2] == (1., 1.)
+            assert prompt_block(e, other) == old_prompt
+            return {'bool': True, 'cards': [seen[1]] if len(cards) == 5 else list(reversed(cards))}
+
+        s.current_phase = Phase.PREPARE
+        with patch.object(e.skill_manager, 'ask_confirm', AsyncMock(return_value=True)), \
+                patch.object(e.skill_manager, 'ask_choose_cards_result', choose):
+            await handler._guanxing(actor)
+        view = current_view(s, actor.id)
+        assert view.judges == (0., 0., 0., 1.)
+        assert '已知堆顶' in prompt_block(e, actor)
+        assert '下一判暂不可用' in prompt_block(e, other)
+        assert not current_view(s, other.id).positions
+        restored = restore_engine(json.loads(json.dumps(dump_engine(e))), MainEngine)
+        assert current_view(restored.game_state, actor.id).positions == view.positions
+        assert await e.draw_cards(other, 1) == [seen[1]]
+        assert view.fixed[other.id, 'hand'][face_of(seen[1])] == 1
+        assert not current_view(s, s.players[2].id).fixed.get((other.id, 'hand'))
+        assert await reveal_top(e, s, other, 1, reason='测试判定') == [original]
+        expected = [face_of(c) for c in s.deck[-4:]]
+        while len(s.deck) > 4:
+            assert s.draw_card(other)
+        assert view.positions == dict(enumerate(expected))
+        assert view.judges == tuple(float(test(expected[0])) for test in JUDGES)
+        assert len(s.draw_card(other, 4)) == 4
+        assert not view.positions and not view.ordered_by_skill
+    asyncio.run(run())
+
+
+def test_position_survives_draw_of_same_printed_face_but_not_blind_search():
+    a = Face('杀', 'spade', 7, None, 'basic')
+    b = Face('桃', 'heart', 3, None, 'basic')
+    hand = (1, 'hand')
+    v = View(Counter([a, a, b]), {DECK: 3}, {})
+    v.peek([a])
+    v.reorder(1, [], [a])
+    assert v.next_draw(lambda f: f == a) == pytest.approx(0.5)
+    v.move(Move(DECK, hand, a, top=True))
+    assert v.positions == {1: a} and v.fixed[DECK][a] == 1
+    assert v.next_draw(lambda f: f == b) == 1
+    v.move(Move(DECK, (2, 'hand'), None))
+    assert v.valid and v.degraded and not v.positions and v.judges is None

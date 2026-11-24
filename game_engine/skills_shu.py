@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """界限突破蜀国7将14技能运行实现。"""
 
+from .card_odds import face_of
 from .game_stats import record_stat
 from .state_manager import Card, Phase, card_to_dict
 from .skill_runtime_core import (
@@ -310,7 +311,11 @@ class ShuSkillHandler(FactionSkillHandler):
         ) or self.engine.game_aborted:
             return
         count = min(len(self.state.deck), 3 if sum(p.alive for p in self.state.players) < 4 else 5)
+        if not count:
+            return
         revealed = list(self.state.deck[:count])
+        if self.state.card_knowledge:
+            self.state.card_knowledge.peek(player.id, list(map(face_of, revealed)))
         if count == 1:
             choice = await self.manager.ask_choose_option(
                 player, "将这张观星牌置于哪里？",
@@ -343,7 +348,8 @@ class ShuSkillHandler(FactionSkillHandler):
             return
         self.state.deck[:] = top_cards + self.state.deck[count:] + bottom
         if self.state.card_knowledge:
-            self.state.card_knowledge.reordered()
+            self.state.card_knowledge.reordered(
+                player.id, count, list(map(face_of, top_cards)), list(map(face_of, bottom)))
         if self.state.current_phase == Phase.PREPARE:
             ensure_flags(player)["guanxing_bottomed"] = not top_cards
         await self.manager.announce(player, "观星", f"{player.name}发动【观星】，调整牌堆顶{count}张牌")
@@ -502,7 +508,7 @@ class ShuSkillHandler(FactionSkillHandler):
         revealed = self.state.deck[0]
         moved = await self.engine.move_card(
             revealed, "deck", "discard", reason="涯角展示",
-            actor_id=player.id, visibility="public",
+            actor_id=player.id, visibility="public", deck_top=True,
         )
         if moved is None or self.engine.game_aborted:
             return

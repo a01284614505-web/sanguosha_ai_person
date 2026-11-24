@@ -99,3 +99,39 @@ def test_juezhi_choose_arbitrary_cost_and_hides_deck_success_before_payment():
         assert current_view(s, p.id) is not None
         return menus, choose.call_args.args[1]
     assert asyncio.run(world(True)) == asyncio.run(world(False))
+
+
+def test_response_use_and_pure_response_have_distinct_rank_history():
+    async def run():
+        e, p = preview()
+        s = e.game_state
+        rig_opening(e, {p.id: [match_face(name='闪'), match_face(name='无懈可击', rank=12)]}, [])
+        dodge, counter = p.hand
+        p.flags[peixiu.LAST_RANK] = 12
+        n = len(s.deck)
+        assert await e.card_system._consume_response(p, {'bool': True, 'card': dodge}, '杀', {})
+        assert p.flags[peixiu.LAST_RANK] == 12 and len(s.deck) == n
+        assert await e.card_system._consume_response(
+            p, {'bool': True, 'card': counter}, 'wuxie', {}, counts_as_use=True)
+        assert p.flags[peixiu.LAST_RANK] == counter.rank and len(s.deck) == n - 1
+        assert p.flags[peixiu.USE_SERIAL] == 1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_failed_parent_does_not_erase_same_rank_nested_use(nested):
+    async def run():
+        e, p = preview()
+        p.flags[peixiu.LAST_RANK] = 12
+        slash = Card('slash', '杀', 'spade', 6, 'basic')
+
+        async def resolve(*_):
+            if nested:
+                # A second use with exactly the same point must still survive rollback.
+                peixiu.commit_use(p, slash)
+            return False
+
+        with patch.object(e.card_system, '_use_card_resolve', resolve):
+            assert not await e.card_system.use_card(p, slash)
+        assert p.flags[peixiu.LAST_RANK] == (6 if nested else 12)
+    asyncio.run(run())

@@ -155,7 +155,7 @@ class CardSystem:
                 card_filter=lambda c: c.name == "杀", requested_name="杀",
                 context={"source": source, "target": target, "card": event["card"]},
             )
-            if await self._consume_response(source, result, "青龙偃月刀", {"target": target}):
+            if await self._consume_response(source, result, "青龙偃月刀", {"target": target}, counts_as_use=True):
                 follow = {**event, "card": result["card"], "baseDamage": 1,
                           "nature": getattr(result["card"], "nature", None)}
                 await self.trigger_manager.before_sha(source, target, result["card"], follow)
@@ -225,12 +225,23 @@ class CardSystem:
             return False
         spec = CARD_TABLE.get(card.name)
         draw_xingtu = False
-        if self.engine is not None and peixiu.active(player) and spec and spec.usage != "response":
+        tracks_rank = self.engine is not None and peixiu.active(player) and spec and spec.usage != "response"
+        if tracks_rank:
+            had_rank = peixiu.LAST_RANK in player.flags
+            previous = player.flags.get(peixiu.LAST_RANK)
             if effect_context is None:
                 effect_context = self.engine._new_effect_context(player, card)
             draw_xingtu = peixiu.commit_use(player, card, effect_context=effect_context)
+            use_serial = player.flags[peixiu.USE_SERIAL]
         entries = self._ledger_record_card(player, card, spec, targets)
         success = await self._use_card_resolve(player, card, targets, spec, effect_context)
+        if not success and tracks_rank and player.flags.get(peixiu.USE_SERIAL) == use_serial:
+            # The ordinary execution path restores the physical card on rejection.
+            # Restore the last rank too, unless a nested use has superseded it.
+            if had_rank:
+                player.flags[peixiu.LAST_RANK] = previous
+            else:
+                player.flags.pop(peixiu.LAST_RANK, None)
         if not success and entries:
             # 出牌失败时牌会退回手牌，不能留下一条没发生的行为。
             self.engine.ledger.remove(entries)
@@ -804,7 +815,7 @@ class CardSystem:
                 consumed = await self._consume_response(
                     responder, result, "wuxie",
                     {"source": current_source, "targets": targets or [],
-                     "card": card, "wuxie_layer": layer},
+                     "card": card, "wuxie_layer": layer}, counts_as_use=True,
                 )
                 if not consumed:
                     return canceled
@@ -989,7 +1000,7 @@ class CardSystem:
                 if not card or card not in source_cards:
                     continue
                 if not await self._consume_response(
-                    rescuer, result, "dying_rescue", {"target": player, "owner": owner},
+                    rescuer, result, "dying_rescue", {"target": player, "owner": owner}, counts_as_use=True,
                 ):
                     continue
                 if self.engine is not None and self.engine.game_aborted:
@@ -1183,7 +1194,7 @@ class CardSystem:
 
         return True
 
-    async def _consume_response(self, responder, result, reason, context):
+    async def _consume_response(self, responder, result, reason, context, *, counts_as_use=False):
         """Move one validated response card exactly once and notify its hooks."""
         if not result or not result.get("bool") or (self.engine and self.engine.game_aborted):
             return False
@@ -1213,6 +1224,11 @@ class CardSystem:
             source_cards.remove(card)
             self.game_state.discard_pile.append(card)
             await self.trigger_manager.on_cards_lost(owner, [card], reason)
+        # 无懈／救援／借刀／青龙刀是响应窗口里的「使用」，普通闪、决斗和
+        # 群体锦囊要求的是「打出」。不要根据提示文案或牌名猜这个语义。
+        # 行图仍是预览：这里在实体消费成功后登记，摸牌不打断移动钩子。
+        xingtu_draw = (counts_as_use and self.engine is not None
+                       and peixiu.commit_use(responder, card))
         await self.notify_card_to_discard(owner, card, "respond", index,
                                           f"{owner.name}打出{card_label(card, name=result.get('as_name'))}响应{reason}")
         self._record_played(owner)
@@ -1221,6 +1237,8 @@ class CardSystem:
             responder, card, result.get("as_name") or card.name,
             {**context, "owner": owner},
         )
+        if xingtu_draw and responder.alive and not self.engine.game_aborted:
+            await self.trigger_manager.draw_cards(responder, 1, "行图")
         return True
 
     def _effect_context(self, source, card, target=None, existing=None):
@@ -1467,7 +1485,7 @@ class CardSystem:
         )
         response = result.get("card") if result and result.get("bool") else None
         if response and await self._consume_response(
-                weapon_owner, result, "借刀杀人", {"source": player, "target": victim}):
+                weapon_owner, result, "借刀杀人", {"source": player, "target": victim}, counts_as_use=True):
             slash = response if response.name == "杀" else Card(
                 f"jiedao:{response.id}", "杀", response.suit, response.rank, "basic")
             event = {

@@ -53,7 +53,7 @@ async def reveal_top(engine, state, holder, count: int, *, reason: str,
                 break
             moved = await engine.move_card(
                 card, "deck", "shown", to_owner=holder, reason=reason,
-                actor_id=holder.id, visibility="public",
+                actor_id=holder.id, visibility="public", deck_top=True,
             )
             if moved is None:
                 # 牌移动被引擎拒绝（数据异常）：退回直接取牌，保证对局还能往下走。
